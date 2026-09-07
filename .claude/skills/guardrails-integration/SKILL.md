@@ -41,7 +41,7 @@ When a request finishes flowing through the gateway, the emitted trace event has
 
 Follow this order.
 
-1. Write the rail class. Implement `check()`, declare `name` and default `on_failure`. Keep the class in `platform/rails/<layer>/`.
+1. Write the rail class. Implement `check()`, declare `name` and default `on_failure`. Keep the class in `finsentry/rails/<layer>/`.
 2. Write the tests. A rail without tests does not go into the config. Test three cases minimum. A clear pass. A clear block. A machinery failure that triggers the `on_failure` path.
 3. Wire the OpenTelemetry span. Verify a test run produces the span with the expected attributes by inspecting the OTel collector output.
 4. Register the rail in the NeMo Guardrails `config.yml` for its layer. Include the ordering. Cheap rails run first.

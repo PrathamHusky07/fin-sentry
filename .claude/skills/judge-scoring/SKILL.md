@@ -51,7 +51,7 @@ For each sampled response, the platform retrieves K peer examples from the Finan
 
 Inject the peers into the frontier judge prompt as few-shot examples with the pattern the paper describes. Never modify the peers on the fly. If the peer set for a query is empty because no structurally similar examples exist, fall back to zero-shot and log `judge.faithjudge_fallback_reason: no_peers`.
 
-The peer retrieval is a separate module. It lives at `platform/judges/faithjudge_retrieval.py`. Test it independently of any judge.
+The peer retrieval is a separate module. It lives at `finsentry/judges/faithjudge_retrieval.py`. Test it independently of any judge.
 
 ## The ensemble normalization contract
 
