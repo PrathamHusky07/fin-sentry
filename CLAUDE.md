@@ -33,14 +33,14 @@ When starting a new day, name the model you are on and why in the first response
 
 ## Commands (exact)
 
-Backend Python (from `platform/`):
+Backend Python (from the project root, `fin-sentry/`):
 
-- Dev server: `uvicorn platform.gateway.main:app --reload --port 8000`
+- Dev server: `uvicorn finsentry.gateway.main:app --reload --port 8000`
 - Docker Compose stack: `docker compose -f docker-compose.dev.yml up -d`
 - Test: `pytest -x -q`
 - Lint: `ruff check .`
 - Format: `ruff format .`
-- Type check: `mypy platform/`
+- Type check: `mypy finsentry/`
 
 Frontend (from `web/`):
 
