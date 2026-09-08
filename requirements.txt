@@ -6,11 +6,8 @@ python-dotenv>=1.0.0
 
 # Ingestion
 edgartools>=2.0.0
-psycopg2-binary>=2.9.0
+psycopg[binary]>=3.1.0
 datasets>=2.20.0
-
-# Type stubs
-types-psycopg2>=2.9.0
 
 # Dev
 ruff>=0.5.0
