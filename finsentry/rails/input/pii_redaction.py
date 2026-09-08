@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+from typing import Any
+
+from finsentry.rails.base import Rail, RailDecision
+
+_CONFIDENCE_THRESHOLD = 0.7  # Default Presidio threshold is 0.5; 0.7 prevents
+# false-positive redaction of SEC filing identifiers (CIK numbers, CUSIP codes,
+# routing numbers in financial tables) that pattern recognizers can misfire on.
+
+# Finance-domain recognizer allowlist — five pattern-based types only.
+# PERSON (SpacyRecognizer / NER) is excluded deliberately: in the finance
+# domain, person names in queries are almost always public figures (executives,
+# analysts, board members) legitimately present in SEC filings. Redacting
+# "Tim Cook, CEO of Apple" would silently break RAG retrieval on the corpus.
+# Real PII in this domain is account numbers and tax IDs, which the five
+# pattern recognizers below catch reliably.
+_ENTITY_TYPES = [
+    "US_SSN",
+    "CREDIT_CARD",
+    "EMAIL_ADDRESS",
+    "PHONE_NUMBER",
+    "US_BANK_NUMBER",
+    "IBAN_CODE",
+]
+
+# Module-level cache for the analyzer and anonymizer.
+_analyzer: Any = None
+_anonymizer: Any = None
+
+
+def _get_analyzer() -> Any:
+    global _analyzer
+    if _analyzer is None:
+        from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
+        from presidio_analyzer.predefined_recognizers import (
+            CreditCardRecognizer,
+            EmailRecognizer,
+            IbanRecognizer,
+            PhoneRecognizer,
+            UsBankRecognizer,
+            UsSsnRecognizer,
+        )
+
+        registry = RecognizerRegistry()
+        registry.add_recognizer(UsSsnRecognizer())
+        registry.add_recognizer(CreditCardRecognizer())
+        registry.add_recognizer(EmailRecognizer())
+        registry.add_recognizer(PhoneRecognizer())
+        registry.add_recognizer(UsBankRecognizer())
+        registry.add_recognizer(IbanRecognizer())
+        _analyzer = AnalyzerEngine(registry=registry)
+    return _analyzer
+
+
+def _get_anonymizer() -> Any:
+    global _anonymizer
+    if _anonymizer is None:
+        from presidio_anonymizer import AnonymizerEngine
+
+        _anonymizer = AnonymizerEngine()  # type: ignore[no-untyped-call]
+    return _anonymizer
+
+
+class PiiRedactionRail(Rail):
+    """Input rail: detects and masks PII in the user message before forwarding.
+
+    Outcome is 'sanitize' (not 'block') — the request is allowed through with
+    the PII replaced by <REDACTED_TYPE> placeholders. The downstream model never
+    sees the original values.
+    """
+
+    name = "pii-redaction"
+    layer = "input"
+
+    def check(self, content: str, context: dict[str, Any]) -> RailDecision:
+        analyzer = _get_analyzer()
+        anonymizer = _get_anonymizer()
+
+        results = analyzer.analyze(
+            text=content,
+            entities=_ENTITY_TYPES,
+            language="en",
+            score_threshold=_CONFIDENCE_THRESHOLD,
+        )
+
+        if not results:
+            return RailDecision(outcome="pass", reason="no PII detected", details={})
+
+        from presidio_anonymizer.entities import OperatorConfig
+
+        operators = {
+            entity: OperatorConfig("replace", {"new_value": f"<REDACTED_{entity}>"})
+            for entity in _ENTITY_TYPES
+        }
+        anonymized = anonymizer.anonymize(
+            text=content,
+            analyzer_results=results,
+            operators=operators,
+        )
+
+        detected = sorted({r.entity_type for r in results})
+        return RailDecision(
+            outcome="sanitize",
+            reason="PII detected and redacted",
+            details={
+                "pii_entities": detected,
+                "sanitized_content": anonymized.text,
+            },
+        )

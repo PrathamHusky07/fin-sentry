@@ -5,9 +5,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import finsentry.rails.input.pii_redaction as pii_module
 import finsentry.rails.input.prompt_guard as pg_module
 from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.base import Rail, RailDecision
+from finsentry.rails.input.pii_redaction import PiiRedactionRail
 from finsentry.rails.input.prompt_guard import PromptGuard2Rail
 
 # ---------------------------------------------------------------------------
@@ -200,3 +202,75 @@ async def test_prompt_guard_block_skips_subsequent_rails() -> None:
     _, decisions = await adapter.run([{"role": "user", "content": "injected"}])
     assert len(decisions) == 1
     assert decisions[0].outcome == "block"
+
+
+# ---------------------------------------------------------------------------
+# Presidio PII redaction rail tests
+# ---------------------------------------------------------------------------
+
+
+async def test_pii_rail_redacts_ssn() -> None:
+    # 123-45-6789 is Presidio's canonical sample SSN and is explicitly invalidated.
+    # Use a real non-sample value with a context word so score reaches 0.85 > 0.7.
+    rail = PiiRedactionRail()
+    decision = rail.check("My SSN is 579-34-7285, can you help?", {})
+    assert decision.outcome == "sanitize"
+    assert "US_SSN" in decision.details["pii_entities"]
+    assert "579-34-7285" not in decision.details["sanitized_content"]
+
+
+async def test_pii_rail_redacts_credit_card() -> None:
+    rail = PiiRedactionRail()
+    decision = rail.check("Please charge card 4111-1111-1111-1111", {})
+    assert decision.outcome == "sanitize"
+    assert "CREDIT_CARD" in decision.details["pii_entities"]
+
+
+async def test_pii_rail_passes_clean_financial_query() -> None:
+    rail = PiiRedactionRail()
+    decision = rail.check(
+        "What did Tim Cook say about Apple's gross margin in the Q3 2023 earnings call?", {}
+    )
+    assert decision.outcome == "pass"
+
+
+async def test_pii_rail_passes_filing_identifiers() -> None:
+    # SEC filing CIK numbers and CUSIP codes must not be redacted.
+    rail = PiiRedactionRail()
+    decision = rail.check(
+        "Fetch 10-K for CIK 0000320193. CUSIP 037833100.", {}
+    )
+    # These are not in the recognizer allowlist — should pass without redaction.
+    assert decision.outcome == "pass"
+
+
+async def test_pii_rail_sanitize_updates_message_in_adapter() -> None:
+    rail = PiiRedactionRail()
+    adapter = InputRailsAdapter(rails=[rail])
+    messages = [{"role": "user", "content": "My SSN is 579-34-7285"}]
+    out_messages, decisions = await adapter.run(messages)
+    assert decisions[0].outcome == "sanitize"
+    assert "579-34-7285" not in out_messages[0]["content"]
+
+
+async def test_pii_rail_fail_closed_via_adapter() -> None:
+    # side_effect must be on .analyze(), not on the mock itself.
+    mock_analyzer = MagicMock()
+    mock_analyzer.analyze.side_effect = RuntimeError("presidio unavailable")
+    pii_module._analyzer = mock_analyzer
+    adapter = InputRailsAdapter(rails=[PiiRedactionRail()])
+    _, decisions = await adapter.run([{"role": "user", "content": "hello"}])
+    pii_module._analyzer = None  # reset so it doesn't leak into subsequent tests
+    assert decisions[0].outcome == "error"
+
+
+async def test_pii_rail_fail_open_via_adapter() -> None:
+    mock_analyzer = MagicMock()
+    mock_analyzer.analyze.side_effect = RuntimeError("presidio unavailable")
+    pii_module._analyzer = mock_analyzer
+    adapter = InputRailsAdapter(rails=[PiiRedactionRail()])
+    adapter._on_failure["pii-redaction"] = "open"
+    _, decisions = await adapter.run([{"role": "user", "content": "hello"}])
+    pii_module._analyzer = None
+    assert decisions[0].outcome == "pass"
+    assert decisions[0].details.get("fail_open") is True

@@ -50,7 +50,10 @@ class PromptGuard2Rail(Rail):
             return RailDecision(
                 outcome="block",
                 reason="prompt injection detected",
-                details={"injection_probability": injection_prob, "threshold": _INJECTION_THRESHOLD},
+                details={
+                    "injection_probability": injection_prob,
+                    "threshold": _INJECTION_THRESHOLD,
+                },
             )
         return RailDecision(
             outcome="pass",
