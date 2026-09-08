@@ -46,7 +46,7 @@ Postgres driver changed from psycopg2-binary to `psycopg[binary]` (v3) to get na
 
 `SELECT COUNT(*) FROM golden_set` returns 150. `\d golden_set` shows six expected columns. All 8 pytest tests green.
 
-### Step 4 — FinQA-hallucination-detection ingestion (probe complete, implementation pending)
+### Step 4 — FinQA-hallucination-detection ingestion (complete)
 
 **Dataset path resolution.** The spec references "Sardana" as the author, but no dataset with that owner exists on the Hub. Hub search for "FinQA hallucination" returned three results:
 
@@ -81,18 +81,12 @@ No `id` column exists in the source.
 | `source` | `'finqa-halluc'` | constant |
 | `created_at` | `DEFAULT now()` | |
 
-**What remains for step 4.**
+**Implementation notes.**
 
-1. Write `finsentry/db/migrations/002_hallucination_bench.sql` with the seven-column schema above.
-2. Write `finsentry/ingestion/finqa_hallucination.py` using the confirmed mapping, psycopg v3, `ON CONFLICT (id) DO NOTHING`.
-3. Write `tests/ingestion/test_finqa_hallucination.py`: row count = 1657, schema column names and types via `information_schema.columns`, idempotency.
-4. Verify: `SELECT COUNT(*) FROM hallucination_bench` = 1657, `\d hallucination_bench` shows seven columns, `ruff check .` and `mypy finsentry/` clean, `pytest -x -q` green.
-5. Commit as one logical unit.
+Migration `002_hallucination_bench.sql` creates the seven-column table. `finqa_hallucination.py` maps fields inline: `id = sha256(query + llm_response).hexdigest()[:16]`, `is_hallucination = (is_correct == 0)`. Three tests pass: row count, schema names and types via `information_schema.columns`, idempotency.
 
-**Open questions and things to watch.**
+**Source deduplication finding.** The dataset has 1657 rows but six pairs share identical `(query, llm_response, is_correct)` — genuine duplicate records with agreeing labels. `ON CONFLICT DO NOTHING` correctly collapses them to 1651 unique rows. Test assertions reflect 1651.
 
-- The `sha256` import is from stdlib `hashlib` — no new dependency.
-- `is_correct` is `int64` not `bool`, so the inversion is `is_correct == 0` (or `not bool(is_correct)`) — either works. Confirm which the ingestion script should use before writing.
-- After step 4, two more Day 1 items remain: step 5 (SEC EDGAR filing ingestion for ten companies) and step 6 (verify coverage across all ten companies). Step 5 requires edgartools and the `EDGAR_IDENTITY` env var set to `"fin-sentry noreply@fin-sentry.local"`.
-- The ten companies for EDGAR ingestion: Apple (AAPL), Microsoft (MSFT), Nvidia (NVDA), Alphabet (GOOGL), Meta (META), Amazon (AMZN), JPMorgan Chase (JPM), Berkshire Hathaway (BRK-B), Tesla (TSLA), Walmart (WMT).
-- RisingWave playground heartbeat issue: if the container crashes during a long work session, restart it with `docker compose -f docker-compose.dev.yml restart risingwave`.
+`SELECT COUNT(*) FROM hallucination_bench` returns 1651. `\d hallucination_bench` shows seven columns. `ruff check .`, `mypy finsentry/`, and `pytest -x -q` (11 tests) all pass. Commit `d70f5df`.
+
+**Next: Step 5** — SEC EDGAR filing ingestion for ten companies (AAPL, MSFT, NVDA, GOOGL, META, AMZN, JPM, BRK-B, TSLA, WMT). Requires `edgartools` and `EDGAR_IDENTITY="fin-sentry noreply@fin-sentry.local"` in `.env`.
