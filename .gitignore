@@ -3,6 +3,9 @@ docs/internal/
 *.docx
 *.doc
 
+# Local diagnostic scripts — not part of the committed codebase
+scripts/
+
 # Python
 __pycache__/
 *.py[cod]

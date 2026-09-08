@@ -1,10 +1,10 @@
 [project]
 name = "fin-sentry"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.13,<3.14"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
@@ -14,7 +14,7 @@ select = ["E", "F", "I", "N", "W", "UP"]
 known-first-party = ["finsentry"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 
 [[tool.mypy.overrides]]
@@ -34,8 +34,8 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# numpy stubs use Python 3.12 `type` statement syntax, incompatible with mypy
-# targeting 3.11. This override prevents the stub-parse error from blocking analysis.
+# numpy stubs use Python 3.12+ `type` statement syntax; kept to suppress any
+# version-specific stub-parse errors that surface under future numpy releases.
 module = ["numpy", "numpy.*"]
 ignore_missing_imports = true
 

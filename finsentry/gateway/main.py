@@ -23,7 +23,7 @@ _adapter: InputRailsAdapter | None = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _adapter
     # Rails registered in cheapest-first order. Updated each build day.
     _adapter = InputRailsAdapter(rails=[
@@ -72,7 +72,7 @@ async def chat_completions(request: Request) -> Response:
         if k.lower() not in {"host", "content-length"}
     }
 
-    async def _stream() -> AsyncGenerator[bytes, None]:
+    async def _stream() -> AsyncGenerator[bytes]:
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 "POST",
