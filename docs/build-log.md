@@ -90,3 +90,5 @@ Migration `002_hallucination_bench.sql` creates the seven-column table. `finqa_h
 `SELECT COUNT(*) FROM hallucination_bench` returns 1651. `\d hallucination_bench` shows seven columns. `ruff check .`, `mypy finsentry/`, and `pytest -x -q` (11 tests) all pass. Commit `d70f5df`.
 
 **Next: Step 5** — SEC EDGAR filing ingestion for ten companies (AAPL, MSFT, NVDA, GOOGL, META, AMZN, JPM, BRK-B, TSLA, WMT). Requires `edgartools` and `EDGAR_IDENTITY="fin-sentry noreply@fin-sentry.local"` in `.env`.
+
+**Day 11 README reminder.** The Day 11 setup section must include `psql ... -c "CREATE DATABASE finsentry_test;"` (or `createdb finsentry_test` if the user's PATH includes the Postgres bin directory). Tests will fail on a fresh clone without it.
