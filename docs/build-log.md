@@ -89,6 +89,33 @@ Migration `002_hallucination_bench.sql` creates the seven-column table. `finqa_h
 
 `SELECT COUNT(*) FROM hallucination_bench` returns 1651. `\d hallucination_bench` shows seven columns. `ruff check .`, `mypy finsentry/`, and `pytest -x -q` (11 tests) all pass. Commit `d70f5df`.
 
-**Next: Step 5** — SEC EDGAR filing ingestion for ten companies (AAPL, MSFT, NVDA, GOOGL, META, AMZN, JPM, BRK-B, TSLA, WMT). Requires `edgartools` and `EDGAR_IDENTITY="fin-sentry noreply@fin-sentry.local"` in `.env`.
+### Step 5 — SEC EDGAR corpus ingestion with pgvector (complete)
 
-**Day 11 README reminder.** The Day 11 setup section must include `psql ... -c "CREATE DATABASE finsentry_test;"` (or `createdb finsentry_test` if the user's PATH includes the Postgres bin directory). Tests will fail on a fresh clone without it.
+**Infrastructure changes.** Postgres image switched from `postgres:16` to `pgvector/pgvector:0.8.6-pg16` (pinned; digest matches the `:pg16` floating tag). Collation version mismatch warning from the image change resolved with `ALTER DATABASE ... REFRESH COLLATION VERSION`. mypy target bumped from 3.11 to 3.12 because numpy 2.x stubs use Python 3.12 `type` statement syntax. Dependencies added: `sentence-transformers`, `pgvector>=0.3.0`, `langchain-text-splitters`, `tiktoken`, `tenacity`.
+
+**Migration 003.** Enables `vector` extension, creates `corpus` table (12 columns), btree index on `(ticker, filing_type)`, HNSW cosine-distance index on `embedding` (pgvector 0.8.6 supports HNSW).
+
+**Ingestion script `sec_edgar.py`.** EDGAR_IDENTITY validated at `ingest()` entry. edgartools `Company.get_filings(form=type)[:N]` to slice per-type. `document.markdown()` for text with fallback to `document.text()`. `RecursiveCharacterTextSplitter` with cl100k_base at 800/100 tokens. bge-small-en-v1.5 embeddings in batches of 32 (model cached at module level). Content-hash id `sha256(ticker\x00accession\x00chunk_index)[:16]`. Inserts in batches of 500 with `ON CONFLICT DO NOTHING`. tenacity retry (3 attempts, exponential backoff) per filing download. `register_vector(conn)` called per connection for psycopg3 vector type mapping.
+
+**Test database migration path.** `finsentry_test` receives migration 003 via the conftest session fixture on the next `pytest` run. No separate migration step needed.
+
+**Pre-existing gateway test bug found and fixed (separate commit `e08036d`).** `main.py` calls `load_dotenv()` at module top, so tests importing the gateway picked up `DOWNSTREAM_URL` from `.env`. The without-downstream 503 test then tried to connect to `http://localhost:11434` instead of hitting the guard. Fixed by patching `_DOWNSTREAM_URL` to `""` inside the test.
+
+**Full-corpus verification.** All ten tickers ingested, all three filing types, filing counts match spec (2 × 10-K, 4 × 10-Q, 20 × 8-K per ticker).
+
+| ticker | 10-K chunks | 10-Q chunks | 8-K chunks |
+|--------|-------------|-------------|------------|
+| AAPL   | 166         | 137         | 44         |
+| MSFT   | 251         | 343         | 44         |
+| NVDA   | 239         | 244         | 48         |
+| GOOGL  | 262         | 315         | 68         |
+| META   | 346         | 525         | 50         |
+| AMZN   | 210         | 289         | 51         |
+| JPM    | 1149        | 1581        | 57         |
+| BRK-B  | 436         | 400         | 54         |
+| TSLA   | 196         | 218         | 47         |
+| WMT    | 264         | 230         | 55         |
+
+Total: **8,319 chunks**. JPMorgan and Berkshire are large filers — financial services 10-Ks and 10-Qs are far longer than tech filings. All chunks are in the 20-to-200 range per filing. `pytest -x -q` (14 tests) green. `ruff check .` and `mypy finsentry/` clean. Commits `5709435` (Step 5 code) and `e08036d` (gateway fix).
+
+**Day 11 README reminder.** Setup section must include `psql ... -c "CREATE DATABASE finsentry_test;"`. Tests fail on a fresh clone without it.
