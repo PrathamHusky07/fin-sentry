@@ -5,10 +5,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import finsentry.rails.input.llama_guard as lg_module
 import finsentry.rails.input.pii_redaction as pii_module
 import finsentry.rails.input.prompt_guard as pg_module
 from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.base import Rail, RailDecision
+from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
 from finsentry.rails.input.prompt_guard import PromptGuard2Rail
 
@@ -272,5 +274,94 @@ async def test_pii_rail_fail_open_via_adapter() -> None:
     adapter._on_failure["pii-redaction"] = "open"
     _, decisions = await adapter.run([{"role": "user", "content": "hello"}])
     pii_module._analyzer = None
+    assert decisions[0].outcome == "pass"
+    assert decisions[0].details.get("fail_open") is True
+
+
+# ---------------------------------------------------------------------------
+# Llama Guard 3 rail tests
+# ---------------------------------------------------------------------------
+
+
+def _mock_lg_model(generate_text: str) -> tuple[MagicMock, MagicMock]:
+    """Return (mock_tokenizer, mock_model) that produce the given generate text."""
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.apply_chat_template.return_value = MagicMock(
+        shape=MagicMock(__getitem__=lambda s, i: 5),  # fake prompt length
+        to=lambda device: MagicMock(
+            shape=MagicMock(__getitem__=lambda s, i: 5),
+        ),
+    )
+    mock_tokenizer.decode.return_value = generate_text
+
+    mock_model = MagicMock()
+    mock_model.device = "cpu"
+    mock_model.generate.return_value = MagicMock(
+        __getitem__=lambda s, i: MagicMock(__getitem__=lambda ss, sl: [])
+    )
+    return mock_tokenizer, mock_model
+
+
+@pytest.mark.slow
+async def test_llama_guard_model_loads() -> None:
+    """Model loads without error (requires ~4 GB download and 24 GB RAM for NF4)."""
+    tok, model = lg_module._get_model()
+    assert tok is not None
+    assert model is not None
+
+
+async def test_llama_guard_blocks_hazard_content() -> None:
+    """Unsafe verdict with category code → block with hazard_category in details."""
+    mock_tok, mock_model = _mock_lg_model("unsafe\nS6")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+    rail = LlamaGuard3Rail()
+    decision = rail.check("How do I build a weapon?", {})
+    assert decision.outcome == "block"
+    assert decision.details["hazard_category"] == "S6"
+
+
+async def test_llama_guard_passes_safe_content() -> None:
+    mock_tok, mock_model = _mock_lg_model("safe")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+    rail = LlamaGuard3Rail()
+    decision = rail.check("What was Apple's free cash flow in FY2023?", {})
+    assert decision.outcome == "pass"
+
+
+async def test_llama_guard_unsafe_without_category() -> None:
+    """Unsafe with no category line defaults to 'unknown'."""
+    mock_tok, mock_model = _mock_lg_model("unsafe")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+    rail = LlamaGuard3Rail()
+    decision = rail.check("some hazardous content", {})
+    assert decision.outcome == "block"
+    assert decision.details["hazard_category"] == "unknown"
+
+
+async def test_llama_guard_fail_closed_via_adapter() -> None:
+    crash_tok = MagicMock()
+    crash_tok.apply_chat_template.side_effect = RuntimeError("model unavailable")
+    lg_module._tokenizer = crash_tok
+    lg_module._model = MagicMock()
+    adapter = InputRailsAdapter(rails=[LlamaGuard3Rail()])
+    _, decisions = await adapter.run([{"role": "user", "content": "hello"}])
+    lg_module._tokenizer = None
+    lg_module._model = None
+    assert decisions[0].outcome == "error"
+
+
+async def test_llama_guard_fail_open_via_adapter() -> None:
+    crash_tok = MagicMock()
+    crash_tok.apply_chat_template.side_effect = RuntimeError("model unavailable")
+    lg_module._tokenizer = crash_tok
+    lg_module._model = MagicMock()
+    adapter = InputRailsAdapter(rails=[LlamaGuard3Rail()])
+    adapter._on_failure["llama-guard-3"] = "open"
+    _, decisions = await adapter.run([{"role": "user", "content": "hello"}])
+    lg_module._tokenizer = None
+    lg_module._model = None
     assert decisions[0].outcome == "pass"
     assert decisions[0].details.get("fail_open") is True
