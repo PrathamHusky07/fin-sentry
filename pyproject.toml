@@ -43,3 +43,6 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "slow: marks tests that download or load large models (deselect with -m 'not slow')",
+]

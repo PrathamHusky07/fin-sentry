@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from finsentry.gateway.rails import InputRailsAdapter
+from finsentry.rails.input.prompt_guard import PromptGuard2Rail
 
 load_dotenv()
 
@@ -22,8 +23,10 @@ _adapter: InputRailsAdapter | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _adapter
-    # Rails are registered here as they are added across build days.
-    _adapter = InputRailsAdapter(rails=[])
+    # Rails registered in cheapest-first order. Updated each build day.
+    _adapter = InputRailsAdapter(rails=[
+        PromptGuard2Rail(),  # 20-50 ms, CPU fp32
+    ])
     yield
 
 
