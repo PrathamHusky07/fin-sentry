@@ -18,7 +18,7 @@ services:
       start_period: 10s
 
   redpanda:
-    image: redpandadata/redpanda:latest
+    image: redpandadata/redpanda:v26.2.2
     container_name: finsentry-redpanda
     command:
       - redpanda
@@ -41,7 +41,7 @@ services:
       start_period: 30s
 
   risingwave:
-    image: risingwavelabs/risingwave:latest
+    image: risingwavelabs/risingwave:v3.0.3
     container_name: finsentry-risingwave
     command: playground
     ports:
