@@ -1,5 +1,41 @@
 # Build Log
 
+## 2026-09-08 — Day 2 (complete)
+
+Three input rails behind NeMo Guardrails, cheapest-first sequencing, OTel spans per rail. 41/41 tests green (2 `@pytest.mark.slow` model-load tests require HuggingFace download and skipped in CI with `-m "not slow"`). ruff and mypy strict clean throughout.
+
+### Commits
+
+- `3120bb5` align guardrails skill with revised retrieval-rail semantics (retrieval rail = pre-generation injection/PII/source-trust checks on chunks; post-generation Faithfulness lives in output rails)
+- `6a5b902` add rail adapter, OTel setup, and NeMo wiring for Day 2
+- `4e905e6` add Prompt Guard 2 input rail for prompt injection detection
+- `a100b46` add Presidio PII redaction input rail
+- `191d2a0` add Llama Guard 3 8B input rail for hazard taxonomy classification
+
+### Architecture
+
+`InputRailsAdapter` in `finsentry/gateway/rails.py` owns all sequencing. Gateway route calls the adapter; adapter calls rails directly in order; NeMo instance is stored for future MCP audit surface on Day 7. Per-rail `on_failure` config in `config/rails.yml` controls fail-open vs. fail-closed behavior at runtime; all three rails default to fail-closed. OTel emits one span per rail with attributes `rail.name`, `rail.layer`, `rail.decision`, `rail.latency_ms` via `SimpleSpanProcessor` (not Batch, which triggers I/O-on-closed-file during pytest teardown).
+
+### Rail 1 — Prompt Guard 2 86M
+
+`meta-llama/Prompt-Guard-2-86M`, `text-classification` pipeline, fp32 on CPU (DeBERTa-v3 has numerical drift on some MPS builds). Threshold 0.5 on injection probability. Pipeline returns top-label score, not injection probability directly: when top label is BENIGN, `injection_prob = 1.0 - score`. Key bug found and fixed during implementation: storing `score` directly when top label is BENIGN gave `injection_prob = 0.99` for a clean query, which would block it. The correct value is `0.01`.
+
+### Rail 2 — Presidio PII redaction
+
+Five pattern recognizers only: US_SSN, CREDIT_CARD, EMAIL_ADDRESS, PHONE_NUMBER, US_BANK_NUMBER, IBAN_CODE. PERSON excluded: public figures in finance queries (executives, analysts) must not be redacted or RAG retrieval on the corpus breaks. This lets us use `en_core_web_sm` (~50 MB) instead of `en_core_web_lg` (~750 MB) since no NER is needed. Confidence threshold 0.7 (default is 0.5; raised to prevent false positives on CIK numbers and CUSIP codes). SSN context-word boosting: base pattern score 0.5, context words "ssn"/"social"/"security" boost to 0.85 -- tests must include a context word and must not use `123-45-6789` (Presidio's canonical invalidated sample). Outcome is `sanitize` (not `block`) -- the redacted text flows downstream. The adapter propagates sanitized content to subsequent rails.
+
+### Rail 3 — Llama Guard 3 8B
+
+`meta-llama/Llama-Guard-3-8B`, NF4 4-bit quantization via `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.float16)`, `device_map="auto"`. NF4 over int8: Day 5 adds three frontier judges; the memory budget (24 GB unified RAM) does not fit int8 for all five models. NF4 buys ~4 GB headroom at ~2 percentage point cost on Meta's hazard taxonomy eval, invisible for finance-domain traffic. Output parsing handles `"safe"` and `"unsafe\nS<N>"` formats; category defaults to `"unknown"` when the category line is absent. Decodes only newly generated tokens by slicing `output[0][input_ids.shape[-1]:]`.
+
+### NeMo Python 3.14 incompatibility
+
+NeMo 0.10.x imports LangChain's `Chain` class which uses `Optional[dict[str, Any]]` annotations that Python 3.14 cannot evaluate at import time (`TypeError: 'function' object is not subscriptable`). `_init_nemo()` wraps the import in try/except; adapter continues with `self._nemo = None` and logs a warning. `RailsConfig.from_content()` and `register_action()` actually succeed -- only the Colang runtime raises. Fix options: wait for NeMo to update, or pin Python to 3.12 for Day 7 MCP work.
+
+### Day 3 plan
+
+Reference RAG endpoint over the SEC EDGAR corpus, exposing the retrieval-generation boundary. Retrieval rail (indirect prompt injection detection on chunks, PII scan, source-trust checks). Output rails with Guardrails AI + RAGAS Faithfulness. Circuit breaker with 20-second timeout on RAG endpoint calls.
+
 ## 2026-09-07/08 — Day 1 (complete)
 
 All five steps done. Step 1 (`da88a3b`): FastAPI gateway skeleton with health and proxy endpoints. Step 2 (`515f23e`): Docker Compose stack — Postgres, Redpanda v26.2.2, RisingWave v3.0.3, all pinned and healthy. Step 3 (`e546b07`): FinanceBench 150 rows into `golden_set`. Step 4 (`d70f5df`, `f01226a`, `6163b9e`): FinQA-hallucination-detection 1651 unique rows into `hallucination_bench` (1657 source rows, 6 exact-duplicate pairs correctly collapsed), with null-byte hash separator, `EXPECTED_RECORD_COUNT` constant, and tests isolated to `finsentry_test`. Step 5 (`5709435`, `0e8ae10`): SEC EDGAR corpus — 8,319 chunks across all ten tickers (AAPL 166/137/44, MSFT 251/343/44, NVDA 239/244/48, GOOGL 262/315/68, META 346/525/50, AMZN 210/289/51, JPM 1149/1581/57, BRK-B 436/400/54, TSLA 196/218/47, WMT 264/230/55; columns are 10-K/10-Q/8-K chunks) stored in pgvector with HNSW cosine index, bge-small-en-v1.5 384-dim embeddings. Pre-existing gateway test bug caught and fixed (`e08036d`): `load_dotenv()` at module top caused `DOWNSTREAM_URL` from `.env` to leak into tests. 14/14 pytest green, ruff and mypy clean throughout.
