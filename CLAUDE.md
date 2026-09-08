@@ -193,7 +193,7 @@ When in doubt, ask. A five-second question saves an hour of unwinding.
 - Do not add features not requested. No dark mode toggle. No i18n. No CMS. No auth flows beyond the API-key auth for the deployed demo on Day 11. No user accounts. No admin panel.
 - Do not install a UI kit that bundles more than what is used.
 - Do not add state management libraries. The frontend does not need Redux, Zustand, or Jotai for this scope.
-- Do not touch `docs/internal/`. That is the private planning material.
+- Do not touch `docs/internal/`. That directory holds the spec `.docx` only and is gitignored. The committed build log lives at `docs/build-log.md`.
 - Do not commit `.env*`, `.vercel/`, `node_modules/`, virtual environments, `.claude/settings.local.json`, dataset files, or experiment output data.
 - Do not add AI-attribution to commit messages.
 - Do not use `any` in TypeScript.
@@ -212,4 +212,4 @@ If I ask for one of these mid-build, remind me they are out of scope and confirm
 - Prefer editing existing files over creating new ones. Do not create a new module when an existing one can take a parameter.
 - When a decision has a real tradeoff, present both options briefly, recommend one, and proceed after I confirm.
 - If you catch yourself writing more than two hundred lines for a single component or module, stop and split.
-- End of each build day, produce a one-paragraph summary of what got built, what got skipped, and what needs to happen first thing tomorrow. Update `docs/internal/build-log.md` with one dated entry per day. Keep it short.
+- End of each build day, produce a one-paragraph summary of what got built, what got skipped, and what needs to happen first thing tomorrow. Update `docs/build-log.md` with one dated entry per day. Keep it short.
