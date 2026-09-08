@@ -7,6 +7,11 @@ import psycopg
 from datasets import load_dataset
 from dotenv import load_dotenv
 
+# Cleanlab/FinQA-hallucination-detection has 1657 source rows, but 6 pairs
+# share identical (query, llm_response) with agreeing labels. Content-hash
+# dedup via ON CONFLICT DO NOTHING yields 1651 unique records.
+EXPECTED_RECORD_COUNT = 1651
+
 _INSERT = """
 INSERT INTO hallucination_bench (id, question, context, response, is_hallucination)
 VALUES (%s, %s, %s, %s, %s)
@@ -21,7 +26,7 @@ def ingest(database_url: str) -> None:
     rows = [
         (
             hashlib.sha256(
-                (str(row["query"]) + str(row["llm_response"])).encode()
+                f"{row['query']}\x00{row['llm_response']}".encode()
             ).hexdigest()[:16],
             str(row["query"]),
             str(row["context"]),

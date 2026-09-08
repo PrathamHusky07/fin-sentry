@@ -6,7 +6,7 @@ import psycopg
 import pytest
 
 from finsentry.db.migrate import run as run_migrations
-from finsentry.ingestion.finqa_hallucination import ingest
+from finsentry.ingestion.finqa_hallucination import EXPECTED_RECORD_COUNT, ingest
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/finsentry")
 
@@ -30,12 +30,10 @@ def _setup() -> None:
 
 
 def test_row_count() -> None:
-    # Source has 1657 rows but 6 pairs share identical (query, llm_response) with the same label.
-    # Content-hash deduplication via ON CONFLICT DO NOTHING yields 1651 unique records.
     with psycopg.connect(DATABASE_URL) as conn:
         result = conn.execute("SELECT COUNT(*) FROM hallucination_bench").fetchone()
     assert result is not None
-    assert result[0] == 1651
+    assert result[0] == EXPECTED_RECORD_COUNT
 
 
 def test_schema_columns_and_types() -> None:
@@ -53,4 +51,4 @@ def test_idempotent_reingest() -> None:
     with psycopg.connect(DATABASE_URL) as conn:
         result = conn.execute("SELECT COUNT(*) FROM hallucination_bench").fetchone()
     assert result is not None
-    assert result[0] == 1651
+    assert result[0] == EXPECTED_RECORD_COUNT
