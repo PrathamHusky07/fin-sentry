@@ -1,6 +1,8 @@
 # Build Log
 
-## 2026-09-07/08 — Day 1 (steps 1–4 complete; step 5 code complete, full-corpus ingestion pending; step 6 pending)
+## 2026-09-07/08 — Day 1 (complete)
+
+All five steps done. Step 1 (`da88a3b`): FastAPI gateway skeleton with health and proxy endpoints. Step 2 (`515f23e`): Docker Compose stack — Postgres, Redpanda v26.2.2, RisingWave v3.0.3, all pinned and healthy. Step 3 (`e546b07`): FinanceBench 150 rows into `golden_set`. Step 4 (`d70f5df`, `f01226a`, `6163b9e`): FinQA-hallucination-detection 1651 unique rows into `hallucination_bench` (1657 source rows, 6 exact-duplicate pairs correctly collapsed), with null-byte hash separator, `EXPECTED_RECORD_COUNT` constant, and tests isolated to `finsentry_test`. Step 5 (`5709435`, `0e8ae10`): SEC EDGAR corpus — 8,319 chunks across all ten tickers (AAPL 166/137/44, MSFT 251/343/44, NVDA 239/244/48, GOOGL 262/315/68, META 346/525/50, AMZN 210/289/51, JPM 1149/1581/57, BRK-B 436/400/54, TSLA 196/218/47, WMT 264/230/55; columns are 10-K/10-Q/8-K chunks) stored in pgvector with HNSW cosine index, bge-small-en-v1.5 384-dim embeddings. Pre-existing gateway test bug caught and fixed (`e08036d`): `load_dotenv()` at module top caused `DOWNSTREAM_URL` from `.env` to leak into tests. 14/14 pytest green, ruff and mypy clean throughout.
 
 ### Commits this session
 
