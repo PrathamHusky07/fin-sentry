@@ -1,6 +1,6 @@
 # Build Log
 
-## 2026-09-07 — Day 1 (partial: steps 1, 2, and 3 of 6 complete; step 4 probe complete, implementation pending)
+## 2026-09-07/08 — Day 1 (steps 1–4 complete; step 5 code complete, full-corpus ingestion pending; step 6 pending)
 
 ### Commits this session
 

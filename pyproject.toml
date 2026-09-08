@@ -14,11 +14,23 @@ select = ["E", "F", "I", "N", "W", "UP"]
 known-first-party = ["finsentry"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["edgar.*", "datasets.*"]
+module = [
+    "edgar.*",
+    "datasets.*",
+    "sentence_transformers.*",
+    "langchain_text_splitters.*",
+    "pgvector.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# numpy stubs use Python 3.12 `type` statement syntax, incompatible with mypy
+# targeting 3.11. This override prevents the stub-parse error from blocking analysis.
+module = ["numpy", "numpy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
