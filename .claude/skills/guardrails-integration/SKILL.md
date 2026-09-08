@@ -1,6 +1,6 @@
 ---
 name: guardrails-integration
-description: "Follow this pattern when adding a new rail to the gateway, modifying an existing rail's failure behavior, or changing how the rail stack emits trace events. Triggers on any work in the gateway rail pipeline including input rails (Llama Prompt Guard 2, Presidio, Llama Guard 3), the retrieval rail (RAGAS Faithfulness before generation), and the output rails (Guardrails AI schema enforcement, post-generation groundedness check). Also triggers when touching the NeMo Guardrails orchestration layer or the OpenTelemetry span emission for rail decisions."
+description: "Follow this pattern when adding a new rail to the gateway, modifying an existing rail's failure behavior, or changing how the rail stack emits trace events. Triggers on any work in the gateway rail pipeline including input rails (Llama Prompt Guard 2, Presidio, Llama Guard 3), the retrieval rail (indirect prompt injection detection, PII scan, source-trust and context-policy checks on retrieved chunks), and the output rails (Guardrails AI schema enforcement, post-generation RAGAS Faithfulness groundedness check). Also triggers when touching the NeMo Guardrails orchestration layer or the OpenTelemetry span emission for rail decisions."
 ---
 
 # Guardrails integration pattern
@@ -13,7 +13,7 @@ The gateway has three distinct rail layers. Know which one you are working in be
 
 **Input rails** run on the incoming request before anything else happens. The order is Llama Prompt Guard 2 first (cheapest, 20 to 50 ms), then Presidio for PII redaction, then Llama Guard 3 for hazard classification. Each can block or sanitize.
 
-**The retrieval rail** runs between retrieval and generation. It is a single rail. It takes the retrieved chunks and the intended answer path and computes RAGAS Faithfulness against them. If the faithfulness score falls below the configured threshold, the rail blocks or flags the generation before it happens. This is the layer that catches indirect prompt injection buried inside retrieved chunks.
+**The retrieval rail** runs between retrieval and generation. It is a single rail. It takes the retrieved chunks and inspects them for security and policy threats before the language model sees them: indirect prompt injection embedded in retrieved documents, PII leaking through the retrieval layer, low-trust or out-of-policy sources, and off-topic context the retriever should not have returned. These are threats the input rails structurally cannot see, because the adversarial content came from a document the retriever pulled, not from the user. The retrieval rail does not compute Faithfulness. Faithfulness requires a generated response to measure against, so it cannot run here. It lives in the output rails.
 
 **Output rails** run on the generated response before it returns to the caller. Guardrails AI enforces the response schema and applies the FINRA phrase blocklist. A post-generation groundedness check re-runs Faithfulness on the actual generated response.
 
@@ -25,7 +25,7 @@ Every rail, regardless of layer, exposes the same interface. When you write a ne
 
 **One. A `name` attribute.** A short lowercase string, hyphen-separated. Used in the trace event and the dashboard. Must be unique across the platform.
 
-**Two. A `check(request_or_response, context)` method.** Returns a `RailDecision` object with three fields. `outcome` is one of `pass`, `block`, `sanitize`, or `error`. `reason` is a short human-readable string. `details` is a dictionary the dashboard can render, containing whatever numeric or structured evidence the rail produced. For a classifier this is `{"score": 0.87, "threshold": 0.5}`. For Presidio this is `{"pii_entities": ["EMAIL_ADDRESS", "PHONE_NUMBER"]}`. For Faithfulness this is `{"faithfulness": 0.42, "unsupported_claims": ["..."]}`.
+**Two. A `check(request_or_response, context)` method.** Returns a `RailDecision` object with three fields. `outcome` is one of `pass`, `block`, `sanitize`, or `error`. `reason` is a short human-readable string. `details` is a dictionary the dashboard can render, containing whatever numeric or structured evidence the rail produced. For a classifier this is `{"score": 0.87, "threshold": 0.5}`. For Presidio this is `{"pii_entities": ["EMAIL_ADDRESS", "PHONE_NUMBER"]}`. For the retrieval rail's injection detector this is `{"injection_detected": true, "flagged_chunks": [0, 2]}`. For the output-rail Faithfulness check this is `{"faithfulness": 0.42, "unsupported_claims": ["...]}`.
 
 **Three. An explicit `on_failure` configuration.** Every rail declares whether it fails closed or fails open when the rail's own machinery fails (model unreachable, library exception). The default for the finance domain is fail-closed. Fail-open is allowed per-rail with an explicit configuration entry. The `RailDecision.outcome` for a failure is `error`, not `pass` or `block`. The fail-open versus fail-closed logic decides what the caller does with the `error` outcome.
 
