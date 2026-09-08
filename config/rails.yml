@@ -1,0 +1,8 @@
+rails:
+  input:
+    prompt-guard-2:
+      on_failure: closed
+    pii-redaction:
+      on_failure: closed
+    llama-guard-3:
+      on_failure: closed

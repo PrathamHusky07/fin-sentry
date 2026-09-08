@@ -1,18 +1,33 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from finsentry.gateway.rails import InputRailsAdapter
+
 load_dotenv()
 
-app = FastAPI(title="fin-sentry gateway")
-
 _DOWNSTREAM_URL: str = os.getenv("DOWNSTREAM_URL", "")
+_adapter: InputRailsAdapter | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    global _adapter
+    # Rails are registered here as they are added across build days.
+    _adapter = InputRailsAdapter(rails=[])
+    yield
+
+
+app = FastAPI(title="fin-sentry gateway", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -25,7 +40,25 @@ async def chat_completions(request: Request) -> Response:
     if not _DOWNSTREAM_URL:
         return JSONResponse({"error": "DOWNSTREAM_URL not configured"}, status_code=503)
 
-    body = await request.body()
+    body_json: dict[str, Any] = await request.json()
+    messages: list[dict[str, Any]] = body_json.get("messages", [])
+
+    if _adapter is not None:
+        messages, decisions = await _adapter.run(messages)
+        blocked = next((d for d in decisions if d.outcome in ("block", "error")), None)
+        if blocked is not None:
+            status = 503 if blocked.outcome == "error" else 400
+            return JSONResponse(
+                {
+                    "error": "request blocked by input rail",
+                    "rail": blocked.reason,
+                    "details": blocked.details,
+                },
+                status_code=status,
+            )
+        body_json = {**body_json, "messages": messages}
+
+    body = json.dumps(body_json).encode()
     forward_headers = {
         k: v
         for k, v in request.headers.items()

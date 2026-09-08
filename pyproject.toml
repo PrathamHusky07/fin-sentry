@@ -24,6 +24,12 @@ module = [
     "sentence_transformers.*",
     "langchain_text_splitters.*",
     "pgvector.*",
+    "nemoguardrails.*",
+    "presidio_analyzer.*",
+    "presidio_anonymizer.*",
+    "spacy.*",
+    "bitsandbytes.*",
+    "accelerate.*",
 ]
 ignore_missing_imports = true
 
