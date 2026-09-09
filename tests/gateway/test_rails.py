@@ -382,11 +382,22 @@ async def test_fail_closed_blocks_on_rail_crash(pg_module_restored: Any) -> None
     assert status == RailStatus.BLOCKED
 
 
-async def test_fail_open_passes_through_on_rail_crash(pg_module_restored: Any) -> None:
-    """Rail exception with on_failure=open → PASSED (fail-open lets request through)."""
+async def test_fail_open_passes_through_on_rail_crash(
+    pg_module_restored: Any, tmp_path: Any
+) -> None:
+    """Rail exception with on_failure=open → PASSED (fail-open lets request through).
+
+    Uses the supported config_path mechanism rather than mutating adapter._on_failure.
+    """
     from nemoguardrails.rails.llm.options import RailStatus
 
     pg_module._pipeline = MagicMock(side_effect=RuntimeError("model unavailable"))
+
+    # Write a minimal rails config with prompt-guard-2 set to fail-open.
+    rails_config = tmp_path / "rails.yml"
+    rails_config.write_text(
+        "rails:\n  input:\n    prompt-guard-2:\n      on_failure: open\n"
+    )
 
     with patch.object(
         PiiRedactionRail,
@@ -398,9 +409,9 @@ async def test_fail_open_passes_through_on_rail_crash(pg_module_restored: Any) -
         return_value=RailDecision(outcome="pass", reason="ok", details={}),
     ):
         adapter = InputRailsAdapter(
-            rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+            rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()],
+            config_path=rails_config,
         )
-        adapter._on_failure["prompt-guard-2"] = "open"
         _, status, _, _ = await adapter.run([{"role": "user", "content": "hello"}])
 
     assert status == RailStatus.PASSED
@@ -444,7 +455,7 @@ async def test_adapter_init_raises_on_invalid_colang_path() -> None:
     """Constructor propagates NeMo init failure instead of returning silently."""
     from pathlib import Path
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         InputRailsAdapter(rails=[], colang_path=Path("/nonexistent/colang/path"))
 
 
