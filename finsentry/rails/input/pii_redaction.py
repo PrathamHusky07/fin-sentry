@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from presidio_anonymizer.entities import OperatorConfig
+
 from finsentry.rails.base import Rail, RailDecision
 
 _CONFIDENCE_THRESHOLD = 0.7  # Default Presidio threshold is 0.5; 0.7 prevents
@@ -23,6 +25,12 @@ _ENTITY_TYPES = [
     "US_BANK_NUMBER",
     "IBAN_CODE",
 ]
+
+# Built once at import time — same config for every call.
+_OPERATORS: dict[str, Any] = {
+    entity: OperatorConfig("replace", {"new_value": f"<REDACTED_{entity}>"})
+    for entity in _ENTITY_TYPES
+}
 
 # Module-level cache for the analyzer and anonymizer.
 _analyzer: Any = None
@@ -87,16 +95,10 @@ class PiiRedactionRail(Rail):
         if not results:
             return RailDecision(outcome="pass", reason="no PII detected", details={})
 
-        from presidio_anonymizer.entities import OperatorConfig
-
-        operators = {
-            entity: OperatorConfig("replace", {"new_value": f"<REDACTED_{entity}>"})
-            for entity in _ENTITY_TYPES
-        }
         anonymized = anonymizer.anonymize(
             text=content,
             analyzer_results=results,
-            operators=operators,
+            operators=_OPERATORS,
         )
 
         detected = sorted({r.entity_type for r in results})
