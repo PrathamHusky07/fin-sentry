@@ -133,9 +133,9 @@ class InputRailsAdapter:
                     latency_ms = round((time.monotonic() - t0) * 1000, 2)
                     span.set_attribute("rail.decision", decision.outcome)
                     span.set_attribute("rail.latency_ms", latency_ms)
-                    if "injection_probability" in decision.details:
+                    if "malicious_probability" in decision.details:
                         span.set_attribute(
-                            "rail.confidence", decision.details["injection_probability"]
+                            "rail.confidence", decision.details["malicious_probability"]
                         )
                 return _decision_to_outcome(
                     decision, on_failure.get("prompt-guard-2", "closed")
