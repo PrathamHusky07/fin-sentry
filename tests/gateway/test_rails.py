@@ -213,7 +213,7 @@ async def test_pii_rail_passes_filing_identifiers() -> None:
 
 @pytest.mark.slow
 async def test_llama_guard_model_loads() -> None:
-    """Model loads without error (requires ~4 GB download and 24 GB RAM for NF4)."""
+    """Model loads without error (requires ~2 GB download; bfloat16 on MPS or CPU)."""
     tok, model = lg_module._get_model()
     assert tok is not None
     assert model is not None

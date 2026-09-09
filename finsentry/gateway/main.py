@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         rails=[
             PromptGuard2Rail(),  # 20-50 ms, CPU fp32
             PiiRedactionRail(),  # 30-80 ms, pattern recognizers only
-            LlamaGuard3Rail(),  # 500-1500 ms, 8B NF4 quantized
+            LlamaGuard3Rail(),  # 200-800 ms, 1B bfloat16
         ]
     )
     yield

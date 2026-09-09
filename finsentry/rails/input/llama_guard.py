@@ -1,21 +1,18 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from finsentry.rails.base import Rail, RailDecision
 
-_MODEL_ID = "meta-llama/Llama-Guard-3-8B"
+# Llama Guard 3 1B in bfloat16 is the deployed hazard classifier. The 8B NF4
+# alternative was evaluated (Meta's English F1 0.939 vs 1B's 0.899; FPR 0.040
+# vs 0.090) but requires CUDA-backed NF4 quantization that is out of scope
+# under the project's zero-cost constraint. See
+# docs/adr/002-llama-guard-model-choice.md for the full decision record.
+_MODEL_ID = "meta-llama/Llama-Guard-3-1B"
 
-# NF4 over int8: the memory budget for Day 5 (three frontier judges plus two
-# input classifiers plus embeddings plus Docker plus OS) does not fit on 24 GB
-# at int8. NF4 loses ~2 percentage points on Meta's hazard-taxonomy evaluation,
-# invisible for finance-domain traffic where the hazard rate is under 1%, and
-# buys ~4 GB of headroom.
-_QUANTIZATION_CONFIG: dict[str, Any] = {
-    "load_in_4bit": True,
-    "bnb_4bit_quant_type": "nf4",
-    "bnb_4bit_compute_dtype": "float16",
-}
+log = logging.getLogger(__name__)
 
 # Module-level cache for the tokenizer and model.
 _tokenizer: Any = None
@@ -26,20 +23,16 @@ def _get_model() -> tuple[Any, Any]:
     global _tokenizer, _model
     if _tokenizer is None or _model is None:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        quant_config = BitsAndBytesConfig(  # type: ignore[no-untyped-call]
-            load_in_4bit=_QUANTIZATION_CONFIG["load_in_4bit"],
-            bnb_4bit_quant_type=_QUANTIZATION_CONFIG["bnb_4bit_quant_type"],
-            bnb_4bit_compute_dtype=getattr(torch, _QUANTIZATION_CONFIG["bnb_4bit_compute_dtype"]),
-        )
         _tokenizer = AutoTokenizer.from_pretrained(_MODEL_ID)
         _model = AutoModelForCausalLM.from_pretrained(
             _MODEL_ID,
-            quantization_config=quant_config,
+            dtype=torch.bfloat16,
             device_map="auto",
         )
         _model.eval()
+        log.info("Llama Guard loaded: %s", _model.config._name_or_path)
     return _tokenizer, _model
 
 
@@ -58,7 +51,14 @@ def _parse_verdict(output: str) -> tuple[str, str | None]:
 
 
 class LlamaGuard3Rail(Rail):
-    """Input rail: classifies requests against Meta's hazard taxonomy via Llama Guard 3 8B NF4."""
+    """Input rail: classifies requests against Meta's hazard taxonomy via Llama Guard 3 1B.
+
+    Uses meta-llama/Llama-Guard-3-1B in bfloat16. The 8B NF4 alternative
+    achieves F1 0.939 vs 1B's 0.899 on Meta's English hazard benchmark and
+    halves the false-positive rate, but requires CUDA-backed NF4 quantization
+    that is out of scope under the zero-cost constraint. See
+    docs/adr/002-llama-guard-model-choice.md.
+    """
 
     name = "llama-guard-3"
     layer = "input"
