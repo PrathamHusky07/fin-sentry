@@ -238,20 +238,53 @@ class InputRailsAdapter:
     async def run(
         self, messages: list[dict[str, Any]]
     ) -> tuple[str, object, str | None, object]:
-        """Route messages through NeMo check_async.
+        """Route each user message through NeMo check_async independently.
 
         Returns (content, RailStatus, rail_name, ExplainInfo).
         rail_name is the name of the blocking rail on BLOCKED, None otherwise.
         Raises AdapterUnavailableError on NeMo engine failure.
+
+        Each user message is scanned as a single-turn call so NeMo's
+        context["user_message"] is set correctly for every turn. A single
+        check_async(messages) call only exposes the last user message to the
+        rail actions; earlier turns in a multi-turn conversation would be skipped.
         """
         try:
             from nemoguardrails.logging.explain import ExplainInfo
-            from nemoguardrails.rails.llm.options import RailType
+            from nemoguardrails.rails.llm.options import RailStatus, RailType
 
             nemo: Any = self._nemo
-            result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
-            explain: ExplainInfo = nemo.explain()
-            return result.content, result.status, result.rail, explain
+            user_indices = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+
+            if not user_indices:
+                result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
+                explain: ExplainInfo = nemo.explain()
+                return result.content, result.status, result.rail, explain
+
+            working: list[dict[str, Any]] = [dict(m) for m in messages]
+            last_content = ""
+            last_explain: ExplainInfo = ExplainInfo()
+            any_modified = False
+
+            for idx in user_indices:
+                user_content = str(working[idx].get("content", ""))
+                result = await nemo.check_async(
+                    [{"role": "user", "content": user_content}],
+                    rail_types=[RailType.INPUT],
+                )
+                last_explain = nemo.explain()
+                last_content = result.content
+
+                if result.status == RailStatus.BLOCKED:
+                    return result.content, result.status, result.rail, last_explain
+
+                if result.status == RailStatus.MODIFIED:
+                    working[idx]["content"] = result.content
+                    any_modified = True
+
+            final_status: object = RailStatus.MODIFIED if any_modified else RailStatus.PASSED
+            return last_content, final_status, None, last_explain
+
         except AdapterUnavailableError:
             raise
         except Exception as exc:
