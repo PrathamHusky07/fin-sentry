@@ -43,16 +43,19 @@ def _get_pipeline() -> Any:
 def _extract_malicious_probability(scores: list[dict[str, Any]]) -> float:
     """Return the malicious-class probability from a top_k=None pipeline result.
 
-    Handles both runtime label taxonomies:
-    - Current fallback: LABEL_0 (benign) / LABEL_1 (malicious) -- label ends with "_1"
-    - Semantic (if Meta fixes shipped config): BENIGN / MALICIOUS -- matches case-insensitively
+    Matches by the LABEL_{_MALICIOUS_INDEX} string (authoritative selector) or
+    by case-insensitive "MALICIOUS" (semantic-label compatibility path for if
+    Meta ever fixes the shipped id2label config). Both taxonomies handled:
+    - Current fallback: LABEL_0 (benign) / LABEL_1 (malicious)
+    - Semantic (if Meta fixes shipped config): BENIGN / MALICIOUS
 
     With top_k=None the pipeline returns scores for all classes, so the
     malicious entry is always present in the list regardless of which class won.
     """
+    target_index_label = f"LABEL_{_MALICIOUS_INDEX}"
     for entry in scores:
         label = str(entry.get("label", ""))
-        if label.upper() == "MALICIOUS" or label.endswith("_1"):
+        if label == target_index_label or label.upper() == "MALICIOUS":
             return float(entry.get("score", 0.0))
     return 0.0
 
