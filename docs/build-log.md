@@ -1,5 +1,106 @@
 # Build Log
 
+## 2026-09-08 — Day 2 remediation: Colang migration preflight (session handoff)
+
+### What was done this session
+
+**Python 3.13 downgrade (commit `33dfeff`).** The Phase 1 diagnostic revealed NeMo Guardrails was silently failing to initialize on Python 3.14 (`'function' object is not subscriptable` from the Colang v1.0 runtime importing LangChain code). Dropped to Python 3.13.14 via `uv venv --python 3.13`. Updated `pyproject.toml`: `requires-python = ">=3.13,<3.14"`, `ruff target-version = "py313"`, `mypy python_version = "3.13"`. One ruff auto-fix from the py313 target: `AsyncGenerator[T, None]` simplified to `AsyncGenerator[T]` in [finsentry/gateway/main.py](finsentry/gateway/main.py). 41/41 tests pass, ruff and mypy clean. `nemoguardrails 0.24.0` resolved by uv (up from `>=0.10.0` lower bound), `transformers 5.16.1`.
+
+**NeMo diagnostic on Python 3.13.** Re-ran `scripts/diagnostic_nemo.py`. NeMo now initializes: `adapter._nemo` is an `LLMRails` instance, not `None`. The `explain()` call returns `ExplainInfo(llm_calls=[], colang_history=None)` — both fields are empty because the current adapter bypasses Colang completely, routing requests via `asyncio.to_thread(rail.check, ...)` directly. NeMo records nothing when its flow engine is not invoked. The `runtime.registered_actions` catalog is live and queryable; `dict(nemo.runtime.registered_actions)` returns all 60+ built-in actions plus our registered `diag-rail.check`.
+
+**Decision: adopt Colang.** The spec (Component One, line 158) states "The entire rail stack runs behind NeMo Guardrails, which orchestrates the sequencing and provides a single audit surface." The current adapter makes that false. The fix is to route requests through NeMo's `check_async()` so NeMo owns sequencing and `explain()` fills with real data.
+
+**Nine-point Colang migration plan produced.** Full plan written and agreed in conversation. Key findings from API inspection during planning:
+
+- `nemo.check_async(messages, rail_types=[RailType.INPUT])` is the correct entry point for input rails. Returns `RailsResult(status: RailStatus, content: str, rail: Optional[str])` where `status` is one of `PASSED`, `MODIFIED`, `BLOCKED`.
+- NeMo 0.24.0 has a first-class `RailOutcome` API: `RailOutcome.allow()`, `RailOutcome.block()`, `RailOutcome.transform([(TransformTarget.USER_MESSAGE, text)])`, `RailOutcome.failure()`. This is the return type for registered action functions. It maps cleanly to our `RailDecision` (pass/block/sanitize/error).
+- `TransformTarget.USER_MESSAGE` is the target for PII redaction — NeMo rewrites the in-flight user message to the sanitized text and `RailsResult.content` carries the sanitized content.
+- `colang_history` populates in `explain()` when requests flow through `check_async()` — confirmed empirically in Experiment 2 below.
+- `SentenceTransformerEmbeddingModel` with engine name `"SentenceTransformers"` is a registered provider in NeMo 0.24.0. Model name is passed as `parameters.embedding_model`.
+- `models: []` (no LLM) is valid and `check_async()` succeeds with it for pure action-based flows.
+
+**Preflight diagnostic run (`scripts/diagnostic_nemo_preflight.py`).** Two experiments.
+
+**Experiment 1 — Embedding provider load timing:**
+
+```
+Config A: explicit SentenceTransformers embedding provider
+  bge-small cached before: True
+  bge weight files before: ['model.safetensors']
+  LLMRails(config_a) wall time: 0.067s
+  bge-small cached after:  True
+  bge weight files after:  ['model.safetensors']
+
+Config B: embedding_search_provider omitted entirely
+  bge-small cached before: True
+  LLMRails(config_b) wall time: 0.039s
+  bge-small cached after:  True
+  bge weight files after:  ['model.safetensors']
+
+Delta (A - B): 0.029s
+```
+
+**Experiment 2 — Colang flow with `models: []` and a pure Python action:**
+
+```
+Building RailsConfig...
+  colang_version: 1.0
+  rails.input.flows: ['check test']
+
+Instantiating LLMRails...
+  Caught 1 warning(s) during LLMRails():
+    [DeprecationWarning] Use 'nim_base_url' instead. This field will be removed in a future version.
+
+  Registered action 'test_action': <function ...test_action at 0x109324f40>
+
+Calling check_async([{role:user, content:hi}], rail_types=[RailType.INPUT])...
+  [test_action] called — returning RailOutcome.allow()
+  Result: RailsResult(status=<RailStatus.PASSED: 'passed'>, content='hi', rail=None)
+  result.status: <RailStatus.PASSED: 'passed'>
+  result.content: 'hi'
+  result.rail: None
+  Caught 0 warning(s) during check_async():
+
+  explain().llm_calls: []
+  explain().colang_history: 'execute test_action\n# The result was RailOutcome(decision=<RailDecision.ALLOW:
+    \'allow\'>, reason=\'preflight test\', metadata={\'source\': \'preflight\'}, transforms=(), failed=False)\nuser "hi"\n  "hi"\n'
+
+  Logged warnings/errors during experiment:
+Synchronous action `test_action` has been called.
+```
+
+**Two small findings from preflight:**
+
+1. The `"Synchronous action 'test_action' has been called."` log message (WARNING level via `logging`, not `warnings.warn`) appeared because the test action was a plain synchronous `def`. Registered action wrappers for our three rails must be `async def` to avoid this warning. This is the `execute_async=True` flag on the `@action` decorator, or simply declaring the wrapper as `async def` — both suppress the warning.
+
+2. `"Use 'nim_base_url' instead."` DeprecationWarning fires at `LLMRails()` construction time. It originates inside NeMo's jailbreak-detection library config and is non-actionable — no code we write triggers it. It will appear in test output (as it already does in the current test suite, per the 18 warnings reported by pytest after today's dependency upgrade).
+
+**Still unresolved from Phase 1 diagnostics:** The Prompt Guard 2 and Llama Guard 3 model diagnostics (`scripts/diagnostic_prompt_guard.py`, `scripts/diagnostic_llama_guard.py`) have not been re-run. Both models require a HuggingFace access token and have not been downloaded. The corrected model identifier (`meta-llama/Llama-Prompt-Guard-2-86M`) has not been verified against the Hub. The label taxonomy and raw output format of both models remain empirically unknown. These are resolved in Commit F of the migration.
+
+### Exact next task: Commit A of the Colang migration
+
+**What Commit A delivers:**
+
+1. New directory `finsentry/gateway/colang/` with two files:
+   - `config.yml` — NeMo runtime config: `models: []`, `core.embedding_search_provider` set to SentenceTransformers with `BAAI/bge-small-en-v1.5`, `rails.input.flows` listing the three flow names (`"check prompt injection"`, `"check pii"`, `"check hazard taxonomy"`).
+   - `config.co` — Three Colang v1.0 flows, one `execute action_name` statement each. Flow names match exactly what `config.yml` lists.
+
+2. `requirements.txt` lower bound tightened to `nemoguardrails>=0.24.0` (the `RailOutcome` API does not exist in earlier versions).
+
+3. Verification for Commit A: `python -c "from nemoguardrails import LLMRails, RailsConfig; ..."` instantiates without error. ruff and mypy clean. No Python source changes.
+
+**Full migration commit sequence after A:**
+
+- **Commit B** — Adapter rewrite: `finsentry/gateway/rails.py` becomes thin wrapper calling `check_async()`. Gateway route reads `RailsResult.status`. ruff + mypy clean.
+- **Commit C** — Async rail action wrappers: three `async def` wrapper functions translating `RailDecision` → `RailOutcome` (including rich metadata from `details`), emitting OTel spans per rail, applying fail-open/fail-closed from `config/rails.yml`. Decorated with `@action(name=..., execute_async=True)` to suppress sync-action warning. Registered on the `LLMRails` instance.
+- **Commit D** — Test suite rework: assertions updated from `decisions[0].outcome` to `RailsResult.status`/`.content`/`.rail`. Add assertion that `explain().colang_history` is non-None after `check_async()`. Cover pass/block/sanitize/error, sequencing (block cancels subsequent flows), fail-open/fail-closed. 41/41 (not slow) pass.
+- **Commit E** — Model identifier fix: `_MODEL_ID = "meta-llama/Prompt-Guard-2-86M"` → `"meta-llama/Llama-Prompt-Guard-2-86M"` in `finsentry/rails/input/prompt_guard.py`. One-line change.
+- **Commit F** — Diagnostic checkpoint: re-run `diagnostic_prompt_guard.py`, `diagnostic_llama_guard.py`, `diagnostic_nemo.py` with HF token in `.env` and `load_dotenv()` at top of each script. Paste full raw output verbatim. Stop. Wait for review before Phase 3 label-normalization work.
+
+**Realistic budget:** 12 to 18 hours across 1.5 to 2 full sessions. Test suite rework (Commit D) is the long pole — NeMo runtime behavior with mocked actions through Colang flows has edge cases that require iterative debugging. Plan two full sessions.
+
+**Spec updates made (outside this session's code commits):** `docs/internal/Project4_Description.docx` received two surgical edits: Component One's rail-stack sentence names Colang and ExplainInfo explicitly; Component Four's `explain_guardrail_decision` tool description names the `ExplainInfo + RailDecision` combination.
+
 ## 2026-09-08 — Day 2 (complete)
 
 Three input rails behind NeMo Guardrails, cheapest-first sequencing, OTel spans per rail. 41/41 tests green (2 `@pytest.mark.slow` model-load tests require HuggingFace download and skipped in CI with `-m "not slow"`). ruff and mypy strict clean throughout.
