@@ -1,5 +1,25 @@
 # Build Log
 
+## 2026-09-09 — Phase 2.5 remediation: label taxonomy and generate() fixes (commits r5, r6)
+
+Two P0 correctness defects found during the Commit F diagnostic and fixed.
+
+**Commit r5 (`7d2283e`)** — `finsentry/rails/input/prompt_guard.py`. The shipped `meta-llama/Llama-Prompt-Guard-2-86M` config uses generic id2label fallback labels (`LABEL_0`/`LABEL_1`), not the semantic `BENIGN`/`MALICIOUS` names documented in Meta's model card. The pre-fix code compared `label == "MALICIOUS"` which never matched, so the else branch inverted the score: a 0.9994-confidence injection returned `malicious_probability = 0.0006` and passed the rail silently. Fix: replaced string-label comparison with `_extract_malicious_probability()` that matches by label suffix (`_1`) or case-insensitive `MALICIOUS` string, covering both taxonomies. Pipeline call updated to `top_k=None` to get all class scores directly. Two new tests added (`test_prompt_guard_passes_benign_high_confidence`, `test_prompt_guard_handles_both_label_taxonomies`). All existing mocks updated to the nested-list format that `top_k=None` returns.
+
+**Commit r6 (`5e9943c`)** — `finsentry/rails/input/llama_guard.py`. Same class of bug as the diagnostic script crash: `apply_chat_template()` returns a `BatchEncoding` in transformers 5.x, not a plain tensor. Passing it positionally to `model.generate()` fails with `AttributeError` on `.shape`. Fix: `return_dict=True` on the template call so `**inputs` unpacking works cleanly in `generate()`, and `inputs["input_ids"].shape[-1]` for the prompt-length slice. `pad_token_id` corrected from hardcoded `0` to `tokenizer.eos_token_id`. `_mock_lg_model` in the test suite updated to return a dict from `.to()` so tests exercise the real unpacking path.
+
+**r7 (gitignored, no commit)** — `scripts/diagnostic_llama_guard.py` fixed with the same `return_dict=True` / `**inputs` pattern.
+
+**Verification:** 38/38 non-slow tests pass. `ruff check .` and `mypy finsentry/ --strict` clean.
+
+**Post-fix diagnostic runs:**
+
+Prompt Guard 2 output unchanged (model identity confirmed, LABEL_0/LABEL_1 taxonomy confirmed). Production code now correctly maps LABEL_1 to the malicious class.
+
+Llama Guard 3 diagnostic: model load fails with `ValueError: Some modules are dispatched on the CPU or the disk... bitsandbytes NF4 requires CUDA`. MPS is not a supported backend for bitsandbytes quantization. The first Commit F diagnostic loaded the model successfully because the prior module-level cache (`_model`) was populated in-process. A fresh process cold-loads and hits the quantizer validation. This is a separate issue from the generate() fix and does not affect the test suite (all LG tests mock the model). Surfaced for Phase 3 planning: the NF4 path needs a CUDA GPU or an MPS-compatible fallback.
+
+**Next: Phase 3** — label normalization, judge scoring wiring, retrieval rail.
+
 ## 2026-09-08 — Day 2 remediation: Colang migration complete (commits A-E)
 
 Five commits landed. ruff, mypy strict, and `pytest -m "not slow"` all clean.
