@@ -17,6 +17,16 @@ _CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "rails.yml"
 _COLANG_PATH = Path(__file__).parent / "colang"
 
 
+class AdapterUnavailableError(RuntimeError):
+    """Raised when the NeMo engine fails at the infrastructure level.
+
+    This is distinct from a policy block (BLOCKED status -> 403). Infrastructure
+    failures propagate as exceptions so the gateway can return 503
+    (enforcement unavailable) rather than 403 (policy block). Conflating the
+    two would misrepresent infrastructure failures as user-policy violations.
+    """
+
+
 def _decision_to_outcome(
     decision: RailDecision,
     on_failure_mode: str = "closed",
@@ -95,7 +105,12 @@ class InputRailsAdapter:
         self._tracer = get_tracer("finsentry.rails.input")
         self._nemo = self._init_nemo(colang_path, rails)
 
-    def _init_nemo(self, colang_path: Path, rails: list[Rail]) -> object | None:
+    def _init_nemo(self, colang_path: Path, rails: list[Rail]) -> object:
+        """Initialise the NeMo LLMRails instance and register action wrappers.
+
+        Raises on failure. The constructor propagates the exception so FastAPI
+        refuses to start rather than starting in a broken, fail-open state.
+        """
         try:
             from nemoguardrails import LLMRails, RailsConfig
             from nemoguardrails.actions.actions import action
@@ -204,45 +219,41 @@ class InputRailsAdapter:
             result: object = nemo
             return result
         except Exception as exc:
-            log.warning("NeMo init failed — audit surface unavailable: %s", exc)
-            return None
+            log.error(
+                "NeMo init failed — refusing to start without enforcement: %s",
+                exc,
+                exc_info=True,
+            )
+            raise
 
+    # NeMo engine failure is intentionally not converted to a RailStatus. Per-rail
+    # fail-open is configured in config/rails.yml at the individual rail level and
+    # applies to individual rail crashes. Engine-level failures (NeMo init,
+    # check_async crash) propagate as exceptions so the gateway returns 503
+    # (enforcement unavailable), never 403 (policy block). Conflating the two
+    # would misrepresent infrastructure failures as user-policy violations.
     async def run(
         self, messages: list[dict[str, Any]]
     ) -> tuple[str, object, object]:
         """Route messages through NeMo check_async.
 
-        Returns (content, RailStatus, ExplainInfo). On NeMo init failure the
-        adapter falls back to passing the original user message through with a
-        synthetic PASSED-equivalent.
+        Returns (content, RailStatus, ExplainInfo).
+        Raises AdapterUnavailableError on NeMo engine failure.
         """
-        if self._nemo is None:
-            user_content = str(
-                next((m["content"] for m in messages if m.get("role") == "user"), "")
-            )
-            from nemoguardrails.logging.explain import ExplainInfo
-            from nemoguardrails.rails.llm.options import RailStatus
-
-            return user_content, RailStatus.PASSED, ExplainInfo()
-
         try:
             from nemoguardrails.logging.explain import ExplainInfo
-            from nemoguardrails.rails.llm.options import RailStatus, RailType
+            from nemoguardrails.rails.llm.options import RailType
 
             nemo: Any = self._nemo
             result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
             explain: ExplainInfo = nemo.explain()
             return result.content, result.status, explain
+        except AdapterUnavailableError:
+            raise
         except Exception as exc:
-            log.error("NeMo check_async failed: %s", exc)
-            user_content = str(
-                next((m["content"] for m in messages if m.get("role") == "user"), "")
-            )
-            from nemoguardrails.logging.explain import ExplainInfo
-            from nemoguardrails.rails.llm.options import RailStatus
+            log.error("NeMo check_async failed: %s", exc, exc_info=True)
+            raise AdapterUnavailableError(f"NeMo check_async failed: {exc}") from exc
 
-            return user_content, RailStatus.PASSED, ExplainInfo()
-
-    def get_nemo(self) -> object | None:
+    def get_nemo(self) -> object:
         """Return the underlying LLMRails instance for Day 7 MCP audit surface."""
         return self._nemo

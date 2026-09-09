@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -18,6 +19,8 @@ from finsentry.rails.input.prompt_guard import PromptGuard2Rail
 
 load_dotenv()
 
+log = logging.getLogger(__name__)
+
 _DOWNSTREAM_URL: str = os.getenv("DOWNSTREAM_URL", "")
 _adapter: InputRailsAdapter | None = None
 
@@ -26,6 +29,8 @@ _adapter: InputRailsAdapter | None = None
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _adapter
     # Rails registered in cheapest-first order. Updated each build day.
+    # Constructor raises on NeMo init failure — FastAPI will refuse to start
+    # rather than running without enforcement.
     _adapter = InputRailsAdapter(
         rails=[
             PromptGuard2Rail(),  # 20-50 ms, CPU fp32
@@ -55,7 +60,13 @@ async def chat_completions(request: Request) -> Response:
     if _adapter is not None:
         from nemoguardrails.rails.llm.options import RailStatus
 
-        content, status, _explain = await _adapter.run(messages)
+        try:
+            content, status, _explain = await _adapter.run(messages)
+        except Exception as exc:
+            log.error("Input rail enforcement failed: %s", exc, exc_info=True)
+            return JSONResponse(
+                {"error": "input rail service unavailable"}, status_code=503
+            )
 
         if status == RailStatus.BLOCKED:
             return JSONResponse(

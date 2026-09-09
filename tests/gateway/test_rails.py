@@ -350,3 +350,45 @@ async def test_fail_open_passes_through_on_rail_crash(pg_module_restored: Any) -
         _, status, _ = await adapter.run([{"role": "user", "content": "hello"}])
 
     assert status == RailStatus.PASSED
+
+
+# ---------------------------------------------------------------------------
+# R2 tests — engine-level failure returns 503, not 403
+# ---------------------------------------------------------------------------
+
+
+async def test_adapter_unavailable_returns_503() -> None:
+    """check_async crash → AdapterUnavailableError → endpoint returns 503, not 403."""
+    from unittest.mock import AsyncMock
+
+    from httpx import ASGITransport, AsyncClient
+
+    import finsentry.gateway.main as main_module
+    from finsentry.gateway.main import app
+    from finsentry.gateway.rails import AdapterUnavailableError
+
+    mock_adapter: AsyncMock = AsyncMock()
+    mock_adapter.run.side_effect = AdapterUnavailableError("nemo crashed")
+
+    with patch.object(main_module, "_adapter", mock_adapter), patch.object(
+        main_module, "_DOWNSTREAM_URL", "http://localhost:9999"
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "hello"}]},
+            )
+
+    assert resp.status_code == 503
+    assert resp.json()["error"] == "input rail service unavailable"
+    assert resp.status_code != 403
+
+
+async def test_adapter_init_raises_on_invalid_colang_path() -> None:
+    """Constructor propagates NeMo init failure instead of returning silently."""
+    from pathlib import Path
+
+    with pytest.raises(Exception):
+        InputRailsAdapter(rails=[], colang_path=Path("/nonexistent/colang/path"))
