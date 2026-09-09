@@ -1,5 +1,23 @@
 # Build Log
 
+## 2026-09-08 — Day 2 remediation: Colang migration complete (commits A-E)
+
+Five commits landed. ruff, mypy strict, and `pytest -m "not slow"` all clean.
+
+**Commit A (`6734435`)** — `finsentry/gateway/colang/config.yml` and `config.co`. Three Colang v1.0 flows (`check prompt injection`, `check pii`, `check hazard taxonomy`) with empirically verified `if $result.is_blocked stop` and `$user_message = $result.transform_text["user_message"]` patterns. SentenceTransformers embedding provider explicit in config. `nemoguardrails>=0.24.0` lower bound pinned.
+
+**Commit B (`48f7fad`)** — `InputRailsAdapter` rewritten to route through `check_async(rail_types=[RailType.INPUT])`. `run()` returns `(content, RailStatus, ExplainInfo)`. `main.py` returns 403 on BLOCKED, propagates sanitized content on MODIFIED. Stub action wrappers (all allow) keep NeMo plumbing exercisable.
+
+**Commit C (`7a51add`)** — Three real `@action(execute_async=True)` wrappers: `prompt_guard_2_check`, `pii_redact`, `llama_guard_3_check`. Each reads `context["user_message"]`, calls `asyncio.to_thread(rail.check, ...)`, emits an OTel span, and translates `RailDecision → RailOutcome` including fail-open/fail-closed from `config/rails.yml`.
+
+**Commit D (`08fcf4e`)** — Full test suite rewrite. Seven new adapter integration tests exercise the complete `check_async → Colang → action wrapper → rail.check()` path. colang_history assertion confirms Colang drives flows. Sequencing test verifies `pii_module._analyzer.analyze.call_count == 0` when first flow blocks. Sanitize propagation test verifies LlamaGuard receives `<REDACTED_US_SSN>` not the raw SSN. Module-level cache mutation ported to yield fixtures. 31 non-slow tests pass.
+
+**Commit E (`6ddf14f`)** — `_MODEL_ID` in `prompt_guard.py` corrected from `"meta-llama/Prompt-Guard-2-86M"` to `"meta-llama/Llama-Prompt-Guard-2-86M"`.
+
+**One surprise encountered.** In Colang v1.0, the context variable for the current user message is `context["user_message"]` (not `$last_user_message` as documented in the v1.0 runtime README). Empirically confirmed: `$last_user_message` is `None` when called via `check_async`; `context["user_message"]` carries the value. The `$user_message` Colang variable (not `$last_user_message`) is what triggers MODIFIED status when assigned in a flow. All three findings confirmed with live NeMo experiments before writing any production code.
+
+**Next session: Commit F.** Re-run `scripts/diagnostic_prompt_guard.py` and `scripts/diagnostic_llama_guard.py` with HF token in `.env` and `load_dotenv()` at top of each. Paste full raw output verbatim. Stop. Wait for review before Phase 3 label-normalization work.
+
 ## 2026-09-08 — Day 2 remediation: Colang migration preflight (session handoff)
 
 ### What was done this session
