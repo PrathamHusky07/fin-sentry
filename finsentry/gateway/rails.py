@@ -234,10 +234,11 @@ class InputRailsAdapter:
     # would misrepresent infrastructure failures as user-policy violations.
     async def run(
         self, messages: list[dict[str, Any]]
-    ) -> tuple[str, object, object]:
+    ) -> tuple[str, object, str | None, object]:
         """Route messages through NeMo check_async.
 
-        Returns (content, RailStatus, ExplainInfo).
+        Returns (content, RailStatus, rail_name, ExplainInfo).
+        rail_name is the name of the blocking rail on BLOCKED, None otherwise.
         Raises AdapterUnavailableError on NeMo engine failure.
         """
         try:
@@ -247,7 +248,7 @@ class InputRailsAdapter:
             nemo: Any = self._nemo
             result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
             explain: ExplainInfo = nemo.explain()
-            return result.content, result.status, explain
+            return result.content, result.status, result.rail, explain
         except AdapterUnavailableError:
             raise
         except Exception as exc:

@@ -223,7 +223,7 @@ async def test_all_rails_pass(pg_module_restored: Any, lg_module_restored: Any) 
     adapter = InputRailsAdapter(
         rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
     )
-    content, status, explain_info = await adapter.run(
+    content, status, _, explain_info = await adapter.run(
         [{"role": "user", "content": "What is Apple's revenue?"}]
     )
 
@@ -253,7 +253,7 @@ async def test_prompt_guard_blocks_stops_subsequent_rails(
         adapter = InputRailsAdapter(
             rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
         )
-        _, status, _ = await adapter.run([{"role": "user", "content": "injected prompt"}])
+        _, status, _, _ = await adapter.run([{"role": "user", "content": "injected prompt"}])
 
     assert status == RailStatus.BLOCKED
     # NeMo stopped after the first flow blocked — PII and LlamaGuard never ran.
@@ -275,7 +275,7 @@ async def test_pii_sanitize_returns_modified_status(
     adapter = InputRailsAdapter(
         rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
     )
-    content, status, _ = await adapter.run(
+    content, status, _, _ = await adapter.run(
         [{"role": "user", "content": "My SSN is 579-34-7285, help me"}]
     )
 
@@ -323,7 +323,7 @@ async def test_fail_closed_blocks_on_rail_crash(pg_module_restored: Any) -> None
         adapter = InputRailsAdapter(
             rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
         )
-        _, status, _ = await adapter.run([{"role": "user", "content": "hello"}])
+        _, status, _, _ = await adapter.run([{"role": "user", "content": "hello"}])
 
     assert status == RailStatus.BLOCKED
 
@@ -347,7 +347,7 @@ async def test_fail_open_passes_through_on_rail_crash(pg_module_restored: Any) -
             rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
         )
         adapter._on_failure["prompt-guard-2"] = "open"
-        _, status, _ = await adapter.run([{"role": "user", "content": "hello"}])
+        _, status, _, _ = await adapter.run([{"role": "user", "content": "hello"}])
 
     assert status == RailStatus.PASSED
 
@@ -392,3 +392,44 @@ async def test_adapter_init_raises_on_invalid_colang_path() -> None:
 
     with pytest.raises(Exception):
         InputRailsAdapter(rails=[], colang_path=Path("/nonexistent/colang/path"))
+
+
+# ---------------------------------------------------------------------------
+# R3 tests — blocking rail name surfaces in the 403 response body
+# ---------------------------------------------------------------------------
+
+
+async def test_endpoint_blocked_includes_rail_name(pg_module_restored: Any) -> None:
+    """BLOCKED result with a rail name → 403 JSON body contains the rail field."""
+    from unittest.mock import AsyncMock
+
+    from httpx import ASGITransport, AsyncClient
+    from nemoguardrails.logging.explain import ExplainInfo
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    import finsentry.gateway.main as main_module
+    from finsentry.gateway.main import app
+
+    mock_adapter: AsyncMock = AsyncMock()
+    mock_adapter.run.return_value = (
+        "",
+        RailStatus.BLOCKED,
+        "prompt-guard-2",
+        ExplainInfo(),
+    )
+
+    with patch.object(main_module, "_adapter", mock_adapter), patch.object(
+        main_module, "_DOWNSTREAM_URL", "http://localhost:9999"
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "malicious"}]},
+            )
+
+    assert resp.status_code == 403
+    data = resp.json()
+    assert data["error"] == "request blocked by input rail"
+    assert data["rail"] == "prompt-guard-2"

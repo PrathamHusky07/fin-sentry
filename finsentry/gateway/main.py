@@ -61,7 +61,7 @@ async def chat_completions(request: Request) -> Response:
         from nemoguardrails.rails.llm.options import RailStatus
 
         try:
-            content, status, _explain = await _adapter.run(messages)
+            content, status, rail_name, _explain = await _adapter.run(messages)
         except Exception as exc:
             log.error("Input rail enforcement failed: %s", exc, exc_info=True)
             return JSONResponse(
@@ -69,10 +69,10 @@ async def chat_completions(request: Request) -> Response:
             )
 
         if status == RailStatus.BLOCKED:
-            return JSONResponse(
-                {"error": "request blocked by input rail"},
-                status_code=403,
-            )
+            block_body: dict[str, str] = {"error": "request blocked by input rail"}
+            if rail_name is not None:
+                block_body["rail"] = rail_name
+            return JSONResponse(block_body, status_code=403)
 
         if status == RailStatus.MODIFIED:
             messages = [
