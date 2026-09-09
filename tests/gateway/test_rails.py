@@ -248,6 +248,33 @@ async def test_llama_guard_unsafe_without_category(lg_module_restored: Any) -> N
     assert decision.details["hazard_category"] == "unknown"
 
 
+async def test_llama_guard_uses_content_blocks_shape(lg_module_restored: Any) -> None:
+    """apply_chat_template receives content-blocks, not a plain string.
+
+    Llama Guard 3's Jinja chat template uses selectattr('type', 'equalto', 'text')
+    to extract the user message. A plain string is iterated character-by-character
+    and silently produces an empty conversation section. This test guards against
+    regression to the plain-string form.
+    """
+    input_text = "What was Apple's revenue in FY2023?"
+    mock_tok, mock_model = _mock_lg_model("safe")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+    rail = LlamaGuard3Rail()
+    rail.check(input_text, {})
+
+    call_args = mock_tok.apply_chat_template.call_args
+    messages: list[dict[str, Any]] = call_args[0][0]
+    assert len(messages) == 1
+    msg = messages[0]
+    assert msg["role"] == "user"
+    content = msg["content"]
+    assert isinstance(content, list), "content must be a list of blocks, not a plain string"
+    assert len(content) == 1
+    assert content[0]["type"] == "text"
+    assert content[0]["text"] == input_text
+
+
 # ---------------------------------------------------------------------------
 # Adapter integration tests — Colang code path
 #

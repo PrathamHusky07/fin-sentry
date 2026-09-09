@@ -67,7 +67,12 @@ class LlamaGuard3Rail(Rail):
         tokenizer, model = _get_model()
         import torch
 
-        chat = [{"role": "user", "content": content}]
+        # Content-blocks form: Llama Guard 3's chat template uses Jinja
+        # selectattr('type', 'equalto', 'text') to extract user content.
+        # A plain string is iterated character-by-character; selectattr matches
+        # nothing and the conversation section renders empty. Verified
+        # empirically via scripts/diagnostic_llama_guard_prompt_variants.py.
+        chat = [{"role": "user", "content": [{"type": "text", "text": content}]}]
         # apply_chat_template with the Llama Guard chat template formats the
         # prompt with the full hazard taxonomy preamble.
         # return_dict=True returns a BatchEncoding so ** unpacking works cleanly
