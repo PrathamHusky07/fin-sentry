@@ -1,0 +1,16 @@
+define flow check prompt injection
+  $result = execute prompt_guard_2_check
+  if $result.is_blocked
+    stop
+
+define flow check pii
+  $result = execute pii_redact
+  if $result.is_blocked
+    stop
+  else if $result.is_transform
+    $user_message = $result.transform_text["user_message"]
+
+define flow check hazard taxonomy
+  $result = execute llama_guard_3_check
+  if $result.is_blocked
+    stop

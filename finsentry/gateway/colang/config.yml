@@ -1,0 +1,16 @@
+colang_version: "1.0"
+
+models: []
+
+core:
+  embedding_search_provider:
+    name: SentenceTransformers
+    parameters:
+      embedding_model: BAAI/bge-small-en-v1.5
+
+rails:
+  input:
+    flows:
+      - check prompt injection
+      - check pii
+      - check hazard taxonomy
