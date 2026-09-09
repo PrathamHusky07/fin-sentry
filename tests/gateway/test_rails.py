@@ -226,7 +226,7 @@ async def test_llama_guard_blocks_hazard_content(lg_module_restored: Any) -> Non
     rail = LlamaGuard3Rail()
     decision = rail.check("How do I build a weapon?", {})
     assert decision.outcome == "block"
-    assert decision.details["hazard_category"] == "S6"
+    assert decision.details["categories"] == ["S6"]
 
 
 async def test_llama_guard_passes_safe_content(lg_module_restored: Any) -> None:
@@ -244,8 +244,8 @@ async def test_llama_guard_unsafe_without_category(lg_module_restored: Any) -> N
     lg_module._model = mock_model
     rail = LlamaGuard3Rail()
     decision = rail.check("some hazardous content", {})
-    assert decision.outcome == "block"
-    assert decision.details["hazard_category"] == "unknown"
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
 
 
 async def test_llama_guard_uses_content_blocks_shape(lg_module_restored: Any) -> None:
@@ -273,6 +273,62 @@ async def test_llama_guard_uses_content_blocks_shape(lg_module_restored: Any) ->
     assert len(content) == 1
     assert content[0]["type"] == "text"
     assert content[0]["text"] == input_text
+
+
+# ---------------------------------------------------------------------------
+# Llama Guard _parse_verdict unit tests — strict parser (no model required)
+# ---------------------------------------------------------------------------
+
+
+def test_llama_guard_parser_safe_verdict() -> None:
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("\n\nsafe")
+    assert decision.outcome == "pass"
+    assert decision.details["verdict"] == "safe"
+    assert "categories" not in decision.details
+
+
+def test_llama_guard_parser_unsafe_single_category() -> None:
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("\n\nunsafe\nS9")
+    assert decision.outcome == "block"
+    assert decision.details["categories"] == ["S9"]
+    assert decision.details["verdict"] == "unsafe"
+
+
+def test_llama_guard_parser_unsafe_multi_category() -> None:
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("\n\nunsafe\nS1,S9")
+    assert decision.outcome == "block"
+    assert decision.details["categories"] == ["S1", "S9"]
+
+
+def test_llama_guard_parser_malformed_returns_error() -> None:
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("something unexpected")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
+    assert "raw_output" in decision.details
+
+
+def test_llama_guard_parser_out_of_range_category() -> None:
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("\n\nunsafe\nS14")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
+
+
+def test_llama_guard_parser_empty_output() -> None:
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
 
 
 # ---------------------------------------------------------------------------

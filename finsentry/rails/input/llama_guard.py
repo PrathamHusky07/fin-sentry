@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from finsentry.rails.base import Rail, RailDecision
@@ -13,6 +14,9 @@ from finsentry.rails.base import Rail, RailDecision
 _MODEL_ID = "meta-llama/Llama-Guard-3-1B"
 
 log = logging.getLogger(__name__)
+
+# MLCommons hazard taxonomy S1–S13; S14 not present in the 1B model.
+_VALID_CATEGORIES: frozenset[str] = frozenset(str(i) for i in range(1, 14))
 
 # Module-level cache for the tokenizer and model.
 _tokenizer: Any = None
@@ -36,18 +40,46 @@ def _get_model() -> tuple[Any, Any]:
     return _tokenizer, _model
 
 
-def _parse_verdict(output: str) -> tuple[str, str | None]:
-    """Parse Llama Guard output into (verdict, hazard_category).
+def _parse_verdict(decoded_output: str) -> RailDecision:
+    """Parse Llama Guard output into a RailDecision.
 
-    Llama Guard 3 outputs either "safe" or "unsafe\nS<N>" where S<N> is
-    a hazard category code from Meta's hazard taxonomy.
+    Llama Guard 3 outputs '\n\nsafe' or '\n\nunsafe\nS<N>' (two leading
+    newlines; skip_special_tokens=True strips <|eot_id|>). Multi-category
+    is documented as '\n\nunsafe\nS1,S9'.
+
+    Malformed output (anything that does not match the expected format,
+    including 'unsafe' with no category or an out-of-range category) is
+    treated as an error so the caller can fail closed. A lenient fallback
+    to 'safe' would allow a hallucinating model to bypass the rail.
     """
-    text = output.strip()
-    if text.lower().startswith("unsafe"):
+    text = decoded_output.strip()
+    if text == "safe":
+        return RailDecision(
+            outcome="pass",
+            reason="no hazard detected",
+            details={"verdict": "safe"},
+        )
+    if text.startswith("unsafe"):
         lines = text.splitlines()
-        category = lines[1].strip() if len(lines) > 1 else None
-        return "unsafe", category
-    return "safe", None
+        if len(lines) >= 2:
+            raw_cats = lines[1].strip()
+            nums = re.findall(r"S(\d{1,2})", raw_cats)
+            if nums and all(n in _VALID_CATEGORIES for n in nums):
+                categories = [f"S{n}" for n in nums]
+                return RailDecision(
+                    outcome="block",
+                    reason=f"content policy violation: {', '.join(categories)}",
+                    details={"verdict": "unsafe", "categories": categories},
+                )
+    log.warning(
+        "Llama Guard produced malformed output; failing closed. raw=%r",
+        decoded_output[:200],
+    )
+    return RailDecision(
+        outcome="error",
+        reason="malformed model output",
+        details={"verdict": "malformed", "raw_output": decoded_output[:200]},
+    )
 
 
 class LlamaGuard3Rail(Rail):
@@ -98,17 +130,4 @@ class LlamaGuard3Rail(Rail):
             output[0][inputs["input_ids"].shape[-1] :],
             skip_special_tokens=True,
         )
-        verdict, category = _parse_verdict(generated)
-
-        if verdict == "unsafe":
-            details: dict[str, Any] = {"hazard_category": category or "unknown"}
-            return RailDecision(
-                outcome="block",
-                reason=f"content policy violation: {category or 'unknown'}",
-                details=details,
-            )
-        return RailDecision(
-            outcome="pass",
-            reason="no hazard detected",
-            details={},
-        )
+        return _parse_verdict(generated)
