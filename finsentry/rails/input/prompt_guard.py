@@ -4,7 +4,7 @@ from typing import Any
 
 from finsentry.rails.base import Rail, RailDecision
 
-_MODEL_ID = "meta-llama/Prompt-Guard-2-86M"
+_MODEL_ID = "meta-llama/Llama-Prompt-Guard-2-86M"
 _INJECTION_LABEL = "INJECTION"
 _INJECTION_THRESHOLD = 0.5  # Meta's published default for the injection class
 
