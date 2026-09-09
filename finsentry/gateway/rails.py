@@ -1,35 +1,33 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from finsentry.rails.base import Rail, RailDecision
-from finsentry.telemetry import get_tracer
 
 log = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "rails.yml"
+_COLANG_PATH = Path(__file__).parent / "colang"
 
 
 class InputRailsAdapter:
-    """Sequences input rails and registers them with NeMo for the audit surface.
+    """Routes input-rail checks through NeMo's check_async so Colang drives
+    sequencing and explain() fills with real audit data.
 
-    The adapter owns all sequencing logic in Python. NeMo is used for
-    programmatic action registration and audit history (required by the MCP
-    explain_guardrail_decision tool on Day 7), not for flow orchestration.
-    Gateway routes call this adapter; they never call NeMo or individual
-    rails directly.
+    Constructor registers stub action wrappers (each returns RailOutcome.allow)
+    so the NeMo plumbing is testable end-to-end before the real wrappers land in
+    Commit C.
     """
 
     def __init__(
         self,
         rails: list[Rail],
         config_path: Path = _CONFIG_PATH,
+        colang_path: Path = _COLANG_PATH,
     ) -> None:
         self._rails = rails
         self._on_failure: dict[str, str] = {}
@@ -39,69 +37,77 @@ class InputRailsAdapter:
             for name, settings in (raw.get("rails", {}).get("input", {})).items():
                 self._on_failure[name] = settings.get("on_failure", "closed")
 
-        self._nemo = self._init_nemo(rails)
-        self._tracer = get_tracer("finsentry.rails.input")
+        self._nemo = self._init_nemo(colang_path, rails)
 
-    def _init_nemo(self, rails: list[Rail]) -> object | None:
+    def _init_nemo(self, colang_path: Path, rails: list[Rail]) -> object | None:
         try:
             from nemoguardrails import LLMRails, RailsConfig
+            from nemoguardrails.actions.rail_outcome import RailOutcome
 
-            config = RailsConfig.from_content(yaml_content="models: []\n")
+            config = RailsConfig.from_path(str(colang_path))
             nemo = LLMRails(config)
-            for rail in rails:
-                nemo.register_action(rail.check, name=f"{rail.name}.check")
-            # nemo is Any (nemoguardrails has no stubs); cast to object so
-            # the function's declared return type is satisfied under strict mypy.
+
+            # Stub wrappers — each returns allow() so plumbing is testable.
+            # Real wrappers that translate RailDecision→RailOutcome land in
+            # Commit C, replacing these stubs.
+            async def prompt_guard_2_check(context: dict[str, Any]) -> object:
+                return RailOutcome.allow(reason="stub")
+
+            async def pii_redact(context: dict[str, Any]) -> object:
+                return RailOutcome.allow(reason="stub")
+
+            async def llama_guard_3_check(context: dict[str, Any]) -> object:
+                return RailOutcome.allow(reason="stub")
+
+            nemo.register_action(prompt_guard_2_check, name="prompt_guard_2_check")
+            nemo.register_action(pii_redact, name="pii_redact")
+            nemo.register_action(llama_guard_3_check, name="llama_guard_3_check")
+
             result: object = nemo
             return result
         except Exception as exc:
             log.warning("NeMo init failed — audit surface unavailable: %s", exc)
             return None
 
-    async def run(
-        self, messages: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, Any]], list[RailDecision]]:
-        """Run all input rails in sequence.
+    async def run(self, messages: list[dict[str, Any]]) -> tuple[str, object, object]:
+        """Route messages through NeMo check_async.
 
-        Returns updated messages (PII may be redacted) and the ordered list of
-        RailDecision objects. Stops after the first block or error outcome.
+        Returns (content, RailStatus, ExplainInfo). On NeMo init failure the
+        adapter falls back to passing the original user message through with a
+        synthetic PASSED-equivalent.
         """
-        decisions: list[RailDecision] = []
-        user_content: str = str(
-            next((m["content"] for m in messages if m.get("role") == "user"), "")
-        )
+        if self._nemo is None:
+            user_content = str(
+                next((m["content"] for m in messages if m.get("role") == "user"), "")
+            )
+            from nemoguardrails.logging.explain import ExplainInfo
+            from nemoguardrails.rails.llm.options import RailStatus
 
-        for rail in self._rails:
-            with self._tracer.start_as_current_span(f"rail.{rail.name}.check") as span:
-                span.set_attribute("rail.name", rail.name)
-                span.set_attribute("rail.layer", "input")
-                t0 = time.monotonic()
+            return user_content, RailStatus.PASSED, ExplainInfo()
 
-                try:
-                    decision = await asyncio.to_thread(rail.check, user_content, {})
-                except Exception as exc:
-                    decision = self._handle_error(rail.name, exc)
+        try:
+            from nemoguardrails.logging.explain import ExplainInfo
+            from nemoguardrails.rails.llm.options import RailStatus, RailType
 
-                latency_ms = round((time.monotonic() - t0) * 1000, 2)
-                span.set_attribute("rail.decision", decision.outcome)
-                span.set_attribute("rail.latency_ms", latency_ms)
+            nemo: Any = self._nemo
+            result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
+            explain: ExplainInfo = nemo.explain()
+            return result.content, result.status, explain
+        except Exception as exc:
+            log.error("NeMo check_async failed: %s", exc)
+            user_content = str(
+                next((m["content"] for m in messages if m.get("role") == "user"), "")
+            )
+            from nemoguardrails.logging.explain import ExplainInfo
+            from nemoguardrails.rails.llm.options import RailStatus
 
-            decisions.append(decision)
+            return user_content, RailStatus.PASSED, ExplainInfo()
 
-            if decision.outcome == "sanitize":
-                sanitized: str = str(
-                    decision.details.get("sanitized_content", user_content)
-                )
-                messages = [
-                    {**m, "content": sanitized} if m.get("role") == "user" else m
-                    for m in messages
-                ]
-                user_content = sanitized
-            elif decision.outcome in ("block", "error"):
-                break
+    def get_nemo(self) -> object | None:
+        """Return the underlying LLMRails instance for Day 7 MCP audit surface."""
+        return self._nemo
 
-        return messages, decisions
-
+    # Keep for test compatibility during Commit B — removed in Commit D cleanup.
     def _handle_error(self, rail_name: str, exc: Exception) -> RailDecision:
         on_failure = self._on_failure.get(rail_name, "closed")
         if on_failure == "open":

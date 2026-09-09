@@ -26,11 +26,13 @@ _adapter: InputRailsAdapter | None = None
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _adapter
     # Rails registered in cheapest-first order. Updated each build day.
-    _adapter = InputRailsAdapter(rails=[
-        PromptGuard2Rail(),   # 20-50 ms, CPU fp32
-        PiiRedactionRail(),   # 30-80 ms, pattern recognizers only
-        LlamaGuard3Rail(),    # 500-1500 ms, 8B NF4 quantized
-    ])
+    _adapter = InputRailsAdapter(
+        rails=[
+            PromptGuard2Rail(),  # 20-50 ms, CPU fp32
+            PiiRedactionRail(),  # 30-80 ms, pattern recognizers only
+            LlamaGuard3Rail(),  # 500-1500 ms, 8B NF4 quantized
+        ]
+    )
     yield
 
 
@@ -51,25 +53,26 @@ async def chat_completions(request: Request) -> Response:
     messages: list[dict[str, Any]] = body_json.get("messages", [])
 
     if _adapter is not None:
-        messages, decisions = await _adapter.run(messages)
-        blocked = next((d for d in decisions if d.outcome in ("block", "error")), None)
-        if blocked is not None:
-            status = 503 if blocked.outcome == "error" else 400
+        from nemoguardrails.rails.llm.options import RailStatus
+
+        content, status, _explain = await _adapter.run(messages)
+
+        if status == RailStatus.BLOCKED:
             return JSONResponse(
-                {
-                    "error": "request blocked by input rail",
-                    "rail": blocked.reason,
-                    "details": blocked.details,
-                },
-                status_code=status,
+                {"error": "request blocked by input rail"},
+                status_code=403,
             )
+
+        if status == RailStatus.MODIFIED:
+            messages = [
+                {**m, "content": content} if m.get("role") == "user" else m for m in messages
+            ]
+
         body_json = {**body_json, "messages": messages}
 
     body = json.dumps(body_json).encode()
     forward_headers = {
-        k: v
-        for k, v in request.headers.items()
-        if k.lower() not in {"host", "content-length"}
+        k: v for k, v in request.headers.items() if k.lower() not in {"host", "content-length"}
     }
 
     async def _stream() -> AsyncGenerator[bytes]:
