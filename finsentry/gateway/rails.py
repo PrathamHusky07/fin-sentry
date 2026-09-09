@@ -137,7 +137,8 @@ class InputRailsAdapter:
                     span.set_attribute("rail.layer", "input")
                     t0 = time.monotonic()
                     try:
-                        decision = await asyncio.to_thread(rail.check, user_message, {})
+                        # context carries NeMo runtime state; rails may consult it.
+                        decision = await asyncio.to_thread(rail.check, user_message, context)
                     except Exception as exc:
                         latency_ms = round((time.monotonic() - t0) * 1000, 2)
                         span.set_attribute("rail.decision", "error")
@@ -169,7 +170,8 @@ class InputRailsAdapter:
                     span.set_attribute("rail.layer", "input")
                     t0 = time.monotonic()
                     try:
-                        decision = await asyncio.to_thread(rail.check, user_message, {})
+                        # context carries NeMo runtime state; rails may consult it.
+                        decision = await asyncio.to_thread(rail.check, user_message, context)
                     except Exception as exc:
                         latency_ms = round((time.monotonic() - t0) * 1000, 2)
                         span.set_attribute("rail.decision", "error")
@@ -197,7 +199,8 @@ class InputRailsAdapter:
                     span.set_attribute("rail.layer", "input")
                     t0 = time.monotonic()
                     try:
-                        decision = await asyncio.to_thread(rail.check, user_message, {})
+                        # context carries NeMo runtime state; rails may consult it.
+                        decision = await asyncio.to_thread(rail.check, user_message, context)
                     except Exception as exc:
                         latency_ms = round((time.monotonic() - t0) * 1000, 2)
                         span.set_attribute("rail.decision", "error")
