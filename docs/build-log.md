@@ -1,5 +1,21 @@
 # Build Log
 
+## 2026-09-09 — Phase 3A: model swap and prompt guard reconciliation (commits p3a-1, p3a-2)
+
+Three commits landed. 38/38 non-slow tests pass. ruff and mypy strict clean.
+
+**Commit p3a-1 (`d5ce286`)** — `finsentry/rails/input/llama_guard.py`, `finsentry/gateway/main.py`, `tests/gateway/test_rails.py`. Swapped Llama Guard 3 8B NF4 to Llama Guard 3 1B bfloat16. Removed `_QUANTIZATION_CONFIG` dict and all `BitsAndBytesConfig` references. Production load now uses `dtype=torch.bfloat16, device_map="auto"`. Added `log.info` for resolved `_name_or_path`. Updated stale latency comment in `main.py` and slow-test docstring. Decision record at `docs/adr/002-llama-guard-model-choice.md`.
+
+**Commit p3a-2 (`23cf708`)** — `finsentry/rails/input/prompt_guard.py`. Reconciled `_extract_malicious_probability` with the named `_MALICIOUS_INDEX` constant: derived `target_index_label = f"LABEL_{_MALICIOUS_INDEX}"` and used it as the authoritative selector, retaining semantic-label fallback (`label.upper() == "MALICIOUS"`) for compatibility.
+
+**Commit `65ed7f1`** — `docs/adr/002-llama-guard-model-choice.md`. ADR covering context (zero-cost constraint, MPS/CUDA incompatibility), decision (1B bfloat16), alternatives evaluated (8B NF4: F1 0.939 / FPR 0.040 vs 1B: F1 0.899 / FPR 0.090, from Meta's model card), consequences (accuracy delta accepted, S14 not optimized, upgrade path documented).
+
+**Verification grep:** `grep -rn "8B|NF4|BitsAndBytes|load_in_4bit" finsentry/` returns only documentation/comment references in `llama_guard.py`. No active production code matches.
+
+**Diagnostic — Llama Guard 3 1B:** model access gated. `meta-llama/Llama-Guard-3-1B` is a separate gated repo from `meta-llama/Llama-Guard-3-8B`. The current HF_TOKEN has 8B access but not 1B access. Error: `GatedRepoError: 403 Client Error. Cannot access gated repo. Access to model meta-llama/Llama-Guard-3-1B is restricted and you are not in the authorized list.` Action required: accept the 1B model's terms at `huggingface.co/meta-llama/Llama-Guard-3-1B` with the same HuggingFace account, then re-run `scripts/diagnostic_llama_guard.py`.
+
+**Next:** Accept 1B model access on HuggingFace, re-run diagnostic to confirm bfloat16 load and observe actual output format for the four test inputs. Phase 3B (retrieval rail, output rails) follows.
+
 ## 2026-09-09 — Phase 2.5 remediation: label taxonomy and generate() fixes (commits r5, r6)
 
 Two P0 correctness defects found during the Commit F diagnostic and fixed.
