@@ -1,5 +1,46 @@
 # Build Log
 
+## 2026-09-09 — Phase 3A fix: Llama Guard content-blocks message shape (commit p3a-fix)
+
+One commit landed. 39/39 non-slow tests pass. ruff and mypy strict clean.
+
+**Commit p3a-fix (`35a255a`)** — `finsentry/rails/input/llama_guard.py`, `tests/gateway/test_rails.py`.
+
+**Root cause.** Llama Guard 3 1B's Jinja chat template extracts user content via `selectattr('type', 'equalto', 'text')` on `message['content']`. When content is a plain Python string, Jinja iterates it character-by-character; `selectattr` matches nothing (characters have no `type` attribute); the conversation section renders as `<BEGIN CONVERSATION>\n\n<END CONVERSATION>` with the user text absent. The model then classifies an empty conversation and outputs "safe" regardless of input.
+
+This explains the prior diagnostic inversion: "Apple revenue" → unsafe/S1, "explosive device" → safe. Both were classifying an empty prompt. Stochastic token sampling on an empty-conversation prompt produced arbitrary verdicts.
+
+**Seven-variant diagnostic evidence (`scripts/diagnostic_llama_guard_prompt_variants.py`):**
+- V1, V3, V4, V5 (plain-string content): all 191 tokens, empty conversation, both inputs → safe.
+- V2, V6 (content-blocks): 201-203 tokens, populated conversation, apple → safe, explosive → unsafe/S9.
+- V7 (string round-trip): confirmed empty `<BEGIN CONVERSATION>\n\n<END CONVERSATION>` in rendered prompt repr.
+
+**Step 1 rendered-prompt comparison:**
+- Representation A (plain string): `<BEGIN CONVERSATION>\n\n<END CONVERSATION>` — empty, 191 tokens.
+- Representation B (content-blocks): `<BEGIN CONVERSATION>\n\nUser: <text>\n\n<END CONVERSATION>` — populated, 201-203 tokens.
+
+**Step 2 four-input candidate verification (content-blocks + production generate args):**
+- (a) Apple revenue: safe.
+- (b) Explosive device: unsafe/S9 (Indiscriminate Weapons).
+- (c) Tax evasion: safe (recorded; no failure criterion on this input).
+- (d) "?": safe (edge case recorded).
+
+**Fix:** changed `chat = [{"role": "user", "content": content}]` to `[{"role": "user", "content": [{"type": "text", "text": content}]}]`. No other change to generate args, parser, model, dtype, or rail behavior.
+
+**Regression test `test_llama_guard_uses_content_blocks_shape`:** captures `apply_chat_template.call_args`, asserts `content` is a list with one dict having `type="text"` and `text=input_text`. Fails against pre-fix code, passes against post-fix code.
+
+**Re-run of `scripts/diagnostic_llama_guard.py` (now content-blocks-aligned):**
+- (a) benign financial: `'\n\nsafe'`
+- (b) clear violation: `'\n\nunsafe\nS9'`
+- (c) ambiguous tax: `'\n\nsafe'`
+- (d) minimal "?": `'\n\nsafe'`
+
+Phase 3A is now verified. The 1B model produces semantically correct verdicts on the canonical inputs with the content-blocks invocation.
+
+**Note on S9 vs S1/S10 prior outputs.** The prior diagnostic (plain-string, empty conversation) produced S1/S10 for arbitrary inputs because the model was classifying an empty conversation stochastically. With content correctly populated, "explosive device" maps to S9 (Indiscriminate Weapons), which is the correct category.
+
+**Next:** Phase 3B — retrieval rail, output rails (Guardrails AI + RAGAS Faithfulness).
+
 ## 2026-09-09 — Phase 3A verification: test hygiene and 1B diagnostic (commit p3a-verify-1)
 
 One commit landed. 38/38 non-slow tests pass. ruff and mypy strict clean.
