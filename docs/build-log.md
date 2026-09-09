@@ -1,5 +1,35 @@
 # Build Log
 
+## 2026-09-09 — Phase 3A verification: test hygiene and 1B diagnostic (commit p3a-verify-1)
+
+One commit landed. 38/38 non-slow tests pass. ruff and mypy strict clean.
+
+**Commit p3a-verify-1 (`4828652`)** — `tests/gateway/test_rails.py`. Two test-hygiene changes:
+
+1. `test_fail_open_passes_through_on_rail_crash` refactored to use `config_path=tmp_path/"rails.yml"` with a minimal YAML setting `prompt-guard-2: on_failure: open`, eliminating the private state mutation `adapter._on_failure["prompt-guard-2"] = "open"`. The supported `config_path` mechanism existed and was the correct fix.
+
+2. `test_adapter_init_raises_on_invalid_colang_path` tightened from `pytest.raises(Exception)` to `pytest.raises(ValueError)`. Matches the exact exception observed in the Commit F diagnostic: `ValueError: Invalid config path ...`.
+
+Verification greps: `grep -rn "_on_failure\[" tests/` → zero results. `grep -rn "pytest.raises(Exception)" tests/` → zero results.
+
+**Llama Guard 3 1B diagnostic — empirical output (scripts/diagnostic_llama_guard.py):**
+
+Model loaded successfully: `_name_or_path: meta-llama/Llama-Guard-3-1B`, `dtype: torch.bfloat16`, `device: mps:0`.
+
+Tokenizer warning at load: `Ignoring clean_up_tokenization_spaces=True for BPE tokenizer TokenizersBackend`. Non-actionable; originates inside HuggingFace tokenizer library defaults.
+
+**Confirmed output format:** Raw generated text is `'\n\nunsafe\nS<N>'` or `'\n\nsafe'` — two leading newlines before the verdict token. After `output.strip()`, this becomes `unsafe\nS<N>` or `safe`. The production `_parse_verdict` calls `.strip()` before any parsing, so the two-newline prefix is handled correctly without code change.
+
+**Four inference outputs (raw):**
+- (a) benign financial: `'\n\nunsafe\nS1'`
+- (b) clear violation: `'\n\nsafe'`
+- (c) ambiguous tax: `'\n\nunsafe\nS10'`
+- (d) minimal "?": `'\n\nunsafe\nS3'`
+
+These are raw diagnostic observations. No interpretation in this entry. Phase 3B will decide whether output-quality issues require model configuration changes.
+
+**Next:** Phase 3B — retrieval rail, output rails (Guardrails AI + RAGAS Faithfulness).
+
 ## 2026-09-09 — Phase 3A: model swap and prompt guard reconciliation (commits p3a-1, p3a-2)
 
 Three commits landed. 38/38 non-slow tests pass. ruff and mypy strict clean.
