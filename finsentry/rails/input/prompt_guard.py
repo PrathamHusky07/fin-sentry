@@ -34,7 +34,7 @@ def _get_pipeline() -> Any:
             "text-classification",
             model=_MODEL_ID,
             device="cpu",
-            torch_dtype="float32",
+            dtype="float32",
         )
         log.debug("Prompt Guard 2 id2label: %s", _pipeline.model.config.id2label)
     return _pipeline
@@ -60,6 +60,37 @@ def _extract_malicious_probability(scores: list[dict[str, Any]]) -> float:
     return 0.0
 
 
+def _chunk_input(
+    content: str,
+    tokenizer: Any,
+    max_tokens: int = 512,
+    overlap: int = 0,
+) -> list[str]:
+    """Split content into chunks of at most max_tokens tokens.
+
+    Tokenizes without special tokens, splits the token ID list into
+    non-overlapping windows (overlap=0) of max_tokens each, then decodes each
+    window back to text. Overlap=0 is correct here: empirical testing (see
+    docs/build-log.md 2026-09-09 long-input diagnostic) showed no meaningful
+    difference in detection probability between overlap=0 and overlap=50.
+
+    Short-circuit: if the input fits in a single window, returns [content]
+    without any tokenize/decode round-trip so short inputs carry no overhead.
+    """
+    token_ids: list[int] = tokenizer(content, add_special_tokens=False)["input_ids"]
+    if len(token_ids) <= max_tokens:
+        return [content]
+
+    stride = max_tokens - overlap
+    chunks: list[str] = []
+    i = 0
+    while i < len(token_ids):
+        window = token_ids[i : i + max_tokens]
+        chunks.append(tokenizer.decode(window, skip_special_tokens=True))
+        i += stride
+    return chunks
+
+
 class PromptGuard2Rail(Rail):
     """Input rail: malicious prompt detection via Llama Prompt Guard 2 86M.
 
@@ -68,6 +99,13 @@ class PromptGuard2Rail(Rail):
     get scores for both classes, then _extract_malicious_probability pulls the
     class-1 score regardless of whether id2label uses semantic names
     (BENIGN/MALICIOUS) or the generic fallback (LABEL_0/LABEL_1).
+
+    Long inputs are split into 512-token chunks (Meta's context window) and
+    classified in a single batch call. The maximum malicious probability across
+    all chunks determines the outcome. This prevents the silent truncation bypass
+    where a malicious instruction placed beyond token 512 was never seen by the
+    classifier. Latency scales linearly with input length: short inputs (<=512
+    tokens) take exactly one classifier call, matching prior behavior.
     """
 
     name = "prompt-guard-2"
@@ -75,11 +113,21 @@ class PromptGuard2Rail(Rail):
 
     def check(self, content: str, context: dict[str, Any]) -> RailDecision:
         pipe = _get_pipeline()
-        # top_k=None returns all class scores: [[{label, score}, ...]] for a
-        # single string input (outer list is batch dimension, inner is classes).
-        result = pipe(content, truncation=True, max_length=512, top_k=None)
-        scores: list[dict[str, Any]] = result[0] if isinstance(result, list) else result
-        malicious_probability = _extract_malicious_probability(scores)
+        chunks = _chunk_input(content, pipe.tokenizer)
+
+        # Batch call: top_k=None on a list of strings returns a list of
+        # per-chunk score lists: [[{label, score}, ...], ...]. One inner list
+        # per chunk. Batching avoids N sequential forward passes on multi-chunk
+        # inputs and matches the transformers pipeline batch API contract.
+        results: list[list[dict[str, Any]]] = pipe(chunks, truncation=False, top_k=None)
+
+        max_chunk_probability = 0.0
+        for chunk_scores in results:
+            prob = _extract_malicious_probability(chunk_scores)
+            if prob > max_chunk_probability:
+                max_chunk_probability = prob
+
+        malicious_probability = max_chunk_probability
 
         if malicious_probability >= _MALICIOUS_THRESHOLD:
             return RailDecision(
@@ -88,6 +136,8 @@ class PromptGuard2Rail(Rail):
                 details={
                     "malicious_probability": malicious_probability,
                     "threshold": _MALICIOUS_THRESHOLD,
+                    "chunk_count": len(chunks),
+                    "max_chunk_probability": malicious_probability,
                 },
             )
         return RailDecision(
@@ -96,5 +146,7 @@ class PromptGuard2Rail(Rail):
             details={
                 "malicious_probability": malicious_probability,
                 "threshold": _MALICIOUS_THRESHOLD,
+                "chunk_count": len(chunks),
+                "max_chunk_probability": malicious_probability,
             },
         )
