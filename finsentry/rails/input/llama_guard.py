@@ -15,8 +15,15 @@ _MODEL_ID = "meta-llama/Llama-Guard-3-1B"
 
 log = logging.getLogger(__name__)
 
-# MLCommons hazard taxonomy S1–S13; S14 not present in the 1B model.
-_VALID_CATEGORIES: frozenset[str] = frozenset(str(i) for i in range(1, 14))
+# Grammar-strict regexes for Llama Guard 3's "unsafe" verdict format.
+# _CATEGORY_LINE_RE validates the complete second line: one or more S<N> tokens
+# (N in 1–13) comma-separated with no trailing comma, leading/trailing garbage,
+# or interstitial whitespace. _TOKEN_RE validates each individual token after
+# splitting on "," as a defence-in-depth check.
+_CATEGORY_LINE_RE: re.Pattern[str] = re.compile(
+    r"^S([1-9]|1[0-3])(,S([1-9]|1[0-3]))*$"
+)
+_TOKEN_RE: re.Pattern[str] = re.compile(r"^S([1-9]|1[0-3])$")
 
 # Module-level cache for the tokenizer and model.
 _tokenizer: Any = None
@@ -43,14 +50,16 @@ def _get_model() -> tuple[Any, Any]:
 def _parse_verdict(decoded_output: str) -> RailDecision:
     """Parse Llama Guard output into a RailDecision.
 
-    Llama Guard 3 outputs '\n\nsafe' or '\n\nunsafe\nS<N>' (two leading
-    newlines; skip_special_tokens=True strips <|eot_id|>). Multi-category
-    is documented as '\n\nunsafe\nS1,S9'.
+    Accepts exactly two forms after .strip():
+    - The literal string "safe" → pass.
+    - Two lines where line 1 is exactly "unsafe" (no suffix) and line 2
+      matches _CATEGORY_LINE_RE: one or more S<N> tokens (N in 1–13),
+      comma-separated, no trailing comma, no interstitial garbage → block.
 
-    Malformed output (anything that does not match the expected format,
-    including 'unsafe' with no category or an out-of-range category) is
-    treated as an error so the caller can fail closed. A lenient fallback
-    to 'safe' would allow a hallucinating model to bypass the rail.
+    Anything else, including "unsafe" with no category, an out-of-range
+    category, garbage appended to "unsafe", or concatenated tokens without
+    a comma separator, is treated as an error (fail-closed). A lenient
+    fallback to "safe" would allow a hallucinating model to bypass the rail.
     """
     text = decoded_output.strip()
     if text == "safe":
@@ -59,17 +68,16 @@ def _parse_verdict(decoded_output: str) -> RailDecision:
             reason="no hazard detected",
             details={"verdict": "safe"},
         )
-    if text.startswith("unsafe"):
-        lines = text.splitlines()
-        if len(lines) >= 2:
-            raw_cats = lines[1].strip()
-            nums = re.findall(r"S(\d{1,2})", raw_cats)
-            if nums and all(n in _VALID_CATEGORIES for n in nums):
-                categories = [f"S{n}" for n in nums]
+    lines = text.splitlines()
+    if len(lines) == 2 and lines[0] == "unsafe":
+        cat_line = lines[1].strip()
+        if _CATEGORY_LINE_RE.match(cat_line):
+            tokens = cat_line.split(",")
+            if all(_TOKEN_RE.match(t) for t in tokens):
                 return RailDecision(
                     outcome="block",
-                    reason=f"content policy violation: {', '.join(categories)}",
-                    details={"verdict": "unsafe", "categories": categories},
+                    reason=f"content policy violation: {', '.join(tokens)}",
+                    details={"verdict": "unsafe", "categories": tokens},
                 )
     log.warning(
         "Llama Guard produced malformed output; failing closed. raw=%r",
