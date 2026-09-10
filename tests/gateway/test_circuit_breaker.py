@@ -16,6 +16,7 @@ from tenacity import RetryError, stop_after_attempt
 
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker, CircuitState
 from finsentry.gateway.main import (
+    _RAG_BUDGET,
     _RAG_STOP,
     _RAG_WAIT,
     _call_downstream_rag,
@@ -328,3 +329,209 @@ async def test_successful_request_calls_record_success_once() -> None:
     assert result == "ok"
     assert success_mock.call_count == 1, "record_success must be called exactly once on success"
     assert failure_mock.call_count == 0, "record_failure must not be called when request succeeds"
+
+
+# ---------------------------------------------------------------------------
+# Defect 2: absolute deadline and per-attempt budget (commit d3a-fix-2)
+# ---------------------------------------------------------------------------
+
+
+async def test_absolute_deadline_holds_under_hung_downstream() -> None:
+    """Per-attempt httpx timeout is bounded by the remaining budget, never None.
+
+    Invariant: no _call_downstream_rag invocation may block indefinitely because
+    of a hung downstream. The timeout passed to httpx.AsyncClient is
+    min(_ATTEMPT_CAP, remaining_budget), which is always a finite value <= budget.
+    Under pre-fix code, httpx.Timeout(None) was passed and no per-attempt bound
+    existed; this test would fail because None is not <= budget.
+    """
+    assert _RAG_BUDGET == 20.0, "Production budget constant must be 20 seconds"
+
+    captured_timeouts: list[httpx.Timeout] = []
+
+    def make_client(*args: object, timeout: object = None, **kwargs: object) -> MagicMock:
+        if isinstance(timeout, httpx.Timeout):
+            captured_timeouts.append(timeout)
+        base = _make_mock_client(exc=httpx.TimeoutException("hung"))
+        return base
+
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+
+    with (
+        patch("finsentry.gateway.main.httpx.AsyncClient", side_effect=make_client),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("finsentry.gateway.main._RAG_BUDGET", 0.1),
+        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(2)),
+    ):
+        with pytest.raises(RetryError):
+            await _call_downstream_rag(
+                [{"role": "user", "content": "?"}],
+                "http://fake-downstream",
+                breaker,
+            )
+
+    assert len(captured_timeouts) > 0, "At least one httpx.Timeout must have been captured"
+    for t in captured_timeouts:
+        assert t.read is not None, "Timeout must be finite, not None"
+        assert t.read <= 0.1 + 0.01, (
+            f"Per-attempt timeout {t.read} must be bounded by the 0.1s test budget"
+        )
+
+
+async def test_backoff_does_not_start_if_it_would_exceed_deadline() -> None:
+    """When remaining budget < base backoff, the sleep is capped at remaining, not skipped entirely.
+
+    Invariant: the retry loop must not sleep for the full base backoff when the budget
+    is nearly exhausted. _budget_wait clips the sleep to min(base, remaining), so the
+    sleep value is << the 0.5s minimum exponential backoff when remaining is small.
+    """
+    fake_time = [0.0]
+
+    def fake_mono() -> float:
+        return fake_time[0]
+
+    # Each attempt burns 95% of the 100ms budget so the remaining budget for the
+    # backoff sleep is only 5ms -- well below the 0.5s minimum exponential wait.
+    call_count = [0]
+
+    def make_client(*args: object, timeout: object = None, **kwargs: object) -> MagicMock:
+        async def fake_post(*a: object, **kw: object) -> object:
+            call_count[0] += 1
+            fake_time[0] += 0.095  # consume 95ms of budget per attempt
+            raise httpx.TimeoutException("timeout")
+
+        client = MagicMock()
+        client.post = fake_post
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        return client
+
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+
+    with (
+        patch("finsentry.gateway.main.time.monotonic", fake_mono),
+        patch("finsentry.gateway.main.httpx.AsyncClient", side_effect=make_client),
+        patch("finsentry.gateway.main._RAG_BUDGET", 0.1),
+        patch("asyncio.sleep", fake_sleep),
+        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(3)),
+    ):
+        with pytest.raises(RetryError):
+            await _call_downstream_rag(
+                [{"role": "user", "content": "?"}],
+                "http://fake-downstream",
+                breaker,
+            )
+
+    assert len(sleep_calls) > 0, "At least one backoff sleep must have been issued"
+    for s in sleep_calls:
+        assert s < 0.5, (
+            f"Sleep {s}s must be clipped below 0.5s (minimum base backoff) "
+            "when remaining budget is 0.005s"
+        )
+
+
+async def test_two_slow_attempts_do_not_exceed_deadline() -> None:
+    """When attempt 1 consumes most of the budget, attempt 2 receives a smaller timeout.
+
+    Invariant: each attempt's httpx timeout is min(_ATTEMPT_CAP, remaining), so a
+    slow first attempt automatically shrinks the second attempt's timeout to the
+    leftover budget. Under pre-fix code both attempts received Timeout(None), meaning
+    the second attempt could run for an unbounded additional 20+ seconds.
+    """
+    fake_time = [0.0]
+
+    def fake_mono() -> float:
+        return fake_time[0]
+
+    captured_timeouts: list[httpx.Timeout] = []
+    call_count = [0]
+
+    def make_client(*args: object, timeout: object = None, **kwargs: object) -> MagicMock:
+        if isinstance(timeout, httpx.Timeout):
+            captured_timeouts.append(timeout)
+
+        async def fake_post(*a: object, **kw: object) -> object:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                fake_time[0] += 0.07  # attempt 1 consumes 70% of 0.1s budget
+            raise httpx.TimeoutException("timeout")
+
+        client = MagicMock()
+        client.post = fake_post
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        return client
+
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+
+    with (
+        patch("finsentry.gateway.main.time.monotonic", fake_mono),
+        patch("finsentry.gateway.main.httpx.AsyncClient", side_effect=make_client),
+        patch("finsentry.gateway.main._RAG_BUDGET", 0.1),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(2)),
+    ):
+        with pytest.raises(RetryError):
+            await _call_downstream_rag(
+                [{"role": "user", "content": "?"}],
+                "http://fake-downstream",
+                breaker,
+            )
+
+    assert len(captured_timeouts) == 2, f"Expected 2 attempts, got {len(captured_timeouts)}"
+    t1 = captured_timeouts[0].read
+    t2 = captured_timeouts[1].read
+    assert t1 is not None and t2 is not None, "Both timeouts must be finite"
+    assert t2 < t1, (
+        f"Attempt 2 timeout ({t2}s) must be smaller than attempt 1 ({t1}s) "
+        "because attempt 1 consumed 70% of the budget"
+    )
+    assert t1 <= 0.1 + 0.001, f"Attempt 1 timeout {t1} must be bounded by 0.1s budget"
+    assert t2 <= 0.1 + 0.001, f"Attempt 2 timeout {t2} must also be bounded"
+
+
+async def test_read_error_is_treated_as_transport_failure() -> None:
+    """httpx.ReadError (a TransportError subclass) retries and on success records no failure.
+
+    Invariant: the broadened (httpx.TimeoutException, httpx.TransportError) catch
+    in _attempt covers read-side failures. A ReadError on attempt 1 followed by a
+    200 on attempt 2 produces a successful result with failure_count == 0.
+    """
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+    success_body = {"choices": [{"message": {"content": "ok"}}]}
+    call_count = [0]
+
+    async def fake_post(*args: object, **kwargs: object) -> MagicMock:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise httpx.ReadError("connection reset")
+        r = MagicMock()
+        r.status_code = 200
+        r.json.return_value = success_body
+        r.raise_for_status = MagicMock()
+        return r
+
+    client = MagicMock()
+    client.post = fake_post
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("finsentry.gateway.main.httpx.AsyncClient", return_value=client),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(3)),
+    ):
+        result = await _call_downstream_rag(
+            [{"role": "user", "content": "?"}],
+            "http://fake-downstream",
+            breaker,
+        )
+
+    assert result == "ok", "ReadError on attempt 1 must retry; attempt 2 must succeed"
+    assert call_count[0] == 2, f"Expected 2 attempts (1 ReadError + 1 success), got {call_count[0]}"
+    assert breaker.failure_count == 0, "Successful request must leave failure_count at 0"

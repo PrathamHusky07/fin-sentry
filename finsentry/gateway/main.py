@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -43,8 +44,13 @@ _rag_breaker: AsyncCircuitBreaker | None = None
 
 # Tenacity strategy for the 20-second total request budget.
 # Module-level so tests can patch them without modifying retry logic.
+_RAG_BUDGET: float = 20.0  # total wall-time budget per request in seconds
 _RAG_STOP = stop_after_delay(20)
 _RAG_WAIT = wait_exponential(multiplier=0.5, min=0.5, max=4)
+
+# Per-attempt httpx timeout cap. Combined with the remaining-budget check, this
+# ensures a single slow attempt cannot consume the entire budget.
+_ATTEMPT_CAP: float = 15.0
 
 
 # ---------------------------------------------------------------------------
@@ -318,11 +324,22 @@ async def _call_downstream_rag(
     if is_open:
         raise _DownstreamCircuitOpenError(retry_after)
 
+    # Absolute deadline for the entire request, including all retries and backoffs.
+    # We use approach (a): compute remaining budget at the start of each attempt
+    # and pass httpx.Timeout(min(_ATTEMPT_CAP, remaining)) so no single attempt
+    # can exceed the remaining wall-time budget. asyncio.wait_for wrapping (approach b)
+    # is simpler but truncates in-flight state without clean error semantics.
+    deadline = time.monotonic() + _RAG_BUDGET
+
     # _attempt raises typed exceptions only; no breaker mutations here.
     # Breaker mutations happen exactly once at the retry-loop boundary so that
     # one logical request produces at most one counter increment.
     async def _attempt() -> str:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise _RetryableError(-1)
+        per_attempt_timeout = httpx.Timeout(min(_ATTEMPT_CAP, remaining))
+        async with httpx.AsyncClient(timeout=per_attempt_timeout) as client:
             try:
                 resp = await client.post(
                     f"{downstream_url}/v1/chat/completions",
@@ -331,7 +348,9 @@ async def _call_downstream_rag(
                         "messages": prompt_messages,
                     },
                 )
-            except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                # httpx.TransportError covers ConnectError, ReadError, WriteError,
+                # PoolTimeout, and RemoteProtocolError; all are retryable per ADR 004.
                 raise _RetryableError(-1) from exc
 
         if resp.status_code in {400, 422}:
@@ -348,10 +367,17 @@ async def _call_downstream_rag(
         data: dict[str, Any] = resp.json()
         return str(data["choices"][0]["message"]["content"])
 
+    def _budget_wait(retry_state: Any) -> float:
+        # Clip the exponential backoff to whatever budget remains so that the
+        # sleep itself cannot push the total elapsed time past the deadline.
+        base = float(_RAG_WAIT(retry_state))
+        remaining = deadline - time.monotonic()
+        return max(0.0, min(base, remaining))
+
     try:
         async for attempt in AsyncRetrying(
             stop=_RAG_STOP,
-            wait=_RAG_WAIT,
+            wait=_budget_wait,
             retry=retry_if_exception_type((_RetryableError, _RateLimitError)),
             reraise=False,
         ):
