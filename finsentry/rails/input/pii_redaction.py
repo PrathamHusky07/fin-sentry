@@ -10,7 +10,7 @@ _CONFIDENCE_THRESHOLD = 0.7  # Default Presidio threshold is 0.5; 0.7 prevents
 # false-positive redaction of SEC filing identifiers (CIK numbers, CUSIP codes,
 # routing numbers in financial tables) that pattern recognizers can misfire on.
 
-# Finance-domain recognizer allowlist — five pattern-based types only.
+# Input-rail recognizer allowlist — five pattern-based types only.
 # PERSON (SpacyRecognizer / NER) is excluded deliberately: in the finance
 # domain, person names in queries are almost always public figures (executives,
 # analysts, board members) legitimately present in SEC filings. Redacting
@@ -30,6 +30,29 @@ _ENTITY_TYPES = [
 _OPERATORS: dict[str, Any] = {
     entity: OperatorConfig("replace", {"new_value": f"<REDACTED_{entity}>"})
     for entity in _ENTITY_TYPES
+}
+
+# Retrieval-rail entity types and operators.
+# SEC-context policy (empirically derived from 200-chunk diagnostic):
+#   KEEP:   DATE_TIME, LOCATION, PERSON, NRP, ORGANIZATION, URL,
+#           PHONE_NUMBER (0.4 score in sample; IR numbers are public),
+#           US_BANK_NUMBER, IBAN_CODE (false-positive-heavy on financial IDs),
+#           US_DRIVER_LICENSE (fires on "Q2", "Q3", CIK numbers at score 0.237;
+#             all below 0.7 threshold — effectively zero valid hits in corpus)
+#   REDACT: EMAIL_ADDRESS, US_SSN, CREDIT_CARD, IP_ADDRESS,
+#           CRYPTO (wallet addresses)
+# Full rationale in scripts/diagnostic_presidio_sec_context.py.
+_RETRIEVAL_ENTITY_TYPES = [
+    "EMAIL_ADDRESS",
+    "US_SSN",
+    "CREDIT_CARD",
+    "IP_ADDRESS",
+    "CRYPTO",
+]
+
+_RETRIEVAL_OPERATORS: dict[str, Any] = {
+    entity: OperatorConfig("replace", {"new_value": f"<REDACTED_{entity}>"})
+    for entity in _RETRIEVAL_ENTITY_TYPES
 }
 
 # Module-level cache for the analyzer and anonymizer.

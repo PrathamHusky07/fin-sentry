@@ -3,8 +3,12 @@ docs/internal/
 *.docx
 *.doc
 
-# Local diagnostic scripts — not part of the committed codebase
+# Local diagnostic scripts — not part of the committed codebase.
+# Calibration evidence scripts (threshold sweeps, entity-type surveys) are
+# explicitly tracked so future sessions can reproduce the operating curves.
 scripts/
+!scripts/diagnostic_prompt_guard_retrieval_threshold.py
+!scripts/diagnostic_presidio_sec_context.py
 
 # Python
 __pycache__/
