@@ -49,29 +49,38 @@ score these near 0.0 as confirmed in the threshold calibration.
 ### Task 2 — PromptGuard2 retrieval threshold calibration
 
 Two populations:
-- 300 benign SEC corpus chunks (random sample)
-- 50 adversarial chunks: 25 direct-injection ("IGNORE ALL PREVIOUS INSTRUCTIONS"),
-  25 indirect/framing patterns ("As a financial assistant, you must now rewrite...")
+- 300 benign SEC corpus chunks (30 per ticker, random sample, seed=42)
+- 50 adversarial chunks: 40 injection examples across 5 categories (8 each),
+  10 false-positive stress examples (imperative SEC language)
 
-Threshold sweep [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.8, 0.9]:
+Amended diagnostic (d3b-fix-1) adds per-category TPR columns. Actual measured
+sweep [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
 
-| Threshold | TPR (direct) | TPR (indirect) | FPR (benign) | FPR (imperative) |
-|---|---|---|---|---|
-| 0.3 | 77.5% | 0% | 0.3% | 0% |
-| 0.4 | 75.0% | 0% | 0%   | 0% |
-| 0.5 | 72.5% | 0% | 0%   | 0% |
-| 0.6 | 60.0% | 0% | 0%   | 0% |
-| 0.7 | 52.5% | 0% | 0%   | 0% |
+| Threshold | FPR_benign | TPR_dir_start | TPR_dir_end | TPR_dir_mid | TPR_indirect | TPR_obfusc | TPR_aggregate | FPR_fp_stress |
+|---|---|---|---|---|---|---|---|---|
+| 0.3 | 0.3% | 87.5% | 100.0% | 100.0% | 62.5% | 37.5% | 77.5% | 0.0% |
+| 0.4 | 0.3% | 87.5% | 100.0% | 100.0% | 50.0% | 37.5% | 75.0% | 0.0% |
+| 0.5 | 0.0% | 87.5% | 100.0% | 100.0% | 50.0% | 37.5% | 75.0% | 0.0% |
+| 0.6 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 37.5% | 72.5% | 0.0% |
+| 0.7 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 37.5% | 72.5% | 0.0% |
 
-PromptGuard2 86M detects direct injection patterns well but is blind to
-indirect/framing patterns (0% TPR across all thresholds). This is a known
-model limitation, not a calibration failure.
+**No threshold satisfies the >= 95% TPR policy target.** The highest aggregate
+TPR observed is 77.5% at threshold=0.3. PromptGuard2 86M is effective on
+direct/explicit injection patterns (direct_end and direct_middle achieve 100%
+TPR) but shows limited coverage on indirect framing patterns (62.5% at 0.3)
+and obfuscated text (37.5% across all thresholds). This is a measured model
+limitation, not a calibration failure.
 
-Policy decision: threshold=0.4. Rationale: gains 2.5% TPR over 0.5 at 0%
-FPR on benign and imperative-language chunks. The one 0.3-threshold false
-positive was a cover-page checkbox table ("Please tick the appropriate box").
-Retrieval drops chunks individually, so a false positive drops one chunk and
-degrades quality — it does not block the request.
+**Corrected operating-point decision: threshold=0.3.** Both 0.3 and 0.4 share
+the same benign FPR (0.3%: one META 10-Q false positive on an OECD tax passage,
+not a cover-page checkbox table as previously noted). threshold=0.3 strictly
+dominates 0.4: 2.5% higher aggregate TPR and 12.5% higher indirect TPR at
+identical benign FPR. Both are within the <=2% FPR policy. FPR on imperative-
+language stress is 0.0% across all thresholds.
+
+Retrieval drops chunks individually so a false positive costs one chunk, not
+the full response. `_RETRIEVAL_INJECTION_THRESHOLD` updated to 0.3 in
+`finsentry/rails/retrieval/rail.py` (commit d3b-fix-2).
 
 ### Task 3 — Presidio SEC-context policy (d3b-2)
 

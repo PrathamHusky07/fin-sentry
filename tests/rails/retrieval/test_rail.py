@@ -253,9 +253,9 @@ def test_mixed_chunk_outcomes() -> None:
 
 
 def test_injection_threshold_constant() -> None:
-    """The retrieval threshold must be 0.4 (calibrated from the sweep)."""
-    assert _RETRIEVAL_INJECTION_THRESHOLD == 0.4, (
-        "Retrieval injection threshold must be 0.4 per the empirical calibration. "
+    """The retrieval threshold must be 0.3 (calibrated from per-category sweep, 2026-09-10)."""
+    assert _RETRIEVAL_INJECTION_THRESHOLD == 0.3, (
+        "Retrieval injection threshold must be 0.3 per the empirical calibration. "
         "Change requires re-running scripts/diagnostic_prompt_guard_retrieval_threshold.py."
     )
 
@@ -269,4 +269,109 @@ def test_known_tickers_constant() -> None:
     """_KNOWN_TICKERS must contain exactly the 10 demo companies."""
     assert _KNOWN_TICKERS == frozenset(
         ["AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN", "JPM", "BRK-B", "TSLA", "WMT"]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Threshold boundary semantics
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_guard_exactly_at_threshold_drops() -> None:
+    """malicious_probability == threshold uses >= so the chunk is dropped."""
+    chunk = _make_chunk()
+    rail, _, fake_connect = _make_rail({"abc123"})
+
+    with patch("finsentry.rails.retrieval.rail.psycopg.connect", fake_connect), patch(
+        "finsentry.rails.retrieval.rail._get_prompt_guard"
+    ) as mock_pg, patch("finsentry.rails.retrieval.rail._get_analyzer") as mock_analyzer:
+        mock_pg.return_value.check.return_value = _make_pg_decision(_RETRIEVAL_INJECTION_THRESHOLD)
+        mock_analyzer.return_value.analyze.return_value = []
+
+        result = rail.check_chunks([chunk])
+
+    assert len(result) == 0
+
+
+def test_prompt_guard_just_below_threshold_keeps() -> None:
+    """malicious_probability just below threshold uses >= so the chunk is kept."""
+    chunk = _make_chunk()
+    rail, _, fake_connect = _make_rail({"abc123"})
+
+    with patch("finsentry.rails.retrieval.rail.psycopg.connect", fake_connect), patch(
+        "finsentry.rails.retrieval.rail._get_prompt_guard"
+    ) as mock_pg, patch("finsentry.rails.retrieval.rail._get_analyzer") as mock_analyzer:
+        mock_pg.return_value.check.return_value = _make_pg_decision(
+            _RETRIEVAL_INJECTION_THRESHOLD - 0.001
+        )
+        mock_analyzer.return_value.analyze.return_value = []
+
+        result = rail.check_chunks([chunk])
+
+    assert len(result) == 1
+    assert result[0] is chunk
+
+
+# ---------------------------------------------------------------------------
+# Short-circuit sequencing invariants
+# ---------------------------------------------------------------------------
+
+
+def test_source_trust_failure_short_circuits_prompt_guard() -> None:
+    """If source-trust rejects a chunk, Prompt Guard must not be called for that chunk."""
+    bad = _make_chunk(chunk_id="bad01", ticker="INVALID_TICKER")
+    rail, _, fake_connect = _make_rail({"bad01"})
+
+    with patch("finsentry.rails.retrieval.rail.psycopg.connect", fake_connect), patch(
+        "finsentry.rails.retrieval.rail._get_prompt_guard"
+    ) as mock_pg, patch("finsentry.rails.retrieval.rail._get_analyzer"):
+        mock_pg.return_value.check.return_value = _make_pg_decision(0.001)
+
+        result = rail.check_chunks([bad])
+
+    assert len(result) == 0
+    mock_pg.return_value.check.assert_not_called()
+
+
+def test_prompt_guard_failure_short_circuits_presidio() -> None:
+    """If Prompt Guard flags a chunk, Presidio must not be called for that chunk."""
+    chunk = _make_chunk()
+    rail, _, fake_connect = _make_rail({"abc123"})
+
+    with patch("finsentry.rails.retrieval.rail.psycopg.connect", fake_connect), patch(
+        "finsentry.rails.retrieval.rail._get_prompt_guard"
+    ) as mock_pg, patch(
+        "finsentry.rails.retrieval.rail._get_analyzer"
+    ) as mock_analyzer:
+        mock_pg.return_value.check.return_value = _make_pg_decision(0.99)
+
+        result = rail.check_chunks([chunk])
+
+    assert len(result) == 0
+    mock_analyzer.return_value.analyze.assert_not_called()
+
+
+def test_rail_carries_source_url_to_source_trust() -> None:
+    """source_url on the chunk must be passed to check_chunk (Task 3 plumbing guard)."""
+    url = "https://www.sec.gov/Archives/edgar/data/320193/test.htm"
+    chunk = _make_chunk(source_url=url)
+    rail, _, fake_connect = _make_rail({"abc123"})
+
+    with patch("finsentry.rails.retrieval.rail.psycopg.connect", fake_connect), patch(
+        "finsentry.rails.retrieval.rail._get_prompt_guard"
+    ) as mock_pg, patch(
+        "finsentry.rails.retrieval.rail._get_analyzer"
+    ) as mock_analyzer, patch(
+        "finsentry.rails.retrieval.rail.check_chunk", return_value=(True, "")
+    ) as mock_check:
+        mock_pg.return_value.check.return_value = _make_pg_decision(0.001)
+        mock_analyzer.return_value.analyze.return_value = []
+
+        rail.check_chunks([chunk])
+
+    call_kwargs = mock_check.call_args
+    assert call_kwargs is not None
+    # check_chunk receives source_url as keyword arg
+    assert call_kwargs.kwargs.get("source_url") == url or (
+        len(call_kwargs.args) >= 5 and call_kwargs.args[4] == url
     )
