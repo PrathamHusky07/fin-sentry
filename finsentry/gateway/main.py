@@ -71,6 +71,7 @@ class RetrievedChunk(BaseModel):
     ticker: str
     filing_type: str
     filing_date: str  # ISO YYYY-MM-DD; empty string when not available in schema
+    source_url: str = ""  # https://www.sec.gov/... or empty for corpora without URLs
     text: str
     similarity_score: float
 
@@ -235,7 +236,7 @@ def _fetch_chunks_sync(
 
     if ticker is not None:
         sql = """
-            SELECT id, ticker, filing_type, filing_date::text, chunk_text,
+            SELECT id, ticker, filing_type, filing_date::text, chunk_text, source_url,
                    1 - (embedding <=> %s::vector) AS similarity_score
             FROM corpus
             WHERE ticker = %s
@@ -245,7 +246,7 @@ def _fetch_chunks_sync(
         params: tuple[Any, ...] = (vec, ticker, vec, top_k)
     else:
         sql = """
-            SELECT id, ticker, filing_type, filing_date::text, chunk_text,
+            SELECT id, ticker, filing_type, filing_date::text, chunk_text, source_url,
                    1 - (embedding <=> %s::vector) AS similarity_score
             FROM corpus
             ORDER BY embedding <=> %s::vector
@@ -266,7 +267,8 @@ def _fetch_chunks_sync(
             filing_type=str(row[2]),
             filing_date=str(row[3]) if row[3] is not None else "",
             text=str(row[4]),
-            similarity_score=float(row[5]),
+            source_url=str(row[5]) if row[5] is not None else "",
+            similarity_score=float(row[6]),
         )
         for row in rows
     ]
