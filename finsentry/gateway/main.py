@@ -29,6 +29,9 @@ from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
 from finsentry.rails.input.prompt_guard import PromptGuard2Rail
+from finsentry.rails.output.faithfulness import FaithfulnessRail
+from finsentry.rails.output.guardrails_schema import SchemaEnforcementRail
+from finsentry.rails.output.regulated_phrases import RegulatedPhraseRail
 from finsentry.rails.output.schema import RagAnswerResponse
 from finsentry.rails.retrieval.rail import RetrievalRail
 
@@ -44,6 +47,9 @@ _adapter: InputRailsAdapter | None = None
 _embed_model: Any = None  # SentenceTransformer; ignore_missing_imports in mypy config
 _rag_breaker: AsyncCircuitBreaker | None = None
 _retrieval_rail: RetrievalRail | None = None
+_schema_rail: SchemaEnforcementRail | None = None
+_phrase_rail: RegulatedPhraseRail | None = None
+_faithfulness_rail: FaithfulnessRail | None = None
 
 # Tenacity strategy for the 20-second total request budget.
 # Module-level so tests can patch them without modifying retry logic.
@@ -122,6 +128,7 @@ class _AuthError(Exception):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _adapter, _embed_model, _rag_breaker, _retrieval_rail
+    global _schema_rail, _phrase_rail, _faithfulness_rail
 
     # Load bge-small-en-v1.5 in a thread; ~130 MB download on first run, then
     # served from ~/.cache/huggingface/. Blocking, so off the event loop.
@@ -147,6 +154,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
 
     _retrieval_rail = RetrievalRail(db_url=_DATABASE_URL)
+
+    _schema_rail = SchemaEnforcementRail()
+    _phrase_rail = RegulatedPhraseRail()
+    _faithfulness_rail = FaithfulnessRail(
+        api_key=os.getenv("GEMINI_API_KEY"),
+        model_name=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
+        threshold=0.7,
+    )
 
     yield
 
@@ -535,18 +550,66 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         log.error("Unexpected downstream error: %s", exc, exc_info=True)
         return JSONResponse({"error": "downstream error"}, status_code=502)
 
-    # 7. Parse answer JSON and return structured response.
-    # Phase 6 replaces this block with full output rail pipeline.
-    # For now, attempt to parse the downstream string as RagAnswerResponse;
-    # fall back to a low-confidence wrapper when the downstream returns free text.
-    try:
-        parsed_answer = RagAnswerResponse.model_validate_json(answer)
-    except Exception:
-        parsed_answer = RagAnswerResponse(answer=answer, citations=[], confidence="low")
+    # 7. Output rails: schema, regulated phrases, faithfulness.
+    retrieved_chunk_ids = {c.chunk_id for c in filtered_chunks}
+    output_trace: dict[str, Any] = {}
+
+    # Rail A: schema enforcement + citation cross-check
+    if _schema_rail is not None:
+        schema_decision = _schema_rail.check(answer, retrieved_chunk_ids)
+        if schema_decision.outcome == "block":
+            return JSONResponse(
+                {
+                    "error": "output_rail_block",
+                    "rail": "schema-enforcement",
+                    "reason": schema_decision.reason,
+                    "details": schema_decision.details,
+                },
+                status_code=422,
+            )
+        # Parsed RagAnswerResponse is in schema_decision.details["parsed"]
+        parsed_answer: RagAnswerResponse = schema_decision.details["parsed"]
+    else:
+        try:
+            parsed_answer = RagAnswerResponse.model_validate_json(answer)
+        except Exception:
+            parsed_answer = RagAnswerResponse(answer=answer, citations=[], confidence="low")
+
+    # Rail B: regulated-phrase blocklist (runs on answer text only)
+    if _phrase_rail is not None:
+        phrase_decision = _phrase_rail.check(parsed_answer.answer)
+        if phrase_decision.outcome == "block":
+            return JSONResponse(
+                {
+                    "error": "output_rail_block",
+                    "rail": "regulated-phrases",
+                    "reason": phrase_decision.reason,
+                    "details": phrase_decision.details,
+                },
+                status_code=422,
+            )
+
+    # Rail C: faithfulness (async, fail-open per ADR 005)
+    if _faithfulness_rail is not None:
+        faith_decision = await _faithfulness_rail.check(
+            parsed_answer.answer, filtered_chunks
+        )
+        output_trace["faithfulness"] = faith_decision.details
+        if faith_decision.outcome == "block":
+            return JSONResponse(
+                {
+                    "error": "output_rail_block",
+                    "rail": "faithfulness",
+                    "reason": faith_decision.reason,
+                    "details": faith_decision.details,
+                },
+                status_code=422,
+            )
 
     response = RagQueryResponse(
         answer=parsed_answer,
         retrieved_chunks=filtered_chunks,
         retrieval_trace_id=str(uuid.uuid4()),
+        output_rail_trace=output_trace,
     )
     return JSONResponse(response.model_dump())

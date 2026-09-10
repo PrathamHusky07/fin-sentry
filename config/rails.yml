@@ -6,3 +6,13 @@ rails:
       on_failure: closed
     llama-guard-3:
       on_failure: closed
+  output:
+    schema-enforcement:
+      on_failure: closed
+    regulated-phrases:
+      on_failure: closed
+    faithfulness:
+      # Fail-open: Gemini API errors (rate limit, timeout, upstream error) must not
+      # fail the request. Threshold is provisional; Day 6 calibrates against FinanceBench.
+      on_failure: open
+      threshold: 0.7
