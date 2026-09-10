@@ -1,0 +1,145 @@
+"""
+Retrieval rail: filters and sanitises retrieved chunks before RAG generation.
+
+Three checks per chunk, in order:
+  1. Source-trust (deterministic): validates chunk_id, ticker, filing_type,
+     filing_date, and source_url against the corpus contract.
+  2. Prompt Guard 2 injection check: scores the chunk text with the
+     PromptGuard2 86M classifier at the retrieval threshold calibrated
+     empirically against a 300-chunk benign sample and 40 adversarial examples.
+  3. Presidio PII scan: redacts EMAIL_ADDRESS, US_SSN, CREDIT_CARD, IP_ADDRESS,
+     and CRYPTO entities in-place using the SEC-context retrieval policy.
+
+Fail-open per chunk: a chunk that fails any check is dropped from the list.
+The request continues with remaining chunks. If all chunks are dropped, the
+empty list is returned and the RAG endpoint replies without calling the
+downstream LLM.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import psycopg
+
+from finsentry.rails.input.pii_redaction import (
+    _CONFIDENCE_THRESHOLD,
+    _RETRIEVAL_ENTITY_TYPES,
+    _RETRIEVAL_OPERATORS,
+    _get_analyzer,
+    _get_anonymizer,
+)
+from finsentry.rails.input.prompt_guard import PromptGuard2Rail
+from finsentry.rails.retrieval.source_trust import check_chunk
+
+log = logging.getLogger(__name__)
+
+# Threshold chosen from empirical calibration (see build-log and
+# scripts/diagnostic_prompt_guard_retrieval_threshold.py):
+# threshold=0.4 gives 75% TPR on direct injections, 0% FPR on 300 benign
+# SEC chunks, 0% FPR on imperative-language stress test. Lower thresholds
+# (0.3) gain 2.5% TPR at the cost of 0.3% FPR (one false positive on a
+# cover-page checkbox table). Retrieval drops chunks individually so a
+# false positive drops one chunk, not the entire response.
+_RETRIEVAL_INJECTION_THRESHOLD: float = 0.4
+
+# Module-level singleton for the prompt guard rail.
+_prompt_guard: PromptGuard2Rail | None = None
+
+
+def _get_prompt_guard() -> PromptGuard2Rail:
+    global _prompt_guard
+    if _prompt_guard is None:
+        _prompt_guard = PromptGuard2Rail()
+    return _prompt_guard
+
+
+class RetrievalRail:
+    """Filter and sanitise retrieved chunks before RAG generation.
+
+    Call check_chunks() with the raw candidate list returned by the vector
+    search. Returns a new list with untrusted chunks dropped and PII redacted
+    in-place on remaining chunks.
+
+    db_url is the psycopg connection string. check_chunks() opens a new
+    per-call connection so concurrent event-loop threads do not share state.
+    """
+
+    def __init__(self, db_url: str) -> None:
+        self._db_url = db_url
+
+    def check_chunks(self, chunks: list[Any]) -> list[Any]:
+        """Filter chunks. Returns a new list with unsafe chunks dropped.
+
+        chunks: list of objects with attributes chunk_id, ticker, filing_type,
+        filing_date, text, similarity_score, and optionally source_url.
+        Mutates chunk.text in-place when Presidio finds entities to redact.
+
+        Opens a short-lived psycopg connection for the source-trust DB lookup;
+        closed when this method returns.
+        """
+        result: list[Any] = []
+
+        with psycopg.connect(self._db_url, autocommit=True) as conn:
+            for chunk in chunks:
+                chunk_id = str(getattr(chunk, "chunk_id", ""))
+                ticker = str(getattr(chunk, "ticker", ""))
+                filing_type = str(getattr(chunk, "filing_type", ""))
+                filing_date = str(getattr(chunk, "filing_date", ""))
+                source_url = str(getattr(chunk, "source_url", ""))
+                text = str(getattr(chunk, "text", ""))
+
+                # --- Check 1: source trust ---
+                trusted, reason = check_chunk(
+                    chunk_id=chunk_id,
+                    ticker=ticker,
+                    filing_type=filing_type,
+                    filing_date=filing_date,
+                    source_url=source_url,
+                    db_conn=conn,
+                )
+                if not trusted:
+                    log.info(
+                        "source-trust DROP chunk_id=%s reason=%s", chunk_id, reason
+                    )
+                    continue
+
+                # --- Check 2: prompt-guard injection check ---
+                pg = _get_prompt_guard()
+                decision = pg.check(text, {})
+                malicious_prob = float(decision.details.get("malicious_probability", 0.0))
+                if malicious_prob >= _RETRIEVAL_INJECTION_THRESHOLD:
+                    log.warning(
+                        "prompt-guard DROP chunk_id=%s malicious_prob=%.4f threshold=%.2f",
+                        chunk_id,
+                        malicious_prob,
+                        _RETRIEVAL_INJECTION_THRESHOLD,
+                    )
+                    continue
+
+                # --- Check 3: Presidio PII scan (redact in-place) ---
+                analyzer = _get_analyzer()
+                anonymizer = _get_anonymizer()
+                pii_results = analyzer.analyze(
+                    text=text,
+                    entities=_RETRIEVAL_ENTITY_TYPES,
+                    language="en",
+                    score_threshold=_CONFIDENCE_THRESHOLD,
+                )
+                if pii_results:
+                    anonymized = anonymizer.anonymize(
+                        text=text,
+                        analyzer_results=pii_results,
+                        operators=_RETRIEVAL_OPERATORS,
+                    )
+                    redacted_types = sorted({r.entity_type for r in pii_results})
+                    log.info(
+                        "presidio REDACT chunk_id=%s entity_types=%s",
+                        chunk_id,
+                        redacted_types,
+                    )
+                    chunk.text = anonymized.text
+
+                result.append(chunk)
+
+        return result

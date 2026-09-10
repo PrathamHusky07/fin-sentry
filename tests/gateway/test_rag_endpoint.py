@@ -261,3 +261,38 @@ async def test_rag_query_missing_filing_date_returns_empty_string_not_none(
     assert len(chunks) == 1
     assert chunks[0]["filing_date"] == ""
     assert chunks[0]["filing_date"] is not None
+
+
+async def test_all_chunks_dropped_endpoint_returns_no_sources_message(
+    fake_breaker: AsyncCircuitBreaker,
+    fake_embed_model: MagicMock,
+) -> None:
+    """When the retrieval rail drops all chunks, return 200 with 'No trustworthy sources'
+    and do NOT call _call_downstream_rag."""
+    raw_chunks = [_make_chunk("c1"), _make_chunk("c2")]
+    mock_rail = MagicMock()
+    mock_rail.check_chunks.return_value = []
+    mock_llm = AsyncMock(return_value="should not be called")
+
+    with (
+        patch.object(gw, "_DOWNSTREAM_URL", "http://fake-llm"),
+        patch.object(gw, "_DATABASE_URL", "postgresql://fake"),
+        patch.object(gw, "_embed_model", fake_embed_model),
+        patch.object(gw, "_rag_breaker", fake_breaker),
+        patch.object(gw, "_adapter", None),
+        patch.object(gw, "_retrieval_rail", mock_rail),
+        patch("finsentry.gateway.main._fetch_chunks", AsyncMock(return_value=raw_chunks)),
+        patch("finsentry.gateway.main._call_downstream_rag", mock_llm),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/v1/rag/query",
+                json={"query": "What is revenue?"},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "No trustworthy sources found for this query."
+    assert body["retrieved_chunks"] == []
+    assert "retrieval_trace_id" in body
+    mock_llm.assert_not_called()

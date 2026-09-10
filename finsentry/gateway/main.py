@@ -29,6 +29,7 @@ from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
 from finsentry.rails.input.prompt_guard import PromptGuard2Rail
+from finsentry.rails.retrieval.rail import RetrievalRail
 
 load_dotenv()
 
@@ -41,6 +42,7 @@ _DEFAULT_RAG_MODEL = "gemini-2.5-flash"
 _adapter: InputRailsAdapter | None = None
 _embed_model: Any = None  # SentenceTransformer; ignore_missing_imports in mypy config
 _rag_breaker: AsyncCircuitBreaker | None = None
+_retrieval_rail: RetrievalRail | None = None
 
 # Tenacity strategy for the 20-second total request budget.
 # Module-level so tests can patch them without modifying retry logic.
@@ -116,7 +118,7 @@ class _AuthError(Exception):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    global _adapter, _embed_model, _rag_breaker
+    global _adapter, _embed_model, _rag_breaker, _retrieval_rail
 
     # Load bge-small-en-v1.5 in a thread; ~130 MB download on first run, then
     # served from ~/.cache/huggingface/. Blocking, so off the event loop.
@@ -140,6 +142,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         recovery_timeout=30.0,
         name="rag",
     )
+
+    _retrieval_rail = RetrievalRail(db_url=_DATABASE_URL)
 
     yield
 
@@ -464,10 +468,25 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         log.error("Vector search failed: %s", exc, exc_info=True)
         return JSONResponse({"error": "vector search failed"}, status_code=503)
 
-    # 4. Assemble RAG prompt.
-    prompt_messages = _build_rag_messages(query, chunks)
+    # 4. Retrieval rail: source-trust, injection detection, PII redaction.
+    if _retrieval_rail is not None:
+        filtered_chunks = await asyncio.to_thread(_retrieval_rail.check_chunks, chunks)
+    else:
+        filtered_chunks = chunks
 
-    # 5. Forward to downstream LLM with budget and circuit breaker.
+    if not filtered_chunks:
+        return JSONResponse(
+            RagQueryResponse(
+                answer="No trustworthy sources found for this query.",
+                retrieved_chunks=[],
+                retrieval_trace_id=str(uuid.uuid4()),
+            ).model_dump()
+        )
+
+    # 5. Assemble RAG prompt.
+    prompt_messages = _build_rag_messages(query, filtered_chunks)
+
+    # 6. Forward to downstream LLM with budget and circuit breaker.
     try:
         answer = await _call_downstream_rag(prompt_messages, _DOWNSTREAM_URL, _rag_breaker)
     except _DownstreamCircuitOpenError as exc:
@@ -491,10 +510,10 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         log.error("Unexpected downstream error: %s", exc, exc_info=True)
         return JSONResponse({"error": "downstream error"}, status_code=502)
 
-    # 6. Return structured response.
+    # 7. Return structured response.
     response = RagQueryResponse(
         answer=answer,
-        retrieved_chunks=chunks,
+        retrieved_chunks=filtered_chunks,
         retrieval_trace_id=str(uuid.uuid4()),
     )
     return JSONResponse(response.model_dump())
