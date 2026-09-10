@@ -31,6 +31,25 @@ Do not run the entire session on Opus. It burns budget for no gain on tasks Sonn
 
 When starting a new day, name the model you are on and why in the first response of the session. That gives us both a checkpoint.
 
+## Context management
+
+Monitor context usage continuously throughout every session. If context drops
+to 10% or below at any point during any task, stop immediately and:
+
+1. Write a comprehensive handoff to `docs/build-log.md` covering what has been
+   completed in the current session and the exact next task to resume.
+2. Commit and push the handoff.
+3. Report the handoff to the user and stop.
+
+Do not use auto-compaction under any circumstance. Auto-compaction silently
+compresses context and can lose specifics — commit hashes, empirical outputs,
+architectural decisions, and other details that future sessions depend on.
+Explicit handoff to the build log preserves everything a fresh session needs
+to resume.
+
+This rule applies to every task, not just complex ones. A task that is "small"
+now can still hit the floor if unexpected debugging emerges.
+
 ## Commands (exact)
 
 Backend Python (from the project root, `fin-sentry/`):
@@ -115,6 +134,18 @@ When you finish writing any prose destined to ship, re-read it and check it agai
 
 Gemini 2.5 Flash runs through the Google Cloud free-tier credit. Everything else is open source and runs locally. If you find yourself about to import an SDK for a paid service that is not Gemini, stop and ask. If a library you want to use has a paid tier that its free tier does not fully cover for this project's usage pattern, stop and ask.
 
+
+### Zero project spend
+
+This project must cost $0 out of pocket. Do not introduce any paid
+infrastructure, API usage, GPU compute, hosted model inference, or SaaS
+subscription for the project. Existing free tiers, free quotas, and explicitly
+available promotional credits may be used only when they incur no charge to
+the user. Never recommend "it's only a few dollars" as a reason to use a paid
+service. If a proposed architecture requires paid usage, stop and ask before
+proceeding.
+
+
 ### The description document is the spec.
 
 The description doc at `docs/internal/Project4_Description.docx` defines the architecture, the four components, the three experiments, the datasets, the tech stack, and the eleven-day build order. Do not deviate from it without asking. If you think something in the spec is wrong, say so and wait for my call before changing course.
@@ -136,6 +167,24 @@ Judge scores tell us about response quality. They are not test results. When you
 Commit at the end of every logical unit of work, not once at end of day. Commit messages are imperative and short. `add gateway input rails behind NeMo Guardrails` not `feat: implemented the input rails for the guardrails feature (WIP)`. Every commit should build and run its tests. If you have to commit broken code to save your place, prefix the message with `wip:` and open the next session with fixing it.
 
 Never include AI-attribution in commit messages. No `Co-authored-by: Claude`. No robot emoji footer. No "generated with Claude Code" line. A hiring manager scrolling the commit history and seeing those lines assumes the candidate did not write the code themselves. Every commit reads as authored by the human developer, because that is the honest signal. The developer decided what to build, decided when it was done, and accepted responsibility for shipping it.
+
+## Empirical calibration methodology
+
+When choosing a threshold for a classifier or model that affects a
+security or policy decision, do not pick a value from a benign-only
+distribution (e.g., "99.5th percentile of legitimate samples"). A
+benign-only distribution characterizes false-positive behavior only;
+it says nothing about detection capability. Real threshold calibration
+requires two populations: a benign set the classifier should pass, and
+an adversarial set the classifier should catch. Sweep candidate
+thresholds, produce the operating curve, and select the point based on
+the actual policy trade-off. Document the curve in the build log.
+
+Not every parameter needs an experiment. Before running a calibration:
+classify the parameter as architectural (dictated by design),
+configuration (needs empirical tuning), policy (needs explicit decision),
+or spec-fixed (defined in Project4_Description.docx). Only run
+experiments on configuration parameters.
 
 ### Type discipline.
 
