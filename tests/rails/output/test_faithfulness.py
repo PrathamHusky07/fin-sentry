@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from finsentry.rails.output.faithfulness import FaithfulnessRail, _GeminiSkipError
+from finsentry.rails.output.faithfulness import (
+    FaithfulnessRail,
+    _GeminiSkipError,
+    _strip_json_fences,
+)
 
 # --- helpers ---
 
@@ -269,3 +273,48 @@ async def test_faithfulness_records_gemini_token_usage() -> None:
     assert decision.details["input_tokens"] == 123 + 67
     assert decision.details["output_tokens"] == 45 + 22
     assert decision.details["gemini_calls"] == 2
+
+
+# --- _strip_json_fences unit tests ---
+
+
+def test_strip_json_fences_plain_json_unchanged() -> None:
+    raw = '{"verdict": "yes", "rationale": "matches"}'
+    assert _strip_json_fences(raw) == raw
+
+
+def test_strip_json_fences_strips_json_code_fence() -> None:
+    raw = '```json\n{"verdict": "yes", "rationale": "ok"}\n```'
+    assert _strip_json_fences(raw) == '{"verdict": "yes", "rationale": "ok"}'
+
+
+def test_strip_json_fences_strips_plain_code_fence() -> None:
+    raw = '```\n["claim A", "claim B"]\n```'
+    assert _strip_json_fences(raw) == '["claim A", "claim B"]'
+
+
+def test_strip_json_fences_multiline_array() -> None:
+    raw = '```json\n[\n  "Claim 1.",\n  "Claim 2."\n]\n```'
+    result = _strip_json_fences(raw)
+    assert json.loads(result) == ["Claim 1.", "Claim 2."]
+
+
+@pytest.mark.asyncio
+async def test_faithfulness_handles_markdown_fenced_gemini_responses() -> None:
+    """Gemini may wrap JSON in ```json ... ``` fences; verify claims are parsed correctly."""
+    rail = _make_rail()
+    # Claim extraction wrapped in markdown fence
+    fenced_claims = '```json\n["Revenue was $94.9B."]\n```'
+    # Verdict wrapped in markdown fence
+    fenced_verdict = '```json\n{"verdict": "yes", "rationale": "context confirms"}\n```'
+    responses: list[tuple[str, int, int]] = [
+        (fenced_claims, 100, 30),
+        (fenced_verdict, 50, 20),
+    ]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("Revenue was $94.9B.", [_make_chunk("c1")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["score"] == 1.0
+    assert decision.details["supported_claims"] == ["Revenue was $94.9B."]

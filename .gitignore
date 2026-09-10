@@ -10,6 +10,8 @@ scripts/
 !scripts/diagnostic_prompt_guard_retrieval_threshold.py
 !scripts/diagnostic_presidio_sec_context.py
 !scripts/diagnostic_baseline_retrieval.py
+!scripts/smoke_test_gemini_faithfulness.py
+!scripts/diagnostic_output_rails_e2e.py
 
 # Python
 __pycache__/

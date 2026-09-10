@@ -55,9 +55,26 @@ Claim: {claim}
 Respond in this exact JSON format:
 {{"verdict": "yes" or "no", "rationale": "one sentence"}}"""
 
+def _strip_json_fences(text: str) -> str:
+    """Strip markdown code fences that Gemini may wrap around JSON responses."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # Drop opening fence (```json or ```)
+        lines = lines[1:]
+        # Drop closing fence if present
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return text
+
+
 _MAX_CLAIMS = 10
-_PER_CALL_TIMEOUT = 8.0  # seconds per Gemini API call
-_TOTAL_BUDGET = 20.0  # seconds total for the entire rail
+# Per-call and total budget defaults.
+# gemini-3.6-flash is a thinking model (~10-15s per call on the Developer API free tier).
+# These defaults are intentionally generous; the smoke test verifies empirical latency.
+_PER_CALL_TIMEOUT = 30.0  # seconds per Gemini API call
+_TOTAL_BUDGET = 120.0  # seconds total for the entire rail
 
 
 class FaithfulnessRail:
@@ -126,7 +143,7 @@ class FaithfulnessRail:
             )
 
         try:
-            claims: list[str] = json.loads(claims_raw)
+            claims: list[str] = json.loads(_strip_json_fences(claims_raw))
             if not isinstance(claims, list):
                 claims = []
         except (json.JSONDecodeError, ValueError):
@@ -178,7 +195,7 @@ class FaithfulnessRail:
 
             verdict = "no"
             try:
-                verdict_data = json.loads(verdict_raw)
+                verdict_data = json.loads(_strip_json_fences(verdict_raw))
                 if isinstance(verdict_data, dict):
                     verdict = str(verdict_data.get("verdict", "no")).lower().strip()
             except (json.JSONDecodeError, ValueError):
@@ -243,13 +260,7 @@ class FaithfulnessRail:
 
     async def _generate(self, prompt: str) -> tuple[str, int, int]:
         """Async wrapper for the synchronous Gemini generate_content call."""
-        from google.api_core.exceptions import (
-            GoogleAPICallError,
-            PermissionDenied,
-            ResourceExhausted,
-            ServiceUnavailable,
-            Unauthenticated,
-        )
+        from google.genai.errors import APIError, ClientError, ServerError
 
         def _sync_call() -> tuple[str, int, int]:
             response = self._client.models.generate_content(
@@ -268,18 +279,20 @@ class FaithfulnessRail:
 
         try:
             return await asyncio.to_thread(_sync_call)
-        except ResourceExhausted as exc:
-            raise _GeminiSkipError("skipped_rate_limit", {}) from exc
-        except (PermissionDenied, Unauthenticated) as exc:
-            log.error("Gemini auth error — check GEMINI_API_KEY: %s", exc)
-            raise _GeminiSkipError("skipped_auth_error", {}) from exc
-        except ServiceUnavailable as exc:
+        except ClientError as exc:
+            # 4xx from genai SDK: ClientError subclass of APIError
+            code: int = getattr(exc, "code", 0)
+            if code == 429:
+                raise _GeminiSkipError("skipped_rate_limit", {}) from exc
+            if code in {401, 403}:
+                log.error("Gemini auth error — check GEMINI_API_KEY: %s", exc)
+                raise _GeminiSkipError("skipped_auth_error", {}) from exc
+            if "SAFETY" in str(exc).upper() or "BLOCKED" in str(exc).upper():
+                raise _GeminiSkipError("skipped_safety_filter", {}) from exc
+            raise _GeminiSkipError("skipped_upstream_error", {"error_detail": str(exc)}) from exc
+        except ServerError as exc:
             raise _GeminiSkipError("skipped_upstream_error", {}) from exc
-        except GoogleAPICallError as exc:
-            status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-            if status_code in {500, 502, 503}:
-                raise _GeminiSkipError("skipped_upstream_error", {}) from exc
-            # Safety filter or other block
+        except APIError as exc:
             if "SAFETY" in str(exc).upper() or "BLOCKED" in str(exc).upper():
                 raise _GeminiSkipError("skipped_safety_filter", {}) from exc
             raise _GeminiSkipError("skipped_upstream_error", {"error_detail": str(exc)}) from exc

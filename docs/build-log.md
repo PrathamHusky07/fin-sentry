@@ -1,5 +1,163 @@
 # Build Log
 
+## 2026-09-10 — Day 3 Session C: output rails (commits d3c-1..d3c-6)
+
+### What shipped
+
+Three output rails implemented and wired into the `POST /v1/rag/query` endpoint.
+Output rail blocks return HTTP 422 (Unprocessable Entity) to distinguish from
+input rail blocks (403).
+
+**Commit d3c-1** — `finsentry/rails/output/schema.py`. `Citation(BaseModel)` with
+`quote: str = Field(max_length=300)`. `RagAnswerResponse(BaseModel)` with
+`answer: str`, `citations: list[Citation]`, `confidence: Literal["low","medium","high"]`.
+
+**Commit d3c-2** — `finsentry/gateway/main.py` — `_build_rag_messages` rewritten.
+Chunks labeled `[chunk_id={c.chunk_id}] ticker=..., filing_type=..., date=...`.
+`_RAG_SYSTEM_PROMPT` instructs JSON response format, provides schema example, and
+includes abstention rule (empty citations + confidence="low" when context is
+insufficient). `RagQueryResponse.answer` changed from `str` to `RagAnswerResponse`.
+`output_rail_trace: dict[str, Any]` added to `RagQueryResponse`. Two existing tests
+updated to use `body["answer"]["answer"]` and `body["answer"]["confidence"]`.
+
+**Commit d3c-3** — `finsentry/rails/output/guardrails_schema.py`. `SchemaEnforcementRail`
+using pure Pydantic (guardrails-ai carries hard openai+litellm dependencies; rejected).
+Block sequence: malformed_json, schema_violation, hallucinated_citation, empty_citations_with_non_low_confidence.
+Citation cross-check: every `citation.chunk_id` must be in the `retrieved_chunk_ids` set.
+`details["parsed"]` carries the `RagAnswerResponse` instance on pass.
+11 golden matrix tests in `tests/rails/output/test_guardrails_schema.py`.
+
+**Commit d3c-4** — `finsentry/rails/output/regulated_phrases.py`. `RegulatedPhraseRail`
+with 6 compiled regex patterns covering FINRA Rule 2210, SEC Rule 10b5-1, SEC Rule 156.
+Runs on `RagAnswerResponse.answer` only, not on citation quotes. 20 tests in
+`tests/rails/output/test_regulated_phrases.py`.
+
+**Commit d3c-5** — endpoint wiring + `config/rails.yml` update. Output rails
+instantiated in lifespan: `SchemaEnforcementRail()`, `RegulatedPhraseRail()`,
+`FaithfulnessRail(api_key=GEMINI_API_KEY, model_name=GEMINI_MODEL, threshold=0.7)`.
+Step 7 of `rag_query` runs the three-rail pipeline in sequence; first block short-circuits
+with 422. `output_rail_trace` populated with per-rail decisions. `config/rails.yml`
+updated with `output` section; faithfulness `on_failure: open` per ADR 005.
+
+**Commit d3c-6** — `docs/adr/005-output-rail-architecture.md` (full ADR), `.env.example`
+(GEMINI_API_KEY + GEMINI_MODEL), `requirements.txt` (google-genai>=2.22.0),
+`scripts/smoke_test_gemini_faithfulness.py`, `scripts/diagnostic_output_rails_e2e.py`,
+`tests/rails/output/test_faithfulness.py` (+5 new tests for `_strip_json_fences`).
+
+### FaithfulnessRail implementation (Es et al. 2023, reference-free variant)
+
+ragas 0.4.3 rejected: pulls `openai>=1.0.0` and `langchain_openai` as non-optional
+transitive dependencies. Implemented the algorithm directly against `google-genai` SDK.
+
+Algorithm:
+1. Claim extraction: prompt Gemini to extract atomic claims from answer (capped at 10).
+2. Per-claim NLI: for each claim, prompt Gemini to verify against retrieved context.
+3. Score: `supported / total` (1.0 when no claims). Block if `score < 0.7`.
+
+Timeout: 30s per call, 120s total budget. Fail-open on all API errors (rate limit,
+timeout, auth, upstream, safety filter). Model: `gemini-3.6-flash` (Developer API,
+free tier).
+
+### Smoke test empirical data (run 2026-09-10)
+
+Model: `gemini-3.6-flash`. First run produced 11 real API calls before rate quota
+exhaustion. Subsequent runs return immediate 429 (skipped_rate_limit).
+
+```
+Using model: gemini-3.6-flash
+
+--- Pair A (faithful — should PASS) ---
+  Model:             gemini-3.6-flash
+  Status:            blocked
+  Score:             0.0
+  Latency:           53303 ms
+  Gemini calls:      5
+  Input tokens:      770
+  Output tokens:     324
+  Supported claims:  []
+  Unsupported:       ["Apple's total net sales for fiscal year 2024 were $391.0 billion.",
+                      "Apple's total net sales for fiscal year 2024 declined by 2% year-over-year.",
+                      "Apple's iPhone sales for fiscal year 2024 were approximately $201 billion.",
+                      "Apple's iPhone sales represented approximately half of its total revenue in FY2024."]
+  Assertion (score >= 0.7): FAIL
+
+--- Pair B (unfaithful — should BLOCK) ---
+  Model:             gemini-3.6-flash
+  Status:            blocked
+  Score:             0.0
+  Latency:           56207 ms
+  Gemini calls:      6
+  Input tokens:      759
+  Output tokens:     340
+  Supported claims:  []
+  Unsupported:       ["Microsoft's total revenue reached $350 billion in fiscal year 2024.",
+                      "Microsoft's gaming division contributed $25 billion in fiscal year 2024.",
+                      "Microsoft announced a special dividend of $5 per share.",
+                      "Microsoft's net income grew 40%.",
+                      "Microsoft's net income growth was driven by AI services."]
+  Assertion (score < 0.7): PASS
+
+=== TOTAL USAGE ===
+  Total Gemini calls:  11
+  Total input tokens:  1529
+  Total output tokens: 664
+  Estimated cost:      $0.002119 USD
+```
+
+**Empirical observations:**
+- `gemini-3.6-flash` is a thinking model. Per-call latency: ~10-14s (claim extraction)
+  to ~13s (per-claim verification). Total ~53s for 5-call pair, ~56s for 6-call pair.
+- Token consumption: 139 input / 30 output for extraction; ~126 input / ~52 output per
+  verification on these examples.
+- Pair B correctly blocked: claims about gaming revenue, special dividend, and 40% net
+  income growth are all absent from the Microsoft context chunk.
+
+**Post-run bug fix and re-verification:**
+Pair A scored 0.0 because Gemini wrapped its JSON responses in markdown code fences
+(` ```json ... ``` `), causing `json.loads` to fail silently and default all verdicts
+to "no". Fix: `_strip_json_fences(text: str) -> str` added to `faithfulness.py`; applied
+to both claim extraction and per-claim verdict parsing. 5 unit tests added in
+`test_faithfulness.py` to verify the fix (`test_strip_json_fences_*`,
+`test_faithfulness_handles_markdown_fenced_gemini_responses`). All 18 faithfulness tests
+pass. Daily quota exhaustion (11 prior calls against the free tier) prevents immediate
+smoke test re-run; re-run after quota reset will confirm Pair A assertion.
+
+### E2E diagnostic
+
+`scripts/diagnostic_output_rails_e2e.py`: 20 deterministic checks across all three
+output rails (no live API calls; FaithfulnessRail tested in disabled mode).
+
+```
+=== Rail A: SchemaEnforcementRail ===  8/8 PASS
+=== Rail B: RegulatedPhraseRail ===    10/10 PASS (patterns: guaranteed returns,
+    risk-free investment, can't lose, sure thing, money-back guarantee + boundaries)
+=== Rail C: FaithfulnessRail ===       2/2 PASS (disabled mode)
+=== SUMMARY: 20/20 checks passed ===
+```
+
+### Verification (2026-09-10 Session C)
+
+`pytest -m "not slow" -x -q`: 163 passed, 2 deselected, 16 warnings.
+`ruff check .`: all checks passed.
+`mypy finsentry/ --strict`: no issues, 26 source files.
+
+### What was skipped
+
+RAGAS Faithfulness threshold calibration against FinanceBench (Day 6 task). The
+provisional threshold of 0.7 ships; Day 6 will sweep it with Cohen's kappa.
+
+Async judge worker pool (Day 4). Faithfulness runs synchronously in the request
+path at Day 3, adding up to 120s worst-case post-generation latency. Day 4 moves
+it to the async evaluation path.
+
+### What's next (Session D / Day 4)
+
+Two-tier judge pipeline: Gemini flash-tier judge (online) + HHEM-2.1-open /
+Patronus Lynx 8B / Prometheus 2 7B (frontier tier, local). Judge metadata wired
+into `RagQueryResponse`. Redpanda + RisingWave event pipeline setup.
+
+---
+
 ## 2026-09-10 — Day 3 Session B: retrieval rail (commits d3a-fix-4, d3b-2..d3b-5)
 
 ### Preamble d3a-fix-4: asyncio.wait_for cancellation boundary
