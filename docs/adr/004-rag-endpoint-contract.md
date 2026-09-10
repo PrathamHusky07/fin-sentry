@@ -98,7 +98,9 @@ for 30 seconds. When open, all requests return 503 immediately with
 | Condition | Retry? | Increment breaker? |
 |---|---|---|
 | HTTP 500, 502, 503, 504 from downstream | Yes | Yes |
-| Connection refused, reset, DNS failure | Yes | Yes |
+| Connection refused, reset, DNS failure (httpx.ConnectError) | Yes | Yes |
+| Read-side transport failure (httpx.ReadError, httpx.RemoteProtocolError) | Yes | Yes |
+| Any other httpx.TransportError subclass | Yes | Yes |
 | httpx.TimeoutException on individual attempt | Yes | Yes |
 | HTTP 400, 422 from downstream | No | No |
 | HTTP 401, 403 from downstream | No | No |
@@ -121,6 +123,39 @@ downstream is correctly rate-limiting, causing 503 storms that are harder to
 recover from than the 429 backpressure alone. If the 20-second budget expires
 while retrying 429s, the caller receives 429 (not 504) so they can distinguish
 "downstream throttled" from "downstream down".
+
+**Rationale for request-level breaker semantics.** The circuit breaker counts
+request-level outcomes, not attempt-level outcomes. A single logical request
+that retries internally five times on 500 must not trip the breaker on itself;
+five separate failed requests must. This is enforced by mutating breaker state
+only at the retry-loop boundary, not inside individual attempts. `_attempt()`
+raises typed exceptions only; the outer `try/except RetryError` block inspects
+the last exception type and calls `record_failure()` exactly once per failed
+request, and `record_success()` exactly once per successful request. A request
+that exhausts its budget retrying 429s produces no breaker mutation because 429
+exhaustion is a rate-limit outcome, not a health failure.
+
+**Rationale for absolute deadline enforcement.** The 20-second budget is a
+total wall-time contract, not a per-attempt guarantee. An absolute deadline is
+recorded at request start (`deadline = time.monotonic() + _RAG_BUDGET`). Each
+attempt's httpx timeout is `min(_ATTEMPT_CAP, remaining)`, where
+`remaining = deadline - time.monotonic()` at the start of that attempt. The
+exponential backoff sleep is clipped to `min(base_backoff, remaining)` so a
+pending sleep cannot push total elapsed past the deadline. Under any downstream
+failure mode, including hung connections and repeated slow responses, total wall
+time is bounded by 20 seconds plus a small check-and-terminate tolerance. A
+per-attempt timeout alone cannot provide this guarantee: with a 15-second cap
+and two retries plus a 0.5-second backoff, total wall time can reach 30.5
+seconds, a 10.5-second violation of the documented contract.
+
+**Rationale for OPEN-state idempotence.** Once the breaker is OPEN, late-arriving
+`record_failure()` calls from requests that were already in flight when the
+breaker opened must not reset `_opened_at`. The 30-second recovery window is
+anchored to the first transition to OPEN. If `_opened_at` were overwritten on
+every failure call while OPEN, each late in-flight request would silently push
+back the recovery timestamp, extending the outage window by seconds per request.
+The fix guards the state transition with `if self._state != CircuitState.OPEN`,
+so the OPEN transition and `_opened_at` assignment are both one-way.
 
 ## Alternatives Considered
 
