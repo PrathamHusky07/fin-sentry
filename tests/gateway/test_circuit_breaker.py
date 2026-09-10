@@ -235,3 +235,96 @@ async def test_retry_exponential_backoff_bounded_by_budget() -> None:
         assert 0.5 <= s <= 4.0, f"Sleep {s} is outside configured bounds [0.5, 4.0]"
     if len(sleep_calls) >= 2:
         assert sleep_calls[1] >= sleep_calls[0], "Backoff must be non-decreasing"
+
+
+# ---------------------------------------------------------------------------
+# Defect 1: request-level breaker semantics (commit d3a-fix-1)
+# ---------------------------------------------------------------------------
+
+
+async def test_single_failed_request_increments_breaker_by_one_regardless_of_retries() -> None:
+    """One request that retries 5 times on 500 produces exactly one failure increment.
+
+    Invariant: each logical _call_downstream_rag produces at most one
+    record_failure() call, regardless of how many internal retry attempts fired.
+    Under pre-fix code this test fails because record_failure was called inside
+    _attempt() on every retry.
+    """
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+    mock_client = _make_mock_client(responses=[500])
+
+    with (
+        patch("finsentry.gateway.main.httpx.AsyncClient", return_value=mock_client),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(5)),
+    ):
+        with pytest.raises(RetryError):
+            await _call_downstream_rag(
+                [{"role": "user", "content": "?"}],
+                "http://fake-downstream",
+                breaker,
+            )
+
+    assert breaker.failure_count == 1, (
+        f"Expected 1 failure increment for one failed request, got {breaker.failure_count}"
+    )
+
+
+async def test_five_separate_failed_requests_trip_breaker() -> None:
+    """Five separate failed requests increment the breaker five times and trip it.
+
+    Invariant: the request-level (not per-retry) counting is what trips the
+    breaker. Five consecutive _call_downstream_rag failures must open it.
+    """
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+    mock_client = _make_mock_client(responses=[500])
+
+    for _ in range(5):
+        with (
+            patch("finsentry.gateway.main.httpx.AsyncClient", return_value=mock_client),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(1)),
+        ):
+            with pytest.raises(RetryError):
+                await _call_downstream_rag(
+                    [{"role": "user", "content": "?"}],
+                    "http://fake-downstream",
+                    breaker,
+                )
+
+    is_open, _ = await breaker.is_open()
+    assert is_open, "Breaker must be OPEN after 5 separate failed requests"
+    assert breaker.failure_count >= 5
+
+
+async def test_successful_request_calls_record_success_once() -> None:
+    """A request that fails on the first attempt and succeeds on the second calls
+    record_success exactly once and record_failure zero times.
+
+    Invariant: success on any attempt within the request => exactly one record_success(),
+    and record_failure() is never called for that request.
+    """
+    from unittest.mock import patch as _patch
+
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+    mock_client = _make_mock_client(responses=[500, 200])
+
+    success_mock = AsyncMock(wraps=breaker.record_success)
+    failure_mock = AsyncMock(wraps=breaker.record_failure)
+
+    with (
+        patch("finsentry.gateway.main.httpx.AsyncClient", return_value=mock_client),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(3)),
+        _patch.object(breaker, "record_success", success_mock),
+        _patch.object(breaker, "record_failure", failure_mock),
+    ):
+        result = await _call_downstream_rag(
+            [{"role": "user", "content": "?"}],
+            "http://fake-downstream",
+            breaker,
+        )
+
+    assert result == "ok"
+    assert success_mock.call_count == 1, "record_success must be called exactly once on success"
+    assert failure_mock.call_count == 0, "record_failure must not be called when request succeeds"

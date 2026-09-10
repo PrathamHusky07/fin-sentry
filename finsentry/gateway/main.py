@@ -318,8 +318,9 @@ async def _call_downstream_rag(
     if is_open:
         raise _DownstreamCircuitOpenError(retry_after)
 
-    # Separate exception class per taxonomy entry so tenacity can distinguish
-    # which ones to retry and the caller can read the last failure type.
+    # _attempt raises typed exceptions only; no breaker mutations here.
+    # Breaker mutations happen exactly once at the retry-loop boundary so that
+    # one logical request produces at most one counter increment.
     async def _attempt() -> str:
         async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
             try:
@@ -331,7 +332,6 @@ async def _call_downstream_rag(
                     },
                 )
             except (httpx.TimeoutException, httpx.ConnectError) as exc:
-                await breaker.record_failure()
                 raise _RetryableError(-1) from exc
 
         if resp.status_code in {400, 422}:
@@ -342,24 +342,31 @@ async def _call_downstream_rag(
             # Rate limit: retry but do NOT increment breaker counter.
             raise _RateLimitError()
         if resp.status_code >= 500:
-            await breaker.record_failure()
             raise _RetryableError(resp.status_code)
 
         resp.raise_for_status()
-        await breaker.record_success()
         data: dict[str, Any] = resp.json()
         return str(data["choices"][0]["message"]["content"])
 
-    async for attempt in AsyncRetrying(
-        stop=_RAG_STOP,
-        wait=_RAG_WAIT,
-        retry=retry_if_exception_type((_RetryableError, _RateLimitError)),
-        reraise=False,
-    ):
-        with attempt:
-            return await _attempt()
+    try:
+        async for attempt in AsyncRetrying(
+            stop=_RAG_STOP,
+            wait=_RAG_WAIT,
+            retry=retry_if_exception_type((_RetryableError, _RateLimitError)),
+            reraise=False,
+        ):
+            with attempt:
+                result = await _attempt()
+                await breaker.record_success()
+                return result
+    except RetryError as exc:
+        # One logical request = at most one breaker mutation.
+        # 429 exhaustion means the downstream is alive (rate-limiting), not failing.
+        last = exc.last_attempt.exception()
+        if isinstance(last, _RetryableError):
+            await breaker.record_failure()
+        raise
 
-    # Unreachable: tenacity raises RetryError before exiting the loop.
     raise AssertionError("unreachable")  # pragma: no cover
 
 
