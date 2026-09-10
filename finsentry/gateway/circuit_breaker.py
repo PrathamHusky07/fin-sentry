@@ -78,10 +78,14 @@ class AsyncCircuitBreaker:
             return False, 0.0
 
     async def record_failure(self) -> None:
-        """Increment the failure counter; trip the breaker if threshold is met."""
+        """Increment the failure counter; trip the breaker if threshold is met.
+
+        Once OPEN, additional record_failure calls do not reset _opened_at.
+        The recovery window starts when the breaker first opens, not on the last failure.
+        """
         async with self._lock:
             self._failure_count += 1
-            if self._failure_count >= self.failure_threshold:
+            if self._failure_count >= self.failure_threshold and self._state != CircuitState.OPEN:
                 self._state = CircuitState.OPEN
                 self._opened_at = self._now()
 

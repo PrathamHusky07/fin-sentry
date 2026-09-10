@@ -535,3 +535,48 @@ async def test_read_error_is_treated_as_transport_failure() -> None:
     assert result == "ok", "ReadError on attempt 1 must retry; attempt 2 must succeed"
     assert call_count[0] == 2, f"Expected 2 attempts (1 ReadError + 1 success), got {call_count[0]}"
     assert breaker.failure_count == 0, "Successful request must leave failure_count at 0"
+
+
+# ---------------------------------------------------------------------------
+# Defect 3: OPEN-state idempotence (commit d3a-fix-3)
+# ---------------------------------------------------------------------------
+
+
+async def test_late_failure_after_breaker_opens_does_not_reset_opened_at() -> None:
+    """A record_failure call arriving after the breaker is already OPEN must not
+    reset _opened_at and thereby extend the recovery window.
+
+    Invariant: the 30-second recovery window is anchored to the first transition
+    to OPEN, not to the last failure. Under pre-fix code, _opened_at was
+    unconditionally overwritten on every record_failure call that crossed the
+    threshold, so late in-flight requests arriving after the breaker opened
+    could silently push back the recovery by several seconds.
+    """
+    fake_now = [0.0]
+
+    def clock() -> float:
+        return fake_now[0]
+
+    breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0, _now=clock)
+
+    # Trip the breaker at t=0.
+    for _ in range(5):
+        await breaker.record_failure()
+    assert breaker.state == CircuitState.OPEN
+    opened_at_first = breaker._opened_at
+
+    # Advance the injected clock: a late in-flight request arrives 5 seconds later.
+    fake_now[0] = 5.0
+
+    # This extra failure must NOT overwrite _opened_at.
+    await breaker.record_failure()
+
+    assert breaker._opened_at == opened_at_first, (
+        f"_opened_at changed from {opened_at_first} to {breaker._opened_at}; "
+        "a late failure must not reset the recovery window"
+    )
+
+    # The breaker must still open after recovery_timeout elapses from the original open time.
+    fake_now[0] = 31.0  # 31s from the original open
+    is_open, _ = await breaker.is_open()
+    assert not is_open, "Breaker must recover after 30s from first open, not from last failure"
