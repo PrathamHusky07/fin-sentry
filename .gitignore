@@ -9,6 +9,7 @@ docs/internal/
 scripts/
 !scripts/diagnostic_prompt_guard_retrieval_threshold.py
 !scripts/diagnostic_presidio_sec_context.py
+!scripts/diagnostic_baseline_retrieval.py
 
 # Python
 __pycache__/

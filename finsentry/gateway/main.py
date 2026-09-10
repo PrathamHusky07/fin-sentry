@@ -455,9 +455,7 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     # 2. Embed the (possibly sanitised) query.
     embedding: list[float] = (
         await asyncio.to_thread(
-            _embed_model.encode,
-            [query],
-            False,  # show_progress_bar
+            lambda: _embed_model.encode([query], show_progress_bar=False)
         )
     )[0].tolist()
 
