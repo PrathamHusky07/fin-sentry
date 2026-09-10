@@ -325,10 +325,8 @@ async def _call_downstream_rag(
         raise _DownstreamCircuitOpenError(retry_after)
 
     # Absolute deadline for the entire request, including all retries and backoffs.
-    # We use approach (a): compute remaining budget at the start of each attempt
-    # and pass httpx.Timeout(min(_ATTEMPT_CAP, remaining)) so no single attempt
-    # can exceed the remaining wall-time budget. asyncio.wait_for wrapping (approach b)
-    # is simpler but truncates in-flight state without clean error semantics.
+    # Two-layer enforcement: asyncio.wait_for (hard cancellation) + httpx.Timeout
+    # (transport-level). See ADR 004 for rationale.
     deadline = time.monotonic() + _RAG_BUDGET
 
     # _attempt raises typed exceptions only; no breaker mutations here.
@@ -341,13 +339,26 @@ async def _call_downstream_rag(
         per_attempt_timeout = httpx.Timeout(min(_ATTEMPT_CAP, remaining))
         async with httpx.AsyncClient(timeout=per_attempt_timeout) as client:
             try:
-                resp = await client.post(
-                    f"{downstream_url}/v1/chat/completions",
-                    json={
-                        "model": _DEFAULT_RAG_MODEL,
-                        "messages": prompt_messages,
-                    },
+                # Two-layer deadline enforcement (ADR 004):
+                # Layer 1 — asyncio.wait_for provides an application-owned hard
+                # cancellation boundary. httpx's read timeout is inactivity-based
+                # (verified empirically), so a server that drip-feeds bytes can keep
+                # the await alive past the nominal timeout. asyncio.wait_for cancels
+                # the coroutine at the remaining-budget boundary regardless.
+                # Layer 2 — httpx.Timeout(remaining) is the transport-level guard
+                # for common fast-fail cases (refused, DNS, short stalls).
+                resp = await asyncio.wait_for(
+                    client.post(
+                        f"{downstream_url}/v1/chat/completions",
+                        json={
+                            "model": _DEFAULT_RAG_MODEL,
+                            "messages": prompt_messages,
+                        },
+                    ),
+                    timeout=remaining,
                 )
+            except TimeoutError:
+                raise _RetryableError(-1)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 # httpx.TransportError covers ConnectError, ReadError, WriteError,
                 # PoolTimeout, and RemoteProtocolError; all are retryable per ADR 004.

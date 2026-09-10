@@ -137,16 +137,15 @@ exhaustion is a rate-limit outcome, not a health failure.
 
 **Rationale for absolute deadline enforcement.** The 20-second budget is a
 total wall-time contract, not a per-attempt guarantee. An absolute deadline is
-recorded at request start (`deadline = time.monotonic() + _RAG_BUDGET`). Each
-attempt's httpx timeout is `min(_ATTEMPT_CAP, remaining)`, where
-`remaining = deadline - time.monotonic()` at the start of that attempt. The
-exponential backoff sleep is clipped to `min(base_backoff, remaining)` so a
-pending sleep cannot push total elapsed past the deadline. Under any downstream
-failure mode, including hung connections and repeated slow responses, total wall
-time is bounded by 20 seconds plus a small check-and-terminate tolerance. A
-per-attempt timeout alone cannot provide this guarantee: with a 15-second cap
-and two retries plus a 0.5-second backoff, total wall time can reach 30.5
-seconds, a 10.5-second violation of the documented contract.
+recorded at request start (`deadline = time.monotonic() + _RAG_BUDGET`).
+
+Two enforcement layers work together:
+
+**Layer 1 (application-owned hard boundary)**: `asyncio.wait_for(client.post(...), timeout=remaining)`, where `remaining = deadline - time.monotonic()` at the start of each attempt. This layer provides a hard cancellation that does not depend on httpx semantics. When the timeout fires, `asyncio.wait_for` cancels the in-flight coroutine and raises `asyncio.TimeoutError`, which `_attempt()` converts to `_RetryableError`. This layer is necessary because httpx's read timeout is inactivity-based, not absolute wall-clock-based, as verified empirically: a server sending a byte every 100 ms can keep a 200 ms read timeout alive indefinitely, and `await client.post(...)` can therefore outlive the nominal deadline without an outer cancellation mechanism.
+
+**Layer 2 (transport-level protection)**: `httpx.Timeout(min(_ATTEMPT_CAP, remaining))` on each `httpx.AsyncClient`. This catches common fast-fail cases before reaching the application-owned boundary: connection refused, DNS failure, and short stalls between response packets.
+
+The exponential backoff sleep is clipped to `min(base_backoff, remaining)` so a pending sleep cannot push total elapsed past the deadline. A per-attempt timeout alone cannot provide the wall-clock guarantee: with a 15-second cap and two retries plus a 0.5-second backoff, total wall time can reach 30.5 seconds, a 10.5-second violation of the documented contract.
 
 **Rationale for OPEN-state idempotence.** Once the breaker is OPEN, late-arriving
 `record_failure()` calls from requests that were already in flight when the

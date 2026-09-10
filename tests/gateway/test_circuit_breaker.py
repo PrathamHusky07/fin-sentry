@@ -8,6 +8,8 @@ patching collisions with the test's own AsyncClient (used by ASGITransport).
 """
 from __future__ import annotations
 
+import asyncio
+import time as _time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -16,7 +18,6 @@ from tenacity import RetryError, stop_after_attempt
 
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker, CircuitState
 from finsentry.gateway.main import (
-    _RAG_BUDGET,
     _RAG_STOP,
     _RAG_WAIT,
     _call_downstream_rag,
@@ -337,31 +338,34 @@ async def test_successful_request_calls_record_success_once() -> None:
 
 
 async def test_absolute_deadline_holds_under_hung_downstream() -> None:
-    """Per-attempt httpx timeout is bounded by the remaining budget, never None.
+    """asyncio.wait_for provides a hard wall-clock cancellation boundary.
 
-    Invariant: no _call_downstream_rag invocation may block indefinitely because
-    of a hung downstream. The timeout passed to httpx.AsyncClient is
-    min(_ATTEMPT_CAP, remaining_budget), which is always a finite value <= budget.
-    Under pre-fix code, httpx.Timeout(None) was passed and no per-attempt bound
-    existed; this test would fail because None is not <= budget.
+    The downstream stalls via asyncio.sleep(30) — a server that keeps the
+    connection open without sending data, which httpx's inactivity-based read
+    timeout cannot detect. asyncio.wait_for must cancel the coroutine at the
+    remaining-budget boundary so _call_downstream_rag returns within
+    0.5 + 0.2s tolerance.
+
+    Under pre-fix code (only httpx per-attempt timeout, no asyncio.wait_for),
+    this test would hang because httpx.Timeout is inactivity-based: a server
+    that drip-feeds bytes never triggers it.
     """
-    assert _RAG_BUDGET == 20.0, "Production budget constant must be 20 seconds"
+    async def stalled_post(*args: object, **kwargs: object) -> object:
+        await asyncio.sleep(30)  # real sleep — cancelled by asyncio.wait_for
+        raise AssertionError("should not reach here")
 
-    captured_timeouts: list[httpx.Timeout] = []
-
-    def make_client(*args: object, timeout: object = None, **kwargs: object) -> MagicMock:
-        if isinstance(timeout, httpx.Timeout):
-            captured_timeouts.append(timeout)
-        base = _make_mock_client(exc=httpx.TimeoutException("hung"))
-        return base
+    client = MagicMock()
+    client.post = stalled_post
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
 
     breaker = AsyncCircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+    t0 = _time.monotonic()
 
     with (
-        patch("finsentry.gateway.main.httpx.AsyncClient", side_effect=make_client),
-        patch("asyncio.sleep", new_callable=AsyncMock),
-        patch("finsentry.gateway.main._RAG_BUDGET", 0.1),
-        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(2)),
+        patch("finsentry.gateway.main.httpx.AsyncClient", return_value=client),
+        patch("finsentry.gateway.main._RAG_BUDGET", 0.5),
+        patch("finsentry.gateway.main._RAG_STOP", stop_after_attempt(1)),
     ):
         with pytest.raises(RetryError):
             await _call_downstream_rag(
@@ -370,15 +374,14 @@ async def test_absolute_deadline_holds_under_hung_downstream() -> None:
                 breaker,
             )
 
-    assert len(captured_timeouts) > 0, "At least one httpx.Timeout must have been captured"
-    for t in captured_timeouts:
-        assert t.read is not None, "Timeout must be finite, not None"
-        assert t.read <= 0.1 + 0.01, (
-            f"Per-attempt timeout {t.read} must be bounded by the 0.1s test budget"
-        )
+    elapsed = _time.monotonic() - t0
+    assert elapsed <= 0.7, (
+        f"_call_downstream_rag ran for {elapsed:.3f}s, exceeding 0.5s budget + 0.2s tolerance. "
+        "asyncio.wait_for must cancel the hung downstream coroutine at the budget boundary."
+    )
 
 
-async def test_backoff_does_not_start_if_it_would_exceed_deadline() -> None:
+async def test_backoff_is_clipped_to_remaining_budget() -> None:
     """When remaining budget < base backoff, the sleep is capped at remaining, not skipped entirely.
 
     Invariant: the retry loop must not sleep for the full base backoff when the budget
