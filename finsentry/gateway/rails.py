@@ -237,10 +237,14 @@ class InputRailsAdapter:
     # would misrepresent infrastructure failures as user-policy violations.
     async def run(
         self, messages: list[dict[str, Any]]
-    ) -> tuple[str, object, str | None, object]:
+    ) -> tuple[list[dict[str, Any]], object, str | None, object]:
         """Route each user message through NeMo check_async independently.
 
-        Returns (content, RailStatus, rail_name, ExplainInfo).
+        Returns (updated_messages, RailStatus, rail_name, ExplainInfo).
+        updated_messages is the full conversation list with any per-message
+        transformations applied. On BLOCKED, the original messages list is
+        returned (the gateway returns 403 and does not forward). On PASSED,
+        the working list is returned unchanged.
         rail_name is the name of the blocking rail on BLOCKED, None otherwise.
         Raises AdapterUnavailableError on NeMo engine failure.
 
@@ -259,10 +263,9 @@ class InputRailsAdapter:
             if not user_indices:
                 result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
                 explain: ExplainInfo = nemo.explain()
-                return result.content, result.status, result.rail, explain
+                return messages, result.status, result.rail, explain
 
             working: list[dict[str, Any]] = [dict(m) for m in messages]
-            last_content = ""
             last_explain: ExplainInfo = ExplainInfo()
             any_modified = False
 
@@ -273,17 +276,16 @@ class InputRailsAdapter:
                     rail_types=[RailType.INPUT],
                 )
                 last_explain = nemo.explain()
-                last_content = result.content
 
                 if result.status == RailStatus.BLOCKED:
-                    return result.content, result.status, result.rail, last_explain
+                    return messages, result.status, result.rail, last_explain
 
                 if result.status == RailStatus.MODIFIED:
                     working[idx]["content"] = result.content
                     any_modified = True
 
             final_status: object = RailStatus.MODIFIED if any_modified else RailStatus.PASSED
-            return last_content, final_status, None, last_explain
+            return working, final_status, None, last_explain
 
         except AdapterUnavailableError:
             raise

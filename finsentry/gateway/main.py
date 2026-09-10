@@ -61,7 +61,7 @@ async def chat_completions(request: Request) -> Response:
         from nemoguardrails.rails.llm.options import RailStatus
 
         try:
-            content, status, rail_name, _explain = await _adapter.run(messages)
+            updated_messages, status, rail_name, _explain = await _adapter.run(messages)
         except Exception as exc:
             log.error("Input rail enforcement failed: %s", exc, exc_info=True)
             return JSONResponse(
@@ -75,9 +75,7 @@ async def chat_completions(request: Request) -> Response:
             return JSONResponse(block_body, status_code=403)
 
         if status == RailStatus.MODIFIED:
-            messages = [
-                {**m, "content": content} if m.get("role") == "user" else m for m in messages
-            ]
+            messages = updated_messages
 
         body_json = {**body_json, "messages": messages}
 

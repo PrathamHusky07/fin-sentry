@@ -354,12 +354,12 @@ async def test_all_rails_pass(pg_module_restored: Any, lg_module_restored: Any) 
     adapter = InputRailsAdapter(
         rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
     )
-    content, status, _, explain_info = await adapter.run(
+    updated_msgs, status, _, explain_info = await adapter.run(
         [{"role": "user", "content": "What is Apple's revenue?"}]
     )
 
     assert status == RailStatus.PASSED
-    assert content == "What is Apple's revenue?"
+    assert updated_msgs[0]["content"] == "What is Apple's revenue?"
     # Colang drove the flows — history must be present and name our action.
     assert explain_info.colang_history is not None
     assert "execute prompt_guard_2_check" in explain_info.colang_history
@@ -410,13 +410,13 @@ async def test_pii_sanitize_returns_modified_status(
     adapter = InputRailsAdapter(
         rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
     )
-    content, status, _, _ = await adapter.run(
+    updated_msgs, status, _, _ = await adapter.run(
         [{"role": "user", "content": "My SSN is 579-34-7285, help me"}]
     )
 
     assert status == RailStatus.MODIFIED
-    assert "579-34-7285" not in content
-    assert "<REDACTED_US_SSN>" in content
+    assert "579-34-7285" not in updated_msgs[0]["content"]
+    assert "<REDACTED_US_SSN>" in updated_msgs[0]["content"]
 
 
 async def test_pii_sanitize_propagates_to_llama_guard(pg_module_restored: Any) -> None:
@@ -560,7 +560,7 @@ async def test_endpoint_blocked_includes_rail_name(pg_module_restored: Any) -> N
 
     mock_adapter: AsyncMock = AsyncMock()
     mock_adapter.run.return_value = (
-        "",
+        [],
         RailStatus.BLOCKED,
         "prompt-guard-2",
         ExplainInfo(),
@@ -604,12 +604,12 @@ async def test_single_user_message_still_works(
     adapter = InputRailsAdapter(
         rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
     )
-    content, status, _, _ = await adapter.run(
+    updated_msgs, status, _, _ = await adapter.run(
         [{"role": "user", "content": "What is Apple's revenue?"}]
     )
 
     assert status == RailStatus.PASSED
-    assert content == "What is Apple's revenue?"
+    assert updated_msgs[0]["content"] == "What is Apple's revenue?"
 
 
 async def test_multi_user_message_all_pass(
@@ -696,3 +696,263 @@ async def test_multi_user_message_pii_sanitize_propagates(
     )
 
     assert status == RailStatus.MODIFIED
+
+
+# ---------------------------------------------------------------------------
+# p3c-3 tests — correct multi-message return contract
+# ---------------------------------------------------------------------------
+
+
+async def test_run_returns_list_of_dicts(
+    pg_module_restored: Any, lg_module_restored: Any
+) -> None:
+    """run() first return value is a list of message dicts, not a string."""
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    pg_module._pipeline = MagicMock(
+        return_value=[[{"label": "LABEL_0", "score": 0.99}]]
+    )
+    mock_tok, mock_model = _mock_lg_model("safe")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+
+    adapter = InputRailsAdapter(
+        rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+    )
+    result, status, _, _ = await adapter.run(
+        [{"role": "user", "content": "What is Apple's revenue?"}]
+    )
+
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], dict)
+    assert result[0]["role"] == "user"
+    assert result[0]["content"] == "What is Apple's revenue?"
+    assert status == RailStatus.PASSED
+
+
+async def test_multi_user_message_first_modified_preserves_second(
+    pg_module_restored: Any, lg_module_restored: Any
+) -> None:
+    """PII in turn 0 redacted; turn 1 untouched — both preserved in returned list."""
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    pg_module._pipeline = MagicMock(
+        return_value=[[{"label": "LABEL_0", "score": 0.99}]]
+    )
+    mock_tok, mock_model = _mock_lg_model("safe")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+
+    adapter = InputRailsAdapter(
+        rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+    )
+    updated, status, _, _ = await adapter.run(
+        [
+            {"role": "user", "content": "My SSN is 579-34-7285, help me"},
+            {"role": "user", "content": "What is Apple's revenue?"},
+        ]
+    )
+
+    assert status == RailStatus.MODIFIED
+    assert "579-34-7285" not in updated[0]["content"]
+    assert "<REDACTED_US_SSN>" in updated[0]["content"]
+    assert updated[1]["content"] == "What is Apple's revenue?"
+
+
+async def test_multi_user_message_second_modified_preserves_first(
+    pg_module_restored: Any, lg_module_restored: Any
+) -> None:
+    """PII in turn 1 redacted; turn 0 untouched — both preserved in returned list."""
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    pg_module._pipeline = MagicMock(
+        return_value=[[{"label": "LABEL_0", "score": 0.99}]]
+    )
+    mock_tok, mock_model = _mock_lg_model("safe")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+
+    adapter = InputRailsAdapter(
+        rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+    )
+    updated, status, _, _ = await adapter.run(
+        [
+            {"role": "user", "content": "What is Apple's revenue?"},
+            {"role": "user", "content": "My SSN is 579-34-7285, help me"},
+        ]
+    )
+
+    assert status == RailStatus.MODIFIED
+    assert updated[0]["content"] == "What is Apple's revenue?"
+    assert "579-34-7285" not in updated[1]["content"]
+    assert "<REDACTED_US_SSN>" in updated[1]["content"]
+
+
+async def test_assistant_and_system_messages_preserved(
+    pg_module_restored: Any, lg_module_restored: Any
+) -> None:
+    """system and assistant messages are returned byte-identical; only user turns evaluated."""
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    pg_module._pipeline = MagicMock(
+        return_value=[[{"label": "LABEL_0", "score": 0.99}]]
+    )
+    mock_tok, mock_model = _mock_lg_model("safe")
+    lg_module._tokenizer = mock_tok
+    lg_module._model = mock_model
+
+    system_msg = {"role": "system", "content": "You are a financial assistant."}
+    assistant_msg = {"role": "assistant", "content": "Apple's revenue was $383B in FY2023."}
+    messages = [
+        system_msg,
+        {"role": "user", "content": "My SSN is 579-34-7285, help me"},
+        assistant_msg,
+        {"role": "user", "content": "What is Apple's revenue?"},
+    ]
+
+    adapter = InputRailsAdapter(
+        rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+    )
+    updated, status, _, _ = await adapter.run(messages)
+
+    assert status == RailStatus.MODIFIED
+    # system and assistant messages are byte-identical to input
+    assert updated[0] == system_msg
+    assert updated[2] == assistant_msg
+    # first user turn had PII redacted
+    assert "<REDACTED_US_SSN>" in updated[1]["content"]
+    # second user turn is unchanged
+    assert updated[3]["content"] == "What is Apple's revenue?"
+
+
+async def test_gateway_forwards_correctly_transformed_conversation() -> None:
+    """Gateway forwards the adapter-returned message list to downstream unchanged."""
+    import json as json_module
+    from unittest.mock import AsyncMock, MagicMock
+
+    from httpx import ASGITransport
+    from httpx import AsyncClient as TestClient
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    import finsentry.gateway.main as main_module
+    from finsentry.gateway.main import app
+
+    # Simulate what run() returns after redacting turn 0.
+    updated = [
+        {"role": "user", "content": "My SSN is <REDACTED_US_SSN>, help me"},
+        {"role": "user", "content": "What about Q4?"},
+    ]
+    mock_adapter = AsyncMock()
+    mock_adapter.run.return_value = (updated, RailStatus.MODIFIED, None, MagicMock())
+
+    captured_body: list[bytes] = []
+
+    class _FakeRespCM:
+        async def __aenter__(self) -> _FakeRespCM:
+            return self
+
+        async def __aexit__(self, *_: Any) -> None:
+            pass
+
+        async def aiter_bytes(self) -> Any:
+            yield b""
+
+    class _FakeClientCM:
+        async def __aenter__(self) -> _FakeClientCM:
+            return self
+
+        async def __aexit__(self, *_: Any) -> None:
+            pass
+
+        def stream(self, method: str, url: str, *, content: bytes, **kw: Any) -> _FakeRespCM:
+            captured_body.append(content)
+            return _FakeRespCM()
+
+    with (
+        patch.object(main_module, "_adapter", mock_adapter),
+        patch.object(main_module, "_DOWNSTREAM_URL", "http://localhost:9999"),
+        patch("finsentry.gateway.main.httpx.AsyncClient", return_value=_FakeClientCM()),
+    ):
+        async with TestClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await client.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [
+                        {"role": "user", "content": "My SSN is 579-34-7285, help me"},
+                        {"role": "user", "content": "What about Q4?"},
+                    ]
+                },
+            )
+
+    assert len(captured_body) == 1
+    forwarded = json_module.loads(captured_body[0])
+    msgs = forwarded["messages"]
+    assert msgs[0]["content"] == "My SSN is <REDACTED_US_SSN>, help me"
+    assert msgs[1]["content"] == "What about Q4?"
+
+
+# ---------------------------------------------------------------------------
+# p3b-2 tests — grammar-strict Llama Guard verdict parser
+# ---------------------------------------------------------------------------
+
+
+def test_parser_rejects_unsafe_with_garbage_suffix() -> None:
+    """'unsafe_garbage\\nS9' is not a valid first line — outcome must be error."""
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("unsafe_garbage\nS9")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
+
+
+def test_parser_rejects_category_with_trailing_garbage() -> None:
+    """'unsafe\\nS9garbage' fails the category grammar — outcome must be error."""
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("unsafe\nS9garbage")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
+
+
+def test_parser_rejects_concatenated_categories() -> None:
+    """'unsafe\\nS1S9' has no comma separator — outcome must be error."""
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("unsafe\nS1S9")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
+
+
+def test_parser_rejects_empty_categories_between_commas() -> None:
+    """'unsafe\\nS1,,S9' has an empty token — outcome must be error."""
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("unsafe\nS1,,S9")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
+
+
+def test_parser_rejects_trailing_comma() -> None:
+    """'unsafe\\nS1,' has a trailing comma — outcome must be error."""
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("unsafe\nS1,")
+    assert decision.outcome == "error"
+    assert decision.details["verdict"] == "malformed"
+
+
+def test_parser_leading_whitespace_on_category_line_is_normalised() -> None:
+    """'unsafe\\n S1' — leading whitespace on the category line is strip()'d → block.
+
+    The parser normalises line-level whitespace on line 2 via .strip() before
+    running the category grammar regex. This test locks the intended behaviour:
+    leading/trailing whitespace is accepted, not rejected.
+    """
+    from finsentry.rails.input.llama_guard import _parse_verdict
+
+    decision = _parse_verdict("unsafe\n S1")
+    assert decision.outcome == "block"
+    assert decision.details["categories"] == ["S1"]
