@@ -1,5 +1,83 @@
 # Build Log
 
+## 2026-09-09 — Day 2 close: multi-message contract fix and parser strictness (commits p3c-3, p3b-2)
+
+Three commits landed. 60/60 non-slow tests pass. ruff and mypy strict clean.
+
+### p3c-3 shipped bug: multi-message overwrite
+
+**What it was.** `run()` returned `(last_content, status, rail, explain)` where
+`last_content` was a single string — the final iteration's `result.content`. The
+working message list was modified per-iteration but discarded. `main.py` applied
+`last_content` to every user message via list comprehension on MODIFIED status.
+
+**How it was found.** Code review of the p3c-2 diff. The per-message loop
+correctly set `working[idx]["content"]` but the return statement discarded
+`working` and returned `last_content` instead.
+
+**Concrete corruption case.** Conversation:
+`[{role:user, content:"SSN 579-34-7285"}, {role:assistant, ...}, {role:user, content:"AAPL revenue?"}]`.
+Loop: turn 0 redacted to `"<REDACTED_US_SSN>..."` (MODIFIED), turn 2 passes
+clean, `last_content = "AAPL revenue?"`. Gateway list-comprehension: writes
+`"AAPL revenue?"` over both user messages. SSN redaction destroyed; turn 0
+becomes a copy of turn 2.
+
+**Fix.** `run()` return type changed to `tuple[list[dict[str,Any]], object, str|None, object]`.
+Returns `working` (the full per-message-modified list). Gateway assigns
+`messages = updated_messages` on MODIFIED. No reconstruction in gateway. Existing
+p3c-2 tests updated to unpack `updated_msgs` and assert `updated_msgs[i]["content"]`.
+Five new tests added: return-type shape, first-modified-preserves-second,
+second-modified-preserves-first, system/assistant byte-identical preservation,
+end-to-end gateway forwarding.
+
+### p3b-1 parser strictness gap
+
+**Adversarial inputs that slipped through the prior parser:**
+
+| Input | Prior outcome | Correct outcome |
+|---|---|---|
+| `"unsafe_garbage\nS9"` | BLOCK | ERROR |
+| `"unsafe\nS9garbage"` | BLOCK | ERROR |
+| `"unsafe\nS1S9"` | BLOCK | ERROR |
+| `"unsafe\nS1,,S9"` | BLOCK | ERROR |
+
+The prior code used `text.startswith("unsafe")` (matches "unsafe_garbage") and
+`re.findall(r"S(\d{1,2})", raw_cats)` (extracts S-numbers from substrings, not
+from validated grammar). The commit p3b-1 claim of strictness was inaccurate.
+
+**Fix (p3b-2).** Two module-level compiled regexes: `_CATEGORY_LINE_RE`
+validates the complete second line against `^S([1-9]|1[0-3])(,S([1-9]|1[0-3]))*$`
+(no trailing comma, no interstitial garbage, S-numbers restricted to 1-13).
+`_TOKEN_RE` validates each token after split as defence-in-depth. Line 1 is
+checked by equality against `"unsafe"`, not `startswith`. `_VALID_CATEGORIES`
+frozenset removed (superseded by the grammar regex). All four adversarial inputs
+now return `outcome="error"`. All prior parser tests (safe, unsafe-single,
+unsafe-multi, malformed, S14 out-of-range, empty) continue to pass. Six new
+parser tests added.
+
+### ExplainInfo aggregation deferral
+
+`ExplainInfo` from `run()` reflects only the last per-message check's audit
+trail. Aggregating all rail decisions across all turns into a single `ExplainInfo`
+requires inspecting NeMo's internal `ExplainInfo` merge API, which is out of
+scope at Day 2 volume (single-digit turns). Deferred to Phase 4 observability
+work. The MCP audit surface on Day 7 will need to accommodate multi-turn trace
+data at that point.
+
+### Day 2 status: closed
+
+Input rails layer is correct end-to-end. Prompt Guard, Presidio, and Llama Guard
+run in cheapest-first order via NeMo Colang. Fail-open/fail-closed policies wired
+per-rail in `config/rails.yml`. Multi-message evaluation contract locked: every
+user turn in a conversation is evaluated, per-message transformations are
+preserved, non-user messages are untouched. ADRs 001-003 in place. Parser grammar
+validated against the MLCommons S1-S13 taxonomy. 60 non-slow tests, ruff clean,
+mypy strict clean.
+
+**Next: Day 3** — retrieval rail (indirect injection detection on retrieved
+chunks, PII scan, source-trust checks), RAG endpoint over the SEC EDGAR corpus,
+output rails (Guardrails AI + RAGAS Faithfulness), circuit breaker on RAG calls.
+
 ## 2026-09-09 — Phase 3A fix: Llama Guard content-blocks message shape (commit p3a-fix)
 
 One commit landed. 39/39 non-slow tests pass. ruff and mypy strict clean.
