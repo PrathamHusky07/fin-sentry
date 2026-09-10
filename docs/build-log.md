@@ -58,11 +58,13 @@ sweep [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
 
 | Threshold | FPR_benign | TPR_dir_start | TPR_dir_end | TPR_dir_mid | TPR_indirect | TPR_obfusc | TPR_aggregate | FPR_fp_stress |
 |---|---|---|---|---|---|---|---|---|
-| 0.3 | 0.3% | 87.5% | 100.0% | 100.0% | 62.5% | 37.5% | 77.5% | 0.0% |
-| 0.4 | 0.3% | 87.5% | 100.0% | 100.0% | 50.0% | 37.5% | 75.0% | 0.0% |
+| 0.3 | 0.0% | 87.5% | 100.0% | 100.0% | 62.5% | 37.5% | 77.5% | 0.0% |
+| 0.4 | 0.0% | 87.5% | 100.0% | 100.0% | 50.0% | 37.5% | 75.0% | 0.0% |
 | 0.5 | 0.0% | 87.5% | 100.0% | 100.0% | 50.0% | 37.5% | 75.0% | 0.0% |
 | 0.6 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 37.5% | 72.5% | 0.0% |
 | 0.7 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 37.5% | 72.5% | 0.0% |
+| 0.8 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 37.5% | 72.5% | 0.0% |
+| 0.9 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 25.0% | 70.0% | 0.0% |
 
 **No threshold in the evaluated 0.3-0.9 sweep satisfied the >=95% TPR target.** The highest aggregate
 TPR observed is 77.5% at threshold=0.3. PromptGuard2 86M is effective on
@@ -72,11 +74,13 @@ and obfuscated text (37.5% across all thresholds). This is a measured model
 limitation, not a calibration failure.
 
 **Corrected operating-point decision: threshold=0.3.** Both 0.3 and 0.4 share
-the same benign FPR (0.3%: one META 10-Q false positive on an OECD tax passage,
-not a cover-page checkbox table as previously noted). threshold=0.3 strictly
-dominates 0.4: 2.5% higher aggregate TPR and 12.5% higher indirect TPR at
-identical benign FPR. Both are within the <=2% FPR policy. FPR on imperative-
-language stress is 0.0% across all thresholds.
+the same benign FPR (0.0% under the Stage 1.5 canonical deterministic sample;
+the Stage 1 non-deterministic run measured 0.3% at both thresholds, tracing to
+a single META 10-Q OECD tax passage that fell into the random sample but is not
+in the MD5-keyed canonical sample). threshold=0.3 strictly dominates 0.4 under
+the canonical measurement: identical 0.0% benign FPR, 2.5% higher aggregate
+TPR, 12.5% higher indirect TPR. Both are within the <=2% FPR policy. FPR on
+imperative-language stress is 0.0% across all thresholds.
 
 Retrieval drops chunks individually so a false positive costs one chunk, not
 the full response. `_RETRIEVAL_INJECTION_THRESHOLD` updated to 0.3 in
