@@ -15,7 +15,7 @@ import psycopg
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from tenacity import (
     AsyncRetrying,
     RetryError,
@@ -29,6 +29,7 @@ from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
 from finsentry.rails.input.prompt_guard import PromptGuard2Rail
+from finsentry.rails.output.schema import RagAnswerResponse
 from finsentry.rails.retrieval.rail import RetrievalRail
 
 load_dotenv()
@@ -77,9 +78,10 @@ class RetrievedChunk(BaseModel):
 
 
 class RagQueryResponse(BaseModel):
-    answer: str
+    answer: RagAnswerResponse
     retrieved_chunks: list[RetrievedChunk]
     retrieval_trace_id: str  # UUID for observability correlation
+    output_rail_trace: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -289,23 +291,42 @@ async def _fetch_chunks(
 # ---------------------------------------------------------------------------
 
 
+_RAG_SYSTEM_PROMPT = """\
+You are a financial research assistant. Answer questions using ONLY the provided document chunks.
+
+You MUST respond with a single valid JSON object matching this exact schema:
+{
+  "answer": "<your answer as a string>",
+  "citations": [{"chunk_id": "<id from [chunk_id=...] label>", "quote": "<quote, max 300 chars>"}],
+  "confidence": "<low|medium|high>"
+}
+
+Example response:
+{
+  "answer": "Apple's Q4 FY2024 revenue was $94.9 billion, driven primarily by iPhone sales.",
+  "citations": [{"chunk_id": "abc-123", "quote": "Total net sales for Q4 2024 were $94.9 billion"}],
+  "confidence": "high"
+}
+
+Rules:
+- cite only chunk_ids that appear in the [chunk_id=...] labels below
+- if the retrieved chunks do not contain enough information to answer the question, respond with \
+an answer explaining what is missing, an empty citations list [], and confidence "low"
+- do not invent facts not present in the chunks
+- output ONLY the JSON object, no surrounding text"""
+
+
 def _build_rag_messages(
     query: str, chunks: list[RetrievedChunk]
 ) -> list[dict[str, str]]:
-    system_msg = (
-        "You are a financial research assistant. Answer questions using ONLY the provided "
-        "document chunks. After each claim, cite the source chunk by writing [chunk_id] where "
-        "chunk_id is the id of the chunk you drew from. If the chunks do not contain enough "
-        "information to answer the question, say so explicitly."
-    )
     chunks_text = "\n\n".join(
-        f"[{i + 1}] chunk_id={c.chunk_id}, ticker={c.ticker}, "
+        f"[chunk_id={c.chunk_id}] ticker={c.ticker}, "
         f"filing_type={c.filing_type}, date={c.filing_date}\n{c.text}"
-        for i, c in enumerate(chunks)
+        for c in chunks
     )
     user_msg = f"Question: {query}\n\nDocuments:\n{chunks_text}"
     return [
-        {"role": "system", "content": system_msg},
+        {"role": "system", "content": _RAG_SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
     ]
 
@@ -477,7 +498,11 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     if not filtered_chunks:
         return JSONResponse(
             RagQueryResponse(
-                answer="No trustworthy sources found for this query.",
+                answer=RagAnswerResponse(
+                    answer="No trustworthy sources found for this query.",
+                    citations=[],
+                    confidence="low",
+                ),
                 retrieved_chunks=[],
                 retrieval_trace_id=str(uuid.uuid4()),
             ).model_dump()
@@ -510,9 +535,17 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         log.error("Unexpected downstream error: %s", exc, exc_info=True)
         return JSONResponse({"error": "downstream error"}, status_code=502)
 
-    # 7. Return structured response.
+    # 7. Parse answer JSON and return structured response.
+    # Phase 6 replaces this block with full output rail pipeline.
+    # For now, attempt to parse the downstream string as RagAnswerResponse;
+    # fall back to a low-confidence wrapper when the downstream returns free text.
+    try:
+        parsed_answer = RagAnswerResponse.model_validate_json(answer)
+    except Exception:
+        parsed_answer = RagAnswerResponse(answer=answer, citations=[], confidence="low")
+
     response = RagQueryResponse(
-        answer=answer,
+        answer=parsed_answer,
         retrieved_chunks=filtered_chunks,
         retrieval_trace_id=str(uuid.uuid4()),
     )

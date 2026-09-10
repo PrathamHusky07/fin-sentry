@@ -79,7 +79,8 @@ async def test_rag_query_returns_retrieved_chunks_and_answer(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"] == "Test answer."
+    # answer is now a RagAnswerResponse object; fallback wraps plain text in low-confidence shape
+    assert body["answer"]["answer"] == "Test answer."
     assert len(body["retrieved_chunks"]) == 3
     assert "retrieval_trace_id" in body
     assert len(body["retrieval_trace_id"]) == 36  # UUID4 canonical form
@@ -292,7 +293,8 @@ async def test_all_chunks_dropped_endpoint_returns_no_sources_message(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"] == "No trustworthy sources found for this query."
+    assert body["answer"]["answer"] == "No trustworthy sources found for this query."
+    assert body["answer"]["confidence"] == "low"
     assert body["retrieved_chunks"] == []
     assert "retrieval_trace_id" in body
     mock_llm.assert_not_called()
