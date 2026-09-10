@@ -218,6 +218,9 @@ class QueryResult:
     rail_ms: float
     raw_chunk_count: int
     filtered_chunk_count: int
+    # raw_chunks: pre-rail retrieval results used for retrieval-quality metrics.
+    # chunks: post-rail surviving results used for security metrics (PII_REDACTED).
+    raw_chunks: list[ChunkResult] = field(default_factory=list)
     chunks: list[ChunkResult] = field(default_factory=list)
     failure_modes: list[str] = field(default_factory=list)
     error: str = ""
@@ -283,6 +286,7 @@ def _detect_failure_modes(result: QueryResult) -> list[str]:
         modes.append(f"ERROR:{result.error[:50]}")
         return modes
 
+    # NO_CHUNKS_RETURNED and RAIL_DROPPED_ALL: retrieval-level metrics, use raw counts.
     if result.raw_chunk_count == 0:
         modes.append("NO_CHUNKS_RETURNED")
         return modes
@@ -291,18 +295,22 @@ def _detect_failure_modes(result: QueryResult) -> list[str]:
         modes.append("RAIL_DROPPED_ALL")
         return modes
 
-    scores = [c.similarity_score for c in result.chunks]
+    # Retrieval-quality metrics use raw_chunks (pre-rail) to measure retriever behavior
+    # independent of rail filtering. If we used post-rail chunks, a rail drop would
+    # silently misattribute the missing chunk to the retriever.
+    raw = result.raw_chunks
+    scores = [c.similarity_score for c in raw]
     max_score = max(scores) if scores else 0.0
 
     # Failure A: Cross-ticker pollution
     if result.ticker is not None:
-        wrong = {c.ticker for c in result.chunks} - {result.ticker}
+        wrong = {c.ticker for c in raw} - {result.ticker}
         if wrong:
             modes.append(f"CROSS_TICKER_POLLUTION:{','.join(sorted(wrong))}")
 
     # Failure B: Expected tickers missing
     if result.expected_tickers:
-        returned = {c.ticker for c in result.chunks}
+        returned = {c.ticker for c in raw}
         missing = result.expected_tickers - returned
         if missing:
             modes.append(f"EXPECTED_TICKER_MISSING:{','.join(sorted(missing))}")
@@ -317,19 +325,17 @@ def _detect_failure_modes(result: QueryResult) -> list[str]:
 
     # Failure E: Multi-company return when single ticker expected
     if result.ticker is not None:
-        unique = {c.ticker for c in result.chunks}
+        unique = {c.ticker for c in raw}
         if len(unique) > 1:
             modes.append(f"MULTI_COMPANY_RETURN:{len(unique)}_tickers")
 
-    # Info: rail dropped some chunks
+    # Security metrics use post-rail chunks: rail drops and PII redaction are
+    # properties of the rail's output, not the retriever's output.
     if result.filtered_chunk_count < result.raw_chunk_count:
         dropped = result.raw_chunk_count - result.filtered_chunk_count
         modes.append(f"RAIL_DROPPED_SOME:{dropped}_of_{result.raw_chunk_count}")
 
-    # Info: text mutation detected (PII redaction by Presidio)
-    redacted = [
-        c for c in result.chunks if c.text_after != c.text_before
-    ]
+    redacted = [c for c in result.chunks if c.text_after != c.text_before]
     if redacted:
         modes.append(f"PII_REDACTED:{len(redacted)}_chunks")
 
@@ -422,6 +428,7 @@ def run_diagnostic() -> None:
             rail_ms=rail_ms,
             raw_chunk_count=len(raw_chunks),
             filtered_chunk_count=len(filtered),
+            raw_chunks=raw_chunks,
             chunks=chunk_results,
             error=error,
         )
