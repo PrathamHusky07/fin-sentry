@@ -1,5 +1,85 @@
 # Build Log
 
+## 2026-09-09 — Day 3 Session A: reference RAG endpoint (commits d3a-1, d3a-2)
+
+### What shipped
+
+**Commit d3a-1** — `finsentry/gateway/main.py`, `tests/gateway/test_rag_endpoint.py`.
+`POST /v1/rag/query` endpoint with Pydantic models `RagQueryRequest`,
+`RetrievedChunk`, `RagQueryResponse`. Input rails run on the query via the
+existing `InputRailsAdapter`. On BLOCKED, returns 403. On MODIFIED, the
+sanitised query is embedded. bge-small-en-v1.5 loaded at lifespan startup via
+`asyncio.to_thread`. Vector search via sync psycopg wrapped in `asyncio.to_thread`,
+cosine similarity with optional ticker WHERE clause. RAG prompt: system message
+instructs cite-by-chunk-id; user message carries query and numbered chunks with
+metadata. Downstream LLM call returns the answer. Response includes
+`retrieved_chunks` as the structured retrieval-generation boundary trace and a
+`retrieval_trace_id` UUID.
+
+SQL (with ticker filter):
+```sql
+SELECT id, ticker, filing_type, filing_date::text, chunk_text,
+       1 - (embedding <=> %s::vector) AS similarity_score
+FROM corpus
+WHERE ticker = %s
+ORDER BY embedding <=> %s::vector
+LIMIT %s
+```
+
+**Commit d3a-2** — `finsentry/gateway/circuit_breaker.py`, `tests/gateway/test_circuit_breaker.py`.
+`AsyncCircuitBreaker` with injectable clock (`_now` parameter) for deterministic
+tests, `is_open()`, `record_failure()`, `record_success()`. Trips at 5 consecutive
+failures, recovers after 30 seconds. Module docstring carries the full failure
+taxonomy. Wired into the RAG endpoint with tenacity `AsyncRetrying` using
+`stop_after_delay(20)` and `wait_exponential(multiplier=0.5, min=0.5, max=4)`.
+
+### Failure taxonomy
+
+| Condition | Retry? | Increment breaker? |
+|---|---|---|
+| HTTP 500/502/503/504 | Yes | Yes |
+| Connection error, timeout | Yes | Yes |
+| HTTP 400, 422 | No | No |
+| HTTP 401, 403 | No | No |
+| HTTP 429 | Yes | No |
+
+Budget exhaustion → 504. Last-failure 429 on budget → 429. Open circuit → 503
+with `retry_after`. Auth failure → 502. Non-retryable 400/422 → pass-through.
+
+### Corpus contract (confirmed from code, not inferred)
+
+Table `corpus`: `id TEXT PK`, `ticker TEXT NOT NULL`, `filing_type TEXT NOT NULL`,
+`accession_number TEXT NOT NULL`, `filing_date DATE NOT NULL`,
+`period_of_report DATE`, `chunk_index INTEGER NOT NULL`, `chunk_text TEXT NOT NULL`,
+`chunk_tokens INTEGER NOT NULL`, `embedding vector(384) NOT NULL`,
+`source_url TEXT NOT NULL`, `created_at TIMESTAMPTZ NOT NULL`.
+Indexes: PRIMARY KEY on `id`; btree on `(ticker, filing_type)`; HNSW cosine on
+`embedding`. Distance operator: `<=>`. Similarity: `1 - distance`.
+`filing_date` is `NOT NULL` in schema, so it is always present; `RetrievedChunk`
+types it as `str` for future-corpus compatibility.
+
+### Verification
+
+`pytest -m "not slow" -x -q`: 83 passed (71 prior + 6 RAG + 6 breaker), 2 deselected.
+`ruff check .` clean. `mypy finsentry/ --strict` clean (18 source files).
+
+### Test design note — budget tests
+
+`test_total_request_budget_20_seconds` and `test_retry_exponential_backoff_bounded_by_budget`
+call `_call_downstream_rag` directly (not via ASGITransport) to avoid a
+patching collision: `patch("httpx.AsyncClient.post")` would also intercept the
+test client's own `AsyncClient` calls when going through the full FastAPI app.
+Patching at `finsentry.gateway.main.httpx.AsyncClient` avoids the collision.
+Budget tests patch `_RAG_STOP` to `stop_after_attempt(2)` for speed and
+separately assert `_RAG_STOP.max_delay == 20` to verify the production constant.
+
+### Session B scope (next)
+
+Retrieval rail: indirect-injection detection on retrieved chunks, PII scan,
+source-trust checks. Corpus baseline diagnostic: distribution of similarity
+scores, cross-ticker contamination rate, near-duplicate count. Prompt Guard
+threshold calibration on corpus chunks for the injection rail.
+
 ## 2026-09-09 — p3c-4: Prompt Guard long-input hardening (commit cba186a)
 
 ### Empirical diagnostic
