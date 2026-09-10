@@ -252,7 +252,7 @@ def run() -> None:
             SELECT id, ticker, filing_type, chunk_text
             FROM corpus
             WHERE ticker = %s
-            ORDER BY RANDOM()
+            ORDER BY MD5(id::text || 'benign-sample-v1')
             LIMIT 30
         """, (ticker,))
         rows = cur.fetchall()

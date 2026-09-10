@@ -64,7 +64,7 @@ sweep [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
 | 0.6 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 37.5% | 72.5% | 0.0% |
 | 0.7 | 0.0% | 87.5% | 100.0% | 100.0% | 37.5% | 37.5% | 72.5% | 0.0% |
 
-**No threshold satisfies the >= 95% TPR policy target.** The highest aggregate
+**No threshold in the evaluated 0.3-0.9 sweep satisfied the >=95% TPR target.** The highest aggregate
 TPR observed is 77.5% at threshold=0.3. PromptGuard2 86M is effective on
 direct/explicit injection patterns (direct_end and direct_middle achieve 100%
 TPR) but shows limited coverage on indirect framing patterns (62.5% at 0.3)
@@ -124,7 +124,7 @@ Any failure returns `(False, reason)` and the chunk is dropped.
 `finsentry/rails/retrieval/rail.py`, `RetrievalRail(db_url: str)`.
 Three-check pipeline per chunk:
 1. Source-trust (deterministic)
-2. PromptGuard2 at threshold=0.4
+2. PromptGuard2 at threshold=0.3 (Stage 1 correction, 2026-09-10)
 3. Presidio PII scan with retrieval allowlist; redacts EMAIL_ADDRESS, US_SSN,
    CREDIT_CARD, IP_ADDRESS, CRYPTO in-place via `chunk.text = anonymized.text`
 
@@ -145,7 +145,7 @@ transformers API treats second positional arg as `prompt_name`, not
 
 10 tests: 7 unit tests in `tests/rails/retrieval/test_rail.py`,
 1 endpoint test `test_all_chunks_dropped_endpoint_returns_no_sources_message`.
-Total: 101 tests. ruff clean. mypy strict clean (21 source files).
+Total: 112 tests (Stage 1 addition, 2026-09-10). ruff clean. mypy strict clean (21 source files).
 
 ### Task 6 — Baseline retrieval diagnostic (d3b-5)
 
@@ -199,15 +199,13 @@ dominates: ~300ms per chunk inference on CPU, 5 chunks per query).
 
 ### Verification (2026-09-10 final)
 
-`pytest -x -q`: 101 passed, 17 warnings.
+`pytest -x -q`: 112 passed, 17 warnings.
 `ruff check .`: all checks passed.
 `mypy finsentry/ --strict`: no issues, 21 source files.
 
 ### Session C scope (next)
 
-RAGAS faithfulness and answer relevance evaluation. FinanceBench golden set
-ingestion. Two-tier judge pipeline (Gemini flash tier + local frontier tier).
-Cohen's kappa calibration sweep.
+Output rails: response schema enforcement via Guardrails AI local Pydantic validation, citation cross-check against surviving-chunk-ids, and regulated-phrase blocklist (spec line 145-148). RAGAS Faithfulness and the two-tier judge pipeline move to Session D.
 
 ---
 

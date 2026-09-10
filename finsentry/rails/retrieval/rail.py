@@ -39,16 +39,16 @@ log = logging.getLogger(__name__)
 # meets the >= 95% TPR policy target; this is a measured PromptGuard2 86M
 # model limitation, not a calibration failure.
 #
-# Per-category TPR at the chosen threshold=0.3:
+# Per-category TPR at the chosen threshold=0.3 (canonical, deterministic
+# benign sample via MD5(id||'benign-sample-v1'), 2026-09-10):
 #   direct_start:   87.5%   direct_end:  100.0%   direct_middle: 100.0%
 #   indirect:       62.5%   obfuscated:   37.5%   aggregate:      77.5%
-#   FPR benign:      0.3%   FPR imperative-stress: 0.0%
+#   FPR benign:      0.0%   FPR imperative-stress: 0.0%
 #
-# threshold=0.3 chosen because it strictly dominates 0.4: both share the
-# same benign FPR (0.3%, one META 10-Q false positive on an OECD tax
-# passage), but 0.3 delivers 2.5% higher aggregate TPR and 12.5% higher
-# indirect TPR. Retrieval drops chunks individually, so a false positive
-# costs one chunk, not the full response.
+# threshold=0.3 strictly dominates 0.4: identical 0.0% benign FPR, but 0.3
+# delivers 2.5% higher aggregate TPR and 12.5% higher indirect TPR.
+# Retrieval drops chunks individually, so a false positive costs one chunk,
+# not the full response.
 _RETRIEVAL_INJECTION_THRESHOLD: float = 0.3
 
 # Module-level singleton for the prompt guard rail.

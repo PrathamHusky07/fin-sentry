@@ -204,6 +204,7 @@ class ChunkResult:
     similarity_score: float
     text_before: str
     text_after: str
+    source_url: str = ""
 
 
 @dataclass
@@ -244,7 +245,7 @@ def _fetch_raw(
 
     if ticker is not None:
         sql = """
-            SELECT id, ticker, filing_type, filing_date::text, chunk_text,
+            SELECT id, ticker, filing_type, filing_date::text, chunk_text, source_url,
                    1 - (embedding <=> %s::vector) AS sim
             FROM corpus WHERE ticker = %s
             ORDER BY embedding <=> %s::vector LIMIT %s
@@ -252,7 +253,7 @@ def _fetch_raw(
         params: tuple[Any, ...] = (vec, ticker, vec, top_k)
     else:
         sql = """
-            SELECT id, ticker, filing_type, filing_date::text, chunk_text,
+            SELECT id, ticker, filing_type, filing_date::text, chunk_text, source_url,
                    1 - (embedding <=> %s::vector) AS sim
             FROM corpus
             ORDER BY embedding <=> %s::vector LIMIT %s
@@ -271,9 +272,10 @@ def _fetch_raw(
             ticker=str(r[1]),
             filing_type=str(r[2]),
             filing_date=str(r[3]) if r[3] else "",
-            similarity_score=float(r[5]),
+            similarity_score=float(r[6]),
             text_before=str(r[4]),
             text_after=str(r[4]),
+            source_url=str(r[5]) if r[5] else "",
         )
         for r in rows
     ]
@@ -384,6 +386,7 @@ def run_diagnostic() -> None:
                     filing_date=c.filing_date,
                     text=c.text_before,
                     similarity_score=c.similarity_score,
+                    source_url=c.source_url,
                 )
                 for c in raw_chunks
             ]
@@ -407,6 +410,7 @@ def run_diagnostic() -> None:
                             similarity_score=rc.similarity_score,
                             text_before=rc.text,
                             text_after=fc.text,
+                            source_url=rc.source_url,
                         )
                     )
 

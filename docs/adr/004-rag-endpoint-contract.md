@@ -15,7 +15,7 @@ self-correction. The rationale is that a smarter retriever suppresses the
 retrieval failures the reliability platform is designed to catch. The endpoint
 must be deliberately basic.
 
-The 20-company demo corpus contains real cross-ticker contamination risk
+The 10-company demo corpus contains real cross-ticker contamination risk
 (JPMorgan 10-Ks dominate the chunk count at ~2730 chunks; a query without a
 ticker filter will over-retrieve JPM), temporal mismatches (8-K chunks have no
 period_of_report; older 10-Q chunks may answer questions about a different
@@ -44,6 +44,7 @@ across annual filings. These are observable failure modes, not bugs to fix.
       "filing_type": "...",
       "filing_date": "YYYY-MM-DD",
       "text": "...",
+      "source_url": "https://www.sec.gov/...",
       "similarity_score": 0.87
     }
   ],
@@ -64,7 +65,7 @@ Basic cosine vector search over the `corpus` pgvector table with the HNSW
 index (`vector_cosine_ops`). The SQL with optional ticker filter:
 
 ```sql
-SELECT id, ticker, filing_type, filing_date::text, chunk_text,
+SELECT id, ticker, filing_type, filing_date::text, chunk_text, source_url,
        1 - (embedding <=> %s::vector) AS similarity_score
 FROM corpus
 [WHERE ticker = %s]
@@ -182,10 +183,6 @@ temporal mismatches, and near-duplicate neighbors are expected and will be
 measurable in the Session B retrieval rail's baseline diagnostic. The platform's
 value proposition is measuring and correcting these failure modes, not hiding them.
 
-The `retrieved_chunks` list in the response is the retrieval-generation boundary
-contract for the Session B retrieval rail. The Session B rail reads
-`retrieved_chunks` from the response body, applies indirect-injection detection,
-PII scanning, and source-trust checks, and either passes or blocks the response.
-Any change to the `RetrievedChunk` schema must be coordinated with Session B.
+The retrieved_chunks list in the response is the retrieval-generation boundary trace exposed to callers. The retrieval rail operates inline within /v1/rag/query: after _fetch_chunks returns the top-k candidates and before _build_rag_messages assembles the LLM prompt. Only chunks that survive the retrieval rail's source-trust, injection, and PII checks are placed into the LLM prompt and returned in retrieved_chunks. If all chunks are dropped, the endpoint short-circuits and returns without calling the downstream LLM. Any change to the RetrievedChunk schema must be coordinated with the retrieval rail implementation in finsentry/rails/retrieval/rail.py.
 
 **Rationale for pre-downstream latency contract.** The 20-second budget documented above applies to the downstream LLM call inside `_call_downstream_rag`. It does not include the input rails (Prompt Guard, Presidio, Llama Guard 3), query embedding, vector search, or the retrieval rail (per-chunk Prompt Guard + Presidio). On the current Apple Silicon MPS-inference deployment, the pre-downstream stages measure approximately 5 to 7 seconds per request (Llama Guard 3 dominates at approximately 3 seconds on MPS; the retrieval rail contributes approximately 250ms per chunk sequentially). Under a downstream-unavailable failure case, curl-visible request latency is approximately 5 to 7 seconds plus the 20-second budget plus approximately 2 seconds of framework overhead, totaling approximately 27 seconds. Under a healthy downstream, request latency is approximately 5 to 7 seconds plus downstream inference time. This is a documented characteristic of the current deployment topology, not a defect. Migrating Llama Guard 3 to a CUDA GPU deployment or moving retrieval-rail Prompt Guard calls to a batched inference path would reduce the pre-downstream contribution substantially; both are Phase 4 optimizations.
