@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 import httpx
@@ -25,6 +26,7 @@ from tenacity import (
 )
 
 from finsentry.events.producer import RagEventProducer
+from finsentry.events.schema import RagResponseEvent
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker
 from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
@@ -491,11 +493,12 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     # (input rails, retrieval, downstream, output rails, event emit) shares
     # one stable correlation ID and a common start reference.
     app_trace_id = str(uuid.uuid4())
-    request_start_time = time.monotonic()  # noqa: F841 — consumed in M4 event emit
+    request_start_time = time.monotonic()
 
     query = request_body.query
     ticker = request_body.ticker
     top_k = request_body.top_k
+    input_rail_status: Literal["pass", "modified", "blocked"] = "pass"
 
     # 1. Input rails on the query.
     if _adapter is not None:
@@ -510,12 +513,34 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
             return JSONResponse({"error": "input rail service unavailable"}, status_code=503)
 
         if status == RailStatus.BLOCKED:
+            input_rail_status = "blocked"
+            if _rag_event_producer is not None:
+                asyncio.create_task(
+                    _rag_event_producer.emit(
+                        RagResponseEvent(
+                            event_id=str(uuid.uuid4()),
+                            app_trace_id=app_trace_id,
+                            timestamp_utc=datetime.now(UTC).isoformat(),
+                            status="blocked",
+                            endpoint="/v1/rag/query",
+                            query=request_body.query,
+                            ticker=ticker,
+                            block_reason="input_rail_blocked",
+                            block_rail=rail_name or "unknown",
+                            input_rail_status="blocked",
+                            total_latency_ms=int(
+                                (time.monotonic() - request_start_time) * 1000
+                            ),
+                        )
+                    )
+                )
             block_body: dict[str, str] = {"error": "request blocked by input rail"}
             if rail_name is not None:
                 block_body["rail"] = rail_name
             return JSONResponse(block_body, status_code=403)
 
         if status == RailStatus.MODIFIED:
+            input_rail_status = "modified"
             query = str(updated[0].get("content", query))
 
     # 2. Embed the (possibly sanitised) query.
@@ -539,6 +564,26 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         filtered_chunks = chunks
 
     if not filtered_chunks:
+        if _rag_event_producer is not None:
+            asyncio.create_task(
+                _rag_event_producer.emit(
+                    RagResponseEvent(
+                        event_id=str(uuid.uuid4()),
+                        app_trace_id=app_trace_id,
+                        timestamp_utc=datetime.now(UTC).isoformat(),
+                        status="blocked",
+                        endpoint="/v1/rag/query",
+                        query=request_body.query,
+                        ticker=ticker,
+                        block_reason="no_trustworthy_sources",
+                        block_rail="retrieval-rail",
+                        input_rail_status=input_rail_status,
+                        total_latency_ms=int(
+                            (time.monotonic() - request_start_time) * 1000
+                        ),
+                    )
+                )
+            )
         return JSONResponse(
             RagQueryResponse(
                 answer=RagAnswerResponse(
@@ -580,12 +625,39 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
 
     # 7. Output rails: schema, regulated phrases, faithfulness.
     retrieved_chunk_ids = {c.chunk_id for c in filtered_chunks}
+    # List forms used for event payloads (set above is used for citation cross-check).
+    _ev_chunk_ids = [c.chunk_id for c in filtered_chunks]
+    _ev_chunk_texts = [c.text for c in filtered_chunks]
     output_trace: dict[str, Any] = {}
 
     # Rail A: schema enforcement + citation cross-check
     if _schema_rail is not None:
         schema_decision = _schema_rail.check(answer, retrieved_chunk_ids)
         if schema_decision.outcome == "block":
+            if _rag_event_producer is not None:
+                asyncio.create_task(
+                    _rag_event_producer.emit(
+                        RagResponseEvent(
+                            event_id=str(uuid.uuid4()),
+                            app_trace_id=app_trace_id,
+                            timestamp_utc=datetime.now(UTC).isoformat(),
+                            status="blocked",
+                            endpoint="/v1/rag/query",
+                            query=request_body.query,
+                            ticker=ticker,
+                            retrieved_chunk_ids=_ev_chunk_ids,
+                            retrieved_chunks_text=_ev_chunk_texts,
+                            block_reason=schema_decision.reason,
+                            block_rail="schema-enforcement",
+                            model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
+                            input_rail_status=input_rail_status,
+                            output_rail_trace_snapshot=output_trace,
+                            total_latency_ms=int(
+                                (time.monotonic() - request_start_time) * 1000
+                            ),
+                        )
+                    )
+                )
             return JSONResponse(
                 {
                     "error": "output_rail_block",
@@ -611,6 +683,30 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     if _phrase_rail is not None:
         phrase_decision = _phrase_rail.check(parsed_answer.answer)
         if phrase_decision.outcome == "block":
+            if _rag_event_producer is not None:
+                asyncio.create_task(
+                    _rag_event_producer.emit(
+                        RagResponseEvent(
+                            event_id=str(uuid.uuid4()),
+                            app_trace_id=app_trace_id,
+                            timestamp_utc=datetime.now(UTC).isoformat(),
+                            status="blocked",
+                            endpoint="/v1/rag/query",
+                            query=request_body.query,
+                            ticker=ticker,
+                            retrieved_chunk_ids=_ev_chunk_ids,
+                            retrieved_chunks_text=_ev_chunk_texts,
+                            block_reason=phrase_decision.reason,
+                            block_rail="regulated-phrases",
+                            model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
+                            input_rail_status=input_rail_status,
+                            output_rail_trace_snapshot=output_trace,
+                            total_latency_ms=int(
+                                (time.monotonic() - request_start_time) * 1000
+                            ),
+                        )
+                    )
+                )
             return JSONResponse(
                 {
                     "error": "output_rail_block",
@@ -632,6 +728,30 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         )
         output_trace["faithfulness"] = faith_decision.details
         if faith_decision.outcome == "block":
+            if _rag_event_producer is not None:
+                asyncio.create_task(
+                    _rag_event_producer.emit(
+                        RagResponseEvent(
+                            event_id=str(uuid.uuid4()),
+                            app_trace_id=app_trace_id,
+                            timestamp_utc=datetime.now(UTC).isoformat(),
+                            status="blocked",
+                            endpoint="/v1/rag/query",
+                            query=request_body.query,
+                            ticker=ticker,
+                            retrieved_chunk_ids=_ev_chunk_ids,
+                            retrieved_chunks_text=_ev_chunk_texts,
+                            block_reason=faith_decision.reason,
+                            block_rail="faithfulness",
+                            model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
+                            input_rail_status=input_rail_status,
+                            output_rail_trace_snapshot=output_trace,
+                            total_latency_ms=int(
+                                (time.monotonic() - request_start_time) * 1000
+                            ),
+                        )
+                    )
+                )
             return JSONResponse(
                 {
                     "error": "output_rail_block",
@@ -642,6 +762,29 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
                 status_code=422,
             )
 
+    if _rag_event_producer is not None:
+        asyncio.create_task(
+            _rag_event_producer.emit(
+                RagResponseEvent(
+                    event_id=str(uuid.uuid4()),
+                    app_trace_id=app_trace_id,
+                    timestamp_utc=datetime.now(UTC).isoformat(),
+                    status="success",
+                    endpoint="/v1/rag/query",
+                    query=request_body.query,
+                    ticker=ticker,
+                    retrieved_chunk_ids=_ev_chunk_ids,
+                    retrieved_chunks_text=_ev_chunk_texts,
+                    answer=parsed_answer.answer,
+                    citations=[c.model_dump() for c in parsed_answer.citations],
+                    confidence=parsed_answer.confidence,
+                    model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
+                    input_rail_status=input_rail_status,
+                    output_rail_trace_snapshot=output_trace,
+                    total_latency_ms=int((time.monotonic() - request_start_time) * 1000),
+                )
+            )
+        )
     response = RagQueryResponse(
         answer=parsed_answer,
         retrieved_chunks=filtered_chunks,
