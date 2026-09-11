@@ -11,6 +11,7 @@ scripts/
 !scripts/diagnostic_presidio_sec_context.py
 !scripts/diagnostic_baseline_retrieval.py
 !scripts/smoke_test_gemini_faithfulness.py
+!scripts/smoke_test_infra.py
 !scripts/diagnostic_output_rails_e2e.py
 
 # Python
