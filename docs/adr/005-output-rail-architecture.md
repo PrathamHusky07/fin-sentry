@@ -148,7 +148,7 @@ default is correct. Faithfulness is different in kind.
 Adding to ADR 004's pre-downstream accounting: the output rails add post-generation
 latency. Schema enforcement and regulated-phrase rail are in-process and negligible
 (<1ms each). Faithfulness adds (1 + N) Gemini API calls where N = number of claims
-extracted (capped at 10). On the Gemini Developer API free tier with `gemini-3.6-flash`,
+extracted (capped at 10). On the Vertex AI Standard tier with `gemini-3.6-flash`,
 each call is approximately 10-30 seconds. `gemini-3.6-flash` is a thinking model that
 internally allocates thought tokens before producing visible output, which dominates
 per-call latency. Empirical measurement in this environment: ~23-24 seconds per call.

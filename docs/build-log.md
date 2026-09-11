@@ -1,5 +1,53 @@
 # Build Log
 
+## 2026-09-11 — Day 3 closeout: evaluator integrity + three-rail trace (commits d3c-fix-7..d3c-fix-11)
+
+### What shipped
+
+**Commit d3c-fix-7** — `finsentry/rails/output/faithfulness.py`,
+`tests/rails/output/test_faithfulness.py`. Malformed claim extraction responses
+(non-list JSON, JSON parse error, empty string) now fail-open as
+`skipped_evaluator_error` with a `sub_reason` field (`non_list_extraction`,
+`json_parse_error`, `extraction_returned_empty`). Previously, malformed extraction
+silently passed all claims as "supported," inflating the faithfulness score and
+allowing fabricated answers through. Unified `_fail_open` helper centralizes the
+fail-open path so every error surface hits the same annotation logic. 6 new tests.
+
+**Commit d3c-fix-8** — `finsentry/rails/output/cost_governance.py`,
+`docs/adr/005-output-rail-architecture.md`. Documentation updated to accurately
+describe `CostBudget` as admission control based on a running-average projection,
+not a hard reservation. The docstring and ADR now document the race condition:
+concurrent calls may briefly exceed the per-call ceiling because the cost of any
+single call is unknown until it completes. A broker-side reservation is deferred
+to a future ADR. No code behavior changed; existing tests unchanged.
+
+**Commit d3c-fix-9** — `finsentry/gateway/main.py`. `output_rail_trace` now
+records all three rail decisions on the success path. Previously, if the regulated-
+phrase rail passed and the faithfulness rail passed, only the faithfulness entry was
+reliably present; schema-enforcement and regulated-phrases entries could be missing
+if their `output_trace[key]` assignment was reached only through the pass branch.
+1 new test (`test_rag_query_populates_output_rail_trace_with_all_three_rails`).
+
+**Commit d3c-fix-10** — `tests/gateway/test_rag_endpoint.py`. Integration test
+matrix covering all three output rails independently: schema block, regulated-phrase
+block, faithfulness block, and the three-rail pass path. Tests mock each rail's
+`check` method and assert HTTP status code, `rail` field in the error body, and
+correct `output_rail_trace` shape. 11 new endpoint tests.
+
+**Commit d3c-fix-11** — `scripts/smoke_test_gemini_faithfulness.py`,
+`finsentry/gateway/main.py` (comment only), `docs/adr/005-output-rail-architecture.md`.
+Dead `dry_run` parameter removed from smoke test. Downstream model routing constant
+`_DOWNSTREAM_MODEL_ROUTING_ID` annotated as stale for the Ollama path (value
+unchanged; Day 4 Milestone 1 updates it from env). ADR 005 wording corrections.
+
+### Test count
+
+177 (Day 3 close baseline) + 6 evaluator-integrity tests + 1 three-rail trace test
++ 11 endpoint integration tests + 3 regression guards = **190 passed, 2 deselected**
+(slow marks unchanged; dev cache stub tests account for 2 of the 190 non-slow total).
+
+---
+
 ## 2026-09-11 — Day 3 close: Vertex migration + cost governance (commits d3c-fix-1..d3c-fix-6)
 
 ### What shipped
@@ -108,7 +156,7 @@ Overall: ALL ASSERTIONS PASS
 ### Test count
 
 163 passing (Session C baseline) + 3 mode tests + 8 cost governance tests + 1 observability
-contract test = **177 passed, 2 deselected** (slow).
+contract test + 2 dev cache tests = **177 passed, 2 deselected** (slow).
 
 ### User action items (post-session verification)
 
