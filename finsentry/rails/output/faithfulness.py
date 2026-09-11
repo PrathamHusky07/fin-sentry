@@ -30,6 +30,7 @@ import time
 from typing import Any, Literal
 
 from finsentry.rails.base import RailDecision
+from finsentry.rails.output.cost_governance import CostBudget
 
 Mode = Literal["vertex", "developer", "disabled"]
 
@@ -105,6 +106,7 @@ class FaithfulnessRail:
         self._mode = mode
         self._enabled = mode != "disabled"
         self._client: Any = None
+        self._budget = CostBudget()
         if not self._enabled:
             return
         from google import genai
@@ -143,6 +145,7 @@ class FaithfulnessRail:
         deadline = time.monotonic() + _TOTAL_BUDGET
         total_input_tokens = 0
         total_output_tokens = 0
+        total_thoughts_tokens = 0
         total_calls = 0
 
         context_text = "\n\n".join(
@@ -153,12 +156,18 @@ class FaithfulnessRail:
         # Step 1: claim extraction
         extract_prompt = _CLAIM_EXTRACTION_PROMPT.format(answer=answer_text)
         try:
-            claims_raw, in_tok, out_tok = await self._call_gemini(
+            projected = self._estimate_next_call_cost()
+            ok, ceiling_reason = self._budget.can_proceed(projected)
+            if not ok:
+                raise _GeminiSkipError("skipped_budget", {"ceiling": ceiling_reason})
+            claims_raw, in_tok, out_tok, thoughts_tok = await self._call_gemini(
                 extract_prompt, deadline
             )
             total_input_tokens += in_tok
             total_output_tokens += out_tok
+            total_thoughts_tokens += thoughts_tok
             total_calls += 1
+            self._budget.record_call(in_tok, out_tok, thoughts_tok)
         except _GeminiSkipError as exc:
             return RailDecision(
                 outcome="pass",
@@ -188,6 +197,8 @@ class FaithfulnessRail:
                     "gemini_calls": total_calls,
                     "input_tokens": total_input_tokens,
                     "output_tokens": total_output_tokens,
+                    "thoughts_tokens": total_thoughts_tokens,
+                    "cost": self._budget.report(),
                 },
             )
 
@@ -200,12 +211,18 @@ class FaithfulnessRail:
                 context=context_text, claim=claim
             )
             try:
-                verdict_raw, in_tok, out_tok = await self._call_gemini(
+                projected = self._estimate_next_call_cost()
+                ok, ceiling_reason = self._budget.can_proceed(projected)
+                if not ok:
+                    raise _GeminiSkipError("skipped_budget", {"ceiling": ceiling_reason})
+                verdict_raw, in_tok, out_tok, thoughts_tok = await self._call_gemini(
                     verify_prompt, deadline
                 )
                 total_input_tokens += in_tok
                 total_output_tokens += out_tok
+                total_thoughts_tokens += thoughts_tok
                 total_calls += 1
+                self._budget.record_call(in_tok, out_tok, thoughts_tok)
             except _GeminiSkipError as exc:
                 return RailDecision(
                     outcome="pass",
@@ -241,6 +258,8 @@ class FaithfulnessRail:
             "gemini_calls": total_calls,
             "input_tokens": total_input_tokens,
             "output_tokens": total_output_tokens,
+            "thoughts_tokens": total_thoughts_tokens,
+            "cost": self._budget.report(),
         }
 
         if score < self._threshold:
@@ -256,12 +275,17 @@ class FaithfulnessRail:
             details={"faithfulness_status": "passed", **base_details},
         )
 
+    def _estimate_next_call_cost(self) -> float:
+        report = self._budget.report()
+        count = report["call_count"]
+        return report["run_total_usd"] / count if count > 0 else 0.001
+
     async def _call_gemini(
         self, prompt: str, deadline: float
-    ) -> tuple[str, int, int]:
+    ) -> tuple[str, int, int, int]:
         """Call Gemini with per-call and total-budget timeouts.
 
-        Returns (response_text, input_tokens, output_tokens).
+        Returns (response_text, input_tokens, output_tokens, thoughts_tokens).
         Raises _GeminiSkipError on any failure that should fail-open.
         """
         remaining = deadline - time.monotonic()
@@ -282,11 +306,11 @@ class FaithfulnessRail:
         except Exception as exc:
             return self._classify_gemini_error(exc)
 
-    async def _generate(self, prompt: str) -> tuple[str, int, int]:
+    async def _generate(self, prompt: str) -> tuple[str, int, int, int]:
         """Async wrapper for the synchronous Gemini generate_content call."""
         from google.genai.errors import APIError, ClientError, ServerError
 
-        def _sync_call() -> tuple[str, int, int]:
+        def _sync_call() -> tuple[str, int, int, int]:
             response = self._client.models.generate_content(
                 model=self._model_name,
                 contents=prompt,
@@ -299,7 +323,8 @@ class FaithfulnessRail:
             usage = response.usage_metadata
             in_tok = usage.prompt_token_count or 0 if usage else 0
             out_tok = usage.candidates_token_count or 0 if usage else 0
-            return text, in_tok, out_tok
+            thoughts_tok = usage.thoughts_token_count or 0 if usage else 0
+            return text, in_tok, out_tok, thoughts_tok
 
         try:
             return await asyncio.to_thread(_sync_call)
@@ -321,7 +346,7 @@ class FaithfulnessRail:
                 raise _GeminiSkipError("skipped_safety_filter", {}) from exc
             raise _GeminiSkipError("skipped_upstream_error", {"error_detail": str(exc)}) from exc
 
-    def _classify_gemini_error(self, exc: Exception) -> tuple[str, int, int]:
+    def _classify_gemini_error(self, exc: Exception) -> tuple[str, int, int, int]:
         """Never called — exceptions are raised as _GeminiSkipError before reaching here."""
         raise _GeminiSkipError("skipped_upstream_error", {"error_detail": str(exc)}) from exc
 
