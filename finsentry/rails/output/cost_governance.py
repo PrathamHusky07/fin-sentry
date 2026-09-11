@@ -33,11 +33,30 @@ class CallRecord:
 
 
 class CostBudget:
-    """Enforces per-call, per-run, per-day dollar ceilings.
+    """Provides pre-call admission control and exact post-call accounting for Gemini spend.
+
+    Admission control: _estimate_next_call_cost() in FaithfulnessRail projects
+    the cost of the next call using the running average of prior calls, and
+    can_proceed() gates further calls when that projection plus accumulated spend
+    would exceed a configured ceiling.
+
+    Exact accounting: record_call() computes actual cost from usage_metadata
+    (prompt_token_count, candidates_token_count, thoughts_token_count) using the
+    Vertex AI Standard tier pricing constants above.
 
     Thinking tokens (thoughts_token_count from Gemini usage_metadata) are billed
     at the output rate per Google Cloud Vertex AI pricing. record_call() takes
     them separately for observability but includes them in output cost calculation.
+
+    Important: this is not a strict per-call reservation. The actual cost of a
+    specific upcoming call is unknown before it completes. Under variable token
+    usage or concurrent requests against a single rail instance, actual spend may
+    briefly exceed the configured per-call ceiling before subsequent calls are
+    gated. The invariants guaranteed are: (a) exact post-hoc accounting via
+    record_call, (b) admission control that gates further calls once running totals
+    cross per-run or per-day ceilings. Suitable for single-process development and
+    cost-observability. A stricter reservation mechanism would require broker-side
+    or storage-backed reservations, deferred to a future ADR.
     """
 
     def __init__(

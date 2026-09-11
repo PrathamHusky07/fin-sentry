@@ -180,10 +180,12 @@ on those responses; this is the correct priority ordering for a reliability plat
 must itself be reliable.
 
 **Pydantic strict mode**: Considered using `model_config = ConfigDict(strict=True)` on
-`RagAnswerResponse`. Rejected for now. Strict mode would reject numeric `confidence`
-values from a model that occasionally formats numbers instead of strings, producing
-opaque errors. The current Literal constraint with Pydantic's default coercion catches
-invalid values while tolerating minor type variance.
+`RagAnswerResponse`. Rejected for now. `Literal['low', 'medium', 'high']` already
+rejects any value not exactly matching one of the three strings; strict mode adds no
+defense there. Where strict mode would matter is on `Citation.chunk_id: str` — under
+lax mode, an integer `chunk_id` would coerce to string, potentially masking a downstream
+bug. Chosen to defer until a Day 4B judge event schema is finalized, at which point
+strict mode is applied uniformly across all output-rail Pydantic models.
 
 ## Consequences
 
@@ -192,8 +194,10 @@ invalid values while tolerating minor type variance.
   is the first normative definition.
 - Output rail blocks return 422. Callers must handle 422 in addition to the codes
   documented in ADR 004.
-- Faithfulness adds post-generation latency. Total request time can approach 37 seconds.
-  Day 4 moves Faithfulness to async to restore the sub-30s window.
+- Faithfulness adds post-generation latency. Total request time in the worst case
+  approaches the 20s downstream budget plus the 120s Faithfulness budget = ~140s.
+  Day 4 moves Faithfulness to the async evaluation path so it no longer blocks the
+  request; until Day 4 lands the synchronous ceiling is documented as-is.
 - The `ragas` and `guardrails-ai` packages are NOT installed. The project's dependency
   tree has no openai, litellm, or langchain-openai packages.
 - `google-genai>=2.22.0` is the only new production dependency added by Session C.
@@ -208,11 +212,18 @@ not an API key.
 **Project:** dedicated GCP project `fin-sentry` with billing enabled. The billing account
 holds the $300 Google Cloud Free Trial credit.
 
-**Zero-cost architecture:** the $300 credit is a hard ceiling, not a budget to consume.
-Per-call ($0.02), per-run ($5), per-day ($25) dollar ceilings are enforced in
-`CostBudget` (`finsentry/rails/output/cost_governance.py`). `FaithfulnessRail` calls
-`CostBudget.can_proceed()` before every Gemini call; if any ceiling would be exceeded,
-the rail raises `_GeminiSkipError("skipped_budget", ...)` and fails open.
+**Zero-cost architecture:** the $300 credit is a ceiling, not a budget to consume.
+`CostBudget` (`finsentry/rails/output/cost_governance.py`) provides pre-call admission
+control based on a running-average projection of recent call costs, and exact post-call
+accounting from Gemini `usage_metadata`. `FaithfulnessRail` calls `CostBudget.can_proceed()`
+before every Gemini call; if any ceiling would be exceeded, the rail raises
+`_GeminiSkipError("skipped_budget", ...)` and fails open.
+
+The invariant guaranteed is: (a) exact post-hoc accounting via `record_call`,
+(b) admission control that halts further evaluator calls when configured per-run or
+per-day totals are reached. Bursts of concurrent calls may briefly exceed the per-call
+ceiling because the cost of any single call is unknown until it completes; a broker-side
+reservation is deferred to a future ADR.
 
 **Empirical validation:** the user verified a single Gemini smoke test call returned
 `Response: OK` with `usage_metadata` showing thinking tokens present

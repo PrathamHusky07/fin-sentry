@@ -259,9 +259,9 @@ class FaithfulnessRail:
                 )
 
             # Distinguish verdict parse errors from ambiguous values from valid yes/no.
-            # Case 1: valid dict with verdict "yes" or "no" — count normally.
-            # Case 2: valid dict with ambiguous verdict value — fail-open, verdict_ambiguous.
-            # Case 3: JSONDecodeError, ValueError, or non-dict JSON — fail-open, verdict_parse_failure.
+            # Case 1: valid dict, verdict "yes"/"no" — count normally.
+            # Case 2: valid dict, ambiguous value — fail-open, verdict_ambiguous.
+            # Case 3: JSONDecodeError/ValueError/non-dict — fail-open, verdict_parse_failure.
             try:
                 _vdata = json.loads(_strip_json_fences(verdict_raw))
             except (json.JSONDecodeError, ValueError):
