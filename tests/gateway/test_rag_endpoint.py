@@ -298,3 +298,83 @@ async def test_all_chunks_dropped_endpoint_returns_no_sources_message(
     assert body["retrieved_chunks"] == []
     assert "retrieval_trace_id" in body
     mock_llm.assert_not_called()
+
+
+async def test_rag_query_populates_output_rail_trace_on_success(
+    fake_breaker: AsyncCircuitBreaker,
+    fake_embed_model: MagicMock,
+) -> None:
+    """Successful RAG response includes output_rail_trace with faithfulness metadata
+    and cost report. Locks the observability contract."""
+    import json
+
+    from finsentry.rails.base import RailDecision
+
+    chunk = _make_chunk("abc123", ticker="AAPL", text="Apple reported record revenue.")
+    rag_answer = json.dumps({
+        "answer": "Apple revenue was strong.",
+        "citations": [{"chunk_id": "abc123", "quote": "Apple reported record revenue."}],
+        "confidence": "high",
+    })
+
+    faith_decision = RailDecision(
+        outcome="pass",
+        reason="faithfulness check passed",
+        details={
+            "faithfulness_status": "passed",
+            "score": 0.95,
+            "supported_claims": ["Apple revenue was strong."],
+            "unsupported_claims": [],
+            "gemini_calls": 3,
+            "input_tokens": 500,
+            "output_tokens": 200,
+            "thoughts_tokens": 400,
+            "cost": {
+                "run_total_usd": 0.0025,
+                "day_total_usd": 0.0025,
+                "call_count": 3,
+                "prompt_tokens_total": 500,
+                "candidates_tokens_total": 200,
+                "thoughts_tokens_total": 400,
+                "ceilings": {
+                    "per_call_usd": 0.02,
+                    "per_run_usd": 5.0,
+                    "per_day_usd": 25.0,
+                },
+            },
+        },
+    )
+
+    mock_faith_rail = MagicMock()
+    mock_faith_rail.check = AsyncMock(return_value=faith_decision)
+
+    with (
+        patch.object(gw, "_DOWNSTREAM_URL", "http://fake-llm"),
+        patch.object(gw, "_DATABASE_URL", "postgresql://fake"),
+        patch.object(gw, "_embed_model", fake_embed_model),
+        patch.object(gw, "_rag_breaker", fake_breaker),
+        patch.object(gw, "_adapter", None),
+        patch.object(gw, "_faithfulness_rail", mock_faith_rail),
+        patch("finsentry.gateway.main._fetch_chunks", AsyncMock(return_value=[chunk])),
+        patch(
+            "finsentry.gateway.main._call_downstream_rag",
+            AsyncMock(return_value=rag_answer),
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/v1/rag/query",
+                json={"query": "What was Apple revenue?"},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["answer"]["answer"] == "Apple revenue was strong."
+    assert body["answer"]["citations"][0]["chunk_id"] == "abc123"
+    assert body["answer"]["confidence"] == "high"
+
+    faith_trace = body["output_rail_trace"]["faithfulness"]
+    assert faith_trace["faithfulness_status"] == "passed"
+    assert faith_trace["cost"]["thoughts_tokens_total"] == 400
+    assert faith_trace["cost"]["run_total_usd"] == 0.0025
