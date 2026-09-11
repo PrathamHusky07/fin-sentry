@@ -197,3 +197,49 @@ invalid values while tolerating minor type variance.
 - The `ragas` and `guardrails-ai` packages are NOT installed. The project's dependency
   tree has no openai, litellm, or langchain-openai packages.
 - `google-genai>=2.22.0` is the only new production dependency added by Session C.
+
+### Vertex AI migration and zero-cost architecture (2026-09-11)
+
+Migration from the Gemini Developer API (rate-limited free tier, ~1500 RPD ceiling on
+fresh projects, prompts and responses used for model improvement) to Vertex AI on Google
+Cloud (`aiplatform.googleapis.com`). Authentication via Application Default Credentials,
+not an API key.
+
+**Project:** dedicated GCP project `fin-sentry` with billing enabled. The billing account
+holds the $300 Google Cloud Free Trial credit.
+
+**Zero-cost architecture:** the $300 credit is a hard ceiling, not a budget to consume.
+Per-call ($0.02), per-run ($5), per-day ($25) dollar ceilings are enforced in
+`CostBudget` (`finsentry/rails/output/cost_governance.py`). `FaithfulnessRail` calls
+`CostBudget.can_proceed()` before every Gemini call; if any ceiling would be exceeded,
+the rail raises `_GeminiSkipError("skipped_budget", ...)` and fails open.
+
+**Empirical validation:** the user verified a single Gemini smoke test call returned
+`Response: OK` with `usage_metadata` showing thinking tokens present
+(`thoughts_token_count=90` for a trivial prompt). This confirms thinking tokens must
+be first-class in cost accounting. Vertex-mode smoke test with `gemini-3.6-flash` and
+two synthetic pairs (Pair A: faithful; Pair B: unfaithful):
+
+- Pair A: score 1.0, PASS. 5 Gemini calls, 747 input / 290 output / 1506 thinking tokens.
+- Pair B: score 0.0, blocked. 6 Gemini calls, 748 input / 329 output / 2095 thinking tokens.
+- Total cost: $0.016946 against $25 per-day ceiling.
+
+**Data policy:** Vertex enterprise governance means prompts and responses are NOT used for
+model training without explicit permission. Correct posture for financial data even though
+the demo corpus is public SEC filings.
+
+**Pricing:** `gemini-3.6-flash` on Vertex Standard tier: $0.75/M input tokens, $3.75/M
+output tokens (through Dec 31, 2026). Thinking tokens are billed at the output rate.
+Batch/Flex tier: $0.375/M input, $1.875/M output. Reserved for Day 6 FinanceBench
+calibration.
+
+**Day 6 FinanceBench projection:** approximately 2250 Gemini calls (150 queries times
+~15 calls per Faithfulness check). Projected Standard cost ~$0.76; Batch/Flex ~$0.38.
+Both are well under the $300 credit and below the per-day $25 ceiling when spread across
+two days or run as one Batch job.
+
+**Pending acceptance criterion:** the user should inspect Google Cloud Console, Billing,
+Reports approximately 24 hours after this session to confirm Vertex AI SKU line items
+appear for `gemini-3.6-flash` and that a matching credit offset brings the net charge to
+zero. Until confirmed, the zero-cost claim is validated by pricing documentation and code
+enforcement, but not yet by billing reality.

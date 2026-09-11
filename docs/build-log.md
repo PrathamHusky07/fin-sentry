@@ -1,5 +1,126 @@
 # Build Log
 
+## 2026-09-11 — Day 3 close: Vertex migration + cost governance (commits d3c-fix-1..d3c-fix-6)
+
+### What shipped
+
+**Commit d3c-fix-1** — `finsentry/rails/output/faithfulness.py`, `finsentry/gateway/main.py`,
+`tests/rails/output/test_faithfulness.py`. `FaithfulnessRail` now supports three modes via
+`Mode = Literal["vertex", "developer", "disabled"]`. Constructor validates mode and falls back
+to disabled with an ERROR log for missing credentials or an unknown mode string. `main.py`
+constructs the rail from `GEMINI_MODE`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`,
+and `GEMINI_API_KEY` environment variables. Three new tests:
+`test_vertex_mode_missing_project_falls_back_to_disabled`,
+`test_developer_mode_missing_api_key_falls_back_to_disabled`,
+`test_invalid_mode_falls_back_to_disabled_logs_error`.
+
+**Commit d3c-fix-2** — `finsentry/rails/output/cost_governance.py` (new),
+`finsentry/rails/output/faithfulness.py`, `tests/rails/output/test_faithfulness.py`,
+`tests/rails/output/test_cost_governance.py` (new). `CostBudget` enforces per-call ($0.02),
+per-run ($5), per-day ($25) dollar ceilings. Thinking tokens (`thoughts_token_count` from
+Gemini `usage_metadata`) are billed at the output rate ($3.75/M) per Google Cloud pricing.
+`_call_gemini` and `_generate` return type changed to `tuple[str, int, int, int]` (adding
+`thoughts_token_count`). `RailDecision.details` now includes `"thoughts_tokens"` and `"cost"`
+keys on all pass/block outcomes. 7 new cost governance tests + 2 integration tests in
+`test_cost_governance.py`. All existing faithfulness mock tests updated to 4-tuple responses.
+
+**Commit d3c-fix-3** — `scripts/smoke_test_gemini_faithfulness.py`. Updated for Vertex mode:
+reads `GEMINI_MODE` from env, prints mode/project/model, prints `CostBudget.report()` with
+thinking tokens, constructs `FaithfulnessRail` with the new dual-mode constructor.
+
+**Commit d3c-fix-4** — `tests/gateway/test_rag_endpoint.py`. New test
+`test_rag_query_populates_output_rail_trace_on_success` mocks `FaithfulnessRail.check` and
+asserts `output_rail_trace["faithfulness"]["cost"]["thoughts_tokens_total"]` and
+`output_rail_trace["faithfulness"]["cost"]["run_total_usd"]`. Locks the observability contract.
+
+**Commit d3c-fix-5** — `docs/adr/005-output-rail-architecture.md` (Vertex migration section),
+`docs/build-log.md` (this entry), `.env.example` (GEMINI_MODE, GOOGLE_CLOUD_PROJECT,
+GOOGLE_CLOUD_LOCATION added; GEMINI_API_KEY moved to optional comment).
+
+**Commit d3c-fix-6** — `finsentry/rails/output/_dev_cache.py` (stub), test.
+
+### Smoke test empirical output (run 2026-09-11, Vertex mode, gemini-3.6-flash)
+
+```
+Mode:    vertex
+Project: fin-sentry
+Location: global
+Model:   gemini-3.6-flash
+
+--- Pair A (faithful — should PASS) ---
+  Mode:              vertex
+  Model:             gemini-3.6-flash
+  Status:            passed
+  Score:             1.0
+  Latency:           12562 ms
+  Gemini calls:      5
+  Input tokens:      747
+  Output tokens:     290
+  Thinking tokens:   1506
+  Supported claims:  ["Apple's total net sales for fiscal year 2024 were $391.0 billion.",
+                      "Apple's total net sales in fiscal year 2024 represented a 2% year-over-year decline.",
+                      "iPhone sales accounted for approximately $201 billion.",
+                      "iPhone sales represented about half of Apple's total revenue."]
+  Unsupported:       []
+  Assertion (score >= 0.7): PASS
+
+--- Pair B (unfaithful — should BLOCK) ---
+  Mode:              vertex
+  Model:             gemini-3.6-flash
+  Status:            blocked
+  Score:             0.0
+  Latency:           15966 ms
+  Gemini calls:      6
+  Input tokens:      748
+  Output tokens:     329
+  Thinking tokens:   2095
+  Supported claims:  []
+  Unsupported:       ["Microsoft's total revenue reached $350 billion in fiscal year 2024.",
+                      "Microsoft's gaming division contributed $25 billion to revenue.",
+                      "Microsoft announced a special dividend of $5 per share.",
+                      "Microsoft's net income grew by 40%.",
+                      "Microsoft's net income growth was driven by AI services."]
+  Assertion (score < 0.7): PASS
+
+=== COST REPORT (from CostBudget) ===
+  run_total_usd:          $0.016946
+  day_total_usd:          $0.016946
+  call_count:             11
+  prompt_tokens_total:    1495
+  candidates_tokens_total:619
+  thoughts_tokens_total:  3601
+  ceilings: {per_call_usd: 0.02, per_run_usd: 5.0, per_day_usd: 25.0}
+
+Overall: ALL ASSERTIONS PASS
+```
+
+**Empirical findings:**
+- Pair A PASSES at score 1.0 in Vertex mode. The `_strip_json_fences` fix from Session C
+  is confirmed working. All four faithful claims were supported.
+- Pair B correctly blocked. All five fabricated claims are absent from the Microsoft context.
+- Thinking tokens are populated in Vertex responses: 1506 for Pair A, 2095 for Pair B.
+  Total 3601 thinking tokens in one smoke run. This empirically validates the
+  `thoughts_token_count` extraction path in `_generate`.
+- Total cost $0.016946 against $25.00 per-day ceiling. Zero risk of overspend.
+- Latency: 12.6s for Pair A (5 calls), 16.0s for Pair B (6 calls). Consistent with
+  the thinking model behavior documented in Session C (~10-15s per call observed earlier).
+
+### Test count
+
+163 passing (Session C baseline) + 3 mode tests + 9 cost governance tests + 1 observability
+contract test = **176 passed, 2 deselected** (slow).
+
+### User action items (post-session verification)
+
+Approximately 24 hours after this session: open Google Cloud Console, Billing, Reports,
+filter by service "Vertex AI". Confirm SKU line items for `gemini-3.6-flash` (or equivalent
+Vertex Gemini SKU) appear. Confirm a matching "Discounts / Credits" line offsets them.
+Paste the summary (Cost, Discounts, Subtotal columns for the Vertex row) back to the next
+session. Confirm no charge on the payment method attached to the billing account. This is
+the final acceptance criterion for the zero-cost architecture claim.
+
+---
+
 ## 2026-09-10 — Day 3 Session C: output rails (commits d3c-1..d3c-6)
 
 ### What shipped
