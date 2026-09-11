@@ -70,3 +70,39 @@ class RagResponseEvent(BaseModel):
     @classmethod
     def from_kafka_json(cls, payload: bytes) -> RagResponseEvent:
         return cls.model_validate(json.loads(payload.decode("utf-8")))
+
+
+class JudgeVerdictEvent(BaseModel):
+    """Async judge evaluation result emitted to the judge-verdicts topic.
+
+    One event per source RagResponseEvent. The app_trace_id links the verdict
+    back to the originating gateway request without requiring OTel propagation.
+    """
+
+    schema_version: str = "1.0"
+    event_id: str  # UUID4 for this verdict event
+    source_event_id: str  # event_id of the RagResponseEvent being judged
+    app_trace_id: str  # matches the source event's app_trace_id
+
+    timestamp_utc: str  # ISO 8601 at verdict emit time
+
+    # Faithfulness (Es et al. 2023)
+    faithfulness_score: float | None = None
+    faithfulness_status: str | None = None  # complete / skipped_* reason
+
+    # Answer Relevance
+    answer_relevance_score: float | None = None
+    answer_relevance_status: str | None = None
+
+    # Context Relevance
+    context_relevance_score: float | None = None
+    context_relevance_status: str | None = None
+
+    # Token usage (sum across all three metrics)
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_thoughts_tokens: int = 0
+    total_gemini_calls: int = 0
+
+    def to_kafka_json(self) -> bytes:
+        return self.model_dump_json().encode("utf-8")
