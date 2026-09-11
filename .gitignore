@@ -13,6 +13,8 @@ scripts/
 !scripts/smoke_test_gemini_faithfulness.py
 !scripts/smoke_test_infra.py
 !scripts/diagnostic_output_rails_e2e.py
+# Unit tests for scripts are under tests/, not scripts/
+!tests/scripts/
 
 # Python
 __pycache__/

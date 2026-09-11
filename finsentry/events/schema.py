@@ -59,7 +59,7 @@ class RagResponseEvent(BaseModel):
 
     # Error (populated only on status="error")
     error_kind: str | None = None
-    error_detail: str | None = None
+    error_detail: str | None = Field(default=None, max_length=500)
 
     # Serving
     total_latency_ms: int

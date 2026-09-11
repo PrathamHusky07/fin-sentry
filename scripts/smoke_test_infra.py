@@ -133,7 +133,11 @@ async def _check_risingwave() -> bool:
 
         # v3.0.x has a known playground-mode crash at ~5 hours uptime.
         # The docker-compose.dev.yml pins v3.0.3. Flag it but do not fail.
-        if ".0." in version_str and version_str.startswith("v3") or "3.0." in version_str:
+        if (
+            version_str.startswith("v3.0.")
+            or version_str.startswith("3.0.")
+            or "RisingWave-3.0." in version_str
+        ):
             print(
                 "[RISINGWAVE] WARN: v3.0.x detected. Known playground crash after ~5 hours. "
                 "Restart the container before long sessions: "

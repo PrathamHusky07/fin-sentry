@@ -104,6 +104,36 @@ consumer work is expected to complete well within the 5-hour window per session.
 to a non-playground RisingWave deployment is deferred to a later day when persistent
 materialized views justify the operational complexity.
 
+## Decision 9 — Day 3 synchronous Faithfulness rail preserved as safety control
+
+The spec preserves both roles for Faithfulness. Day 3 Faithfulness is a safety control
+(output rail that can block a response with 422). Day 4 Flash tier is an asynchronous
+evaluator (observability, does not block). Same metric name, different roles at different
+points in the pipeline.
+
+Day 4B does NOT delete the Day 3 sync rail. Day 4B does NOT create a synchronous fallback
+that reinstates Faithfulness in the request path when the async plane is unavailable. If the
+async plane is down, the dashboard shows the backlog and consumer lag; it does not silently
+reintroduce Faithfulness in the request path.
+
+This is the interview point that separates "we have Faithfulness twice" from "we have
+Faithfulness at two distinct points in the pipeline defending against two different threat
+models." The sync rail is a per-request admission gate with a latency cost. The async
+evaluator is a continuous quality monitor with no latency cost to the caller.
+
+## Decision 10 — "No trustworthy sources" emits status="blocked" while returning 200 to caller
+
+The retrieval-rail short-circuit ("no chunks survived filtering") returns 200 OK to the
+caller with a graceful-degradation response and simultaneously emits a status="blocked"
+event to Kafka.
+
+Two different perspectives on the same outcome: the caller sees successful graceful
+degradation; the async evaluator sees a policy-driven block. This asymmetry is deliberate.
+The caller-facing contract prioritizes availability. The observability contract records the
+underlying policy decision. A downstream consumer can filter for status="blocked" with
+block_rail="retrieval-rail" and see the full distribution of retrieval failures without the
+caller ever receiving a 4xx or 5xx.
+
 ## Consequences
 
 - Gateway latency is not affected by Kafka broker health (fire-and-forget emit).
@@ -112,3 +142,5 @@ materialized views justify the operational complexity.
 - app_trace_id appears in Kafka events, OTel spans, and log lines — three observability
   surfaces share one stable correlation key per request.
 - RisingWave v3.0.3 requires periodic container restart in long dev sessions.
+- Day 3 sync Faithfulness rail and Day 4 async Flash judge coexist intentionally.
+- Consumer lag is the signal for async plane health. No sync fallback is ever introduced.

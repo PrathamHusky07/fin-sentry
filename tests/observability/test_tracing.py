@@ -9,11 +9,13 @@ from __future__ import annotations
 import re
 import uuid
 
+import opentelemetry.trace as otel_trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import NonRecordingSpan
 
-from finsentry.observability.tracing import get_tracer, set_app_trace_id
+from finsentry.observability.tracing import configure_tracer_provider, get_tracer, set_app_trace_id
 
 
 def _make_in_memory_tracer() -> tuple[object, InMemorySpanExporter]:
@@ -83,3 +85,36 @@ def test_app_trace_id_is_uuid4_not_otel_format() -> None:
     assert _uuid4_re.match(str(recorded_app_id)), "app_trace_id must match UUID4 pattern"
     # The two IDs are always different values (extremely high probability for random UUIDs)
     assert str(recorded_app_id).replace("-", "") != otel_trace_id
+
+
+def test_set_app_trace_id_no_op_on_non_recording_span() -> None:
+    """set_app_trace_id() does not raise when called on a NonRecordingSpan."""
+    non_recording = NonRecordingSpan(otel_trace.INVALID_SPAN_CONTEXT)
+    # Must not raise; the is_recording() guard should prevent the set_attribute call.
+    set_app_trace_id(non_recording, str(uuid.uuid4()))
+
+
+def test_configure_tracer_provider_none_creates_spans_no_export() -> None:
+    """configure_tracer_provider('none') installs a provider with no exporter.
+
+    Spans created by get_tracer() after the call are recording spans but produce
+    no export side effects — verified by observing no exception during span creation.
+    """
+    configure_tracer_provider("none")
+    tracer = otel_trace.get_tracer("test.none")
+    with tracer.start_as_current_span("test.span") as span:
+        # The span should be a recording span (TracerProvider is installed)
+        # but has no exporter. We just verify it does not raise.
+        assert span is not None
+
+
+def test_configure_tracer_provider_console_installs_console_exporter() -> None:
+    """configure_tracer_provider('console') installs without raising."""
+    # This only verifies no exception is raised during installation.
+    # Actual console output is not asserted (stdout is not captured in this test).
+    configure_tracer_provider("console")
+    tracer = otel_trace.get_tracer("test.console")
+    with tracer.start_as_current_span("test.span") as span:
+        assert span is not None
+    # Restore to none so subsequent tests are not affected by console spam.
+    configure_tracer_provider("none")

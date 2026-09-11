@@ -16,7 +16,7 @@ import psycopg
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from opentelemetry.trace import get_current_span
+from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, Field
 from tenacity import (
     AsyncRetrying,
@@ -30,7 +30,7 @@ from finsentry.events.producer import RagEventProducer
 from finsentry.events.schema import RagResponseEvent
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker
 from finsentry.gateway.rails import InputRailsAdapter
-from finsentry.observability.tracing import get_tracer, set_app_trace_id
+from finsentry.observability.tracing import configure_tracer_provider, get_tracer, set_app_trace_id
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
 from finsentry.rails.input.prompt_guard import PromptGuard2Rail
@@ -146,6 +146,10 @@ class _AuthError(Exception):
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _adapter, _embed_model, _rag_breaker, _retrieval_rail
     global _schema_rail, _phrase_rail, _faithfulness_rail, _rag_event_producer
+
+    configure_tracer_provider(
+        cast(Literal["console", "otlp", "none"], os.getenv("OTEL_EXPORTER", "none"))
+    )
 
     # Load bge-small-en-v1.5 in a thread; ~130 MB download on first run, then
     # served from ~/.cache/huggingface/. Blocking, so off the event loop.
@@ -481,6 +485,37 @@ async def _call_downstream_rag(
 # ---------------------------------------------------------------------------
 
 
+def _emit_error_event(
+    producer: RagEventProducer | None,
+    app_trace_id: str,
+    request_start_time: float,
+    request_body: RagQueryRequest,
+    error_kind: str,
+    error_detail: str,
+    input_rail_status: Literal["pass", "modified", "blocked"] = "pass",
+) -> None:
+    """Fire-and-forget error event emission. Truncates error_detail at 500 chars."""
+    if producer is None:
+        return
+    asyncio.create_task(
+        producer.emit(
+            RagResponseEvent(
+                event_id=str(uuid.uuid4()),
+                app_trace_id=app_trace_id,
+                timestamp_utc=datetime.now(UTC).isoformat(),
+                status="error",
+                endpoint="/v1/rag/query",
+                query=request_body.query,
+                ticker=request_body.ticker,
+                error_kind=error_kind,
+                error_detail=error_detail[:500],
+                input_rail_status=input_rail_status,
+                total_latency_ms=int((time.monotonic() - request_start_time) * 1000),
+            )
+        )
+    )
+
+
 @app.post("/v1/rag/query")
 async def rag_query(request_body: RagQueryRequest) -> Response:
     if not _DOWNSTREAM_URL:
@@ -492,18 +527,43 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     if not _DATABASE_URL:
         return JSONResponse({"error": "DATABASE_URL not configured"}, status_code=503)
 
-    # Established at handler entry so all observability across this request
-    # (input rails, retrieval, downstream, output rails, event emit) shares
-    # one stable correlation ID and a common start reference.
-    app_trace_id = str(uuid.uuid4())
-    request_start_time = time.monotonic()
+    with _tracer.start_as_current_span("rag.query.total") as root_span:
+        # Established inside the root span so set_app_trace_id records on a recording span.
+        app_trace_id = str(uuid.uuid4())
+        request_start_time = time.monotonic()
 
-    # app_trace_id (UUID4, 36 chars) and OTel trace_id (128-bit hex, 32 chars) serve
-    # different audiences: app_trace_id correlates Kafka events, logs, and dashboards
-    # without OTel participation; OTel trace_id is for the distributed tracing backend.
-    # Recording app_trace_id on the active span links the two correlation systems.
-    set_app_trace_id(get_current_span(), app_trace_id)
+        # app_trace_id (UUID4, 36 chars) and OTel trace_id (128-bit hex, 32 chars) serve
+        # different audiences: app_trace_id correlates Kafka events, logs, and dashboards
+        # without OTel participation; OTel trace_id is for the distributed tracing backend.
+        # Recording app_trace_id on the root span links the two correlation systems.
+        set_app_trace_id(root_span, app_trace_id)
 
+        try:
+            return await _rag_query_inner(
+                request_body, app_trace_id, request_start_time
+            )
+        except Exception as exc:
+            error_kind = type(exc).__name__
+            error_detail = str(exc)[:500]
+            _emit_error_event(
+                _rag_event_producer,
+                app_trace_id,
+                request_start_time,
+                request_body,
+                error_kind=error_kind,
+                error_detail=error_detail,
+            )
+            root_span.set_status(StatusCode.ERROR, f"{error_kind}: {error_detail}")
+            log.error("Unhandled exception in rag_query: %s", exc, exc_info=True)
+            return JSONResponse({"error": "internal server error"}, status_code=500)
+
+
+async def _rag_query_inner(
+    request_body: RagQueryRequest,
+    app_trace_id: str,
+    request_start_time: float,
+) -> Response:
+    """Core RAG handler body. Called inside the rag.query.total root span."""
     query = request_body.query
     ticker = request_body.ticker
     top_k = request_body.top_k
@@ -520,6 +580,14 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
                 )
             except Exception as exc:
                 log.error("Input rail enforcement failed: %s", exc, exc_info=True)
+                _emit_error_event(
+                    _rag_event_producer,
+                    app_trace_id,
+                    request_start_time,
+                    request_body,
+                    error_kind="input_rail_service_unavailable",
+                    error_detail=str(exc)[:500],
+                )
                 return JSONResponse(
                     {"error": "input rail service unavailable"}, status_code=503
                 )
@@ -569,6 +637,15 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
             chunks = await _fetch_chunks(_DATABASE_URL, embedding, ticker, top_k)
         except Exception as exc:
             log.error("Vector search failed: %s", exc, exc_info=True)
+            _emit_error_event(
+                _rag_event_producer,
+                app_trace_id,
+                request_start_time,
+                request_body,
+                error_kind="vector_search_failed",
+                error_detail=str(exc)[:500],
+                input_rail_status=input_rail_status,
+            )
             return JSONResponse({"error": "vector search failed"}, status_code=503)
 
     # 4. Retrieval rail: source-trust, injection detection, PII redaction.
@@ -616,6 +693,12 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         prompt_messages = _build_rag_messages(query, filtered_chunks)
 
     # 6. Forward to downstream LLM with budget and circuit breaker.
+    # List forms used for event payloads.
+    _ev_chunk_ids = [c.chunk_id for c in filtered_chunks]
+    _ev_chunk_texts = [c.text for c in filtered_chunks]
+    # Set used for citation cross-check in schema rail.
+    retrieved_chunk_ids = {c.chunk_id for c in filtered_chunks}
+
     with _tracer.start_as_current_span("rag.downstream_llm"):
         try:
             answer = await _call_downstream_rag(
@@ -640,17 +723,40 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         except RetryError as exc:
             last = exc.last_attempt.exception()
             if isinstance(last, _RateLimitError):
+                _emit_error_event(
+                    _rag_event_producer,
+                    app_trace_id,
+                    request_start_time,
+                    request_body,
+                    error_kind="downstream_rate_limit",
+                    error_detail="downstream rate limit exhausted after retries",
+                    input_rail_status=input_rail_status,
+                )
                 return JSONResponse({"error": "downstream rate limit"}, status_code=429)
+            _emit_error_event(
+                _rag_event_producer,
+                app_trace_id,
+                request_start_time,
+                request_body,
+                error_kind="downstream_unavailable",
+                error_detail="downstream unavailable after retries",
+                input_rail_status=input_rail_status,
+            )
             return JSONResponse({"error": "downstream unavailable"}, status_code=504)
         except Exception as exc:
             log.error("Unexpected downstream error: %s", exc, exc_info=True)
+            _emit_error_event(
+                _rag_event_producer,
+                app_trace_id,
+                request_start_time,
+                request_body,
+                error_kind="downstream_error",
+                error_detail=str(exc)[:500],
+                input_rail_status=input_rail_status,
+            )
             return JSONResponse({"error": "downstream error"}, status_code=502)
 
     # 7. Output rails: schema, regulated phrases, faithfulness.
-    retrieved_chunk_ids = {c.chunk_id for c in filtered_chunks}
-    # List forms used for event payloads (set above is used for citation cross-check).
-    _ev_chunk_ids = [c.chunk_id for c in filtered_chunks]
-    _ev_chunk_texts = [c.text for c in filtered_chunks]
     output_trace: dict[str, Any] = {}
 
     # Rail A: schema enforcement + citation cross-check
