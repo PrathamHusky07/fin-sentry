@@ -30,8 +30,14 @@ langchain-text-splitters>=0.2.0
 tiktoken>=0.7.0
 tenacity>=9.0.0
 
-# Output rails — Gemini for FaithfulnessRail (Developer API, free tier)
+# Output rails — Gemini for FaithfulnessRail (Vertex AI Standard tier)
 google-genai>=2.22.0
+
+# Async evaluation pipeline — Kafka producer for Redpanda event bus
+# Pure Python, async-native; matches FastAPI async story. C-bindings advantage
+# of confluent-kafka is irrelevant at evaluation-event scale. Migration path is
+# a small adapter behind RagEventProducer if scale demands.
+aiokafka>=0.14.0
 
 # Config
 pyyaml>=6.0.0

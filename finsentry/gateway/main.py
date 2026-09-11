@@ -8,7 +8,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 import psycopg
@@ -24,6 +24,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from finsentry.events.producer import RagEventProducer
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker
 from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
@@ -60,6 +61,7 @@ _retrieval_rail: RetrievalRail | None = None
 _schema_rail: SchemaEnforcementRail | None = None
 _phrase_rail: RegulatedPhraseRail | None = None
 _faithfulness_rail: FaithfulnessRail | None = None
+_rag_event_producer: RagEventProducer | None = None
 
 # Tenacity strategy for the 20-second total request budget.
 # Module-level so tests can patch them without modifying retry logic.
@@ -138,7 +140,7 @@ class _AuthError(Exception):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _adapter, _embed_model, _rag_breaker, _retrieval_rail
-    global _schema_rail, _phrase_rail, _faithfulness_rail
+    global _schema_rail, _phrase_rail, _faithfulness_rail, _rag_event_producer
 
     # Load bge-small-en-v1.5 in a thread; ~130 MB download on first run, then
     # served from ~/.cache/huggingface/. Blocking, so off the event loop.
@@ -175,7 +177,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         api_key=os.getenv("GEMINI_API_KEY"),
     )
 
+    _rag_event_producer = RagEventProducer(
+        mode=cast(Literal["kafka", "disabled"], os.getenv("KAFKA_MODE", "disabled")),
+        bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+    )
+    await _rag_event_producer.start()
+
     yield
+
+    await _rag_event_producer.stop()
 
 
 app = FastAPI(title="fin-sentry gateway", lifespan=lifespan)
