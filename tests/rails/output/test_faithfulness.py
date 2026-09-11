@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,7 @@ import pytest
 
 from finsentry.rails.output.faithfulness import (
     FaithfulnessRail,
+    Mode,
     _GeminiSkipError,
     _strip_json_fences,
 )
@@ -24,12 +26,13 @@ def _make_chunk(chunk_id: str, text: str = "Revenue was $94.9B.") -> Any:
     return c
 
 
-def _make_rail(api_key: str = "fake-key", threshold: float = 0.7) -> FaithfulnessRail:
+def _make_rail(threshold: float = 0.7) -> FaithfulnessRail:
     rail = FaithfulnessRail.__new__(FaithfulnessRail)
     rail._model_name = "gemini-3.6-flash"
     rail._threshold = threshold
     rail._per_call_timeout = 8.0
     rail._enabled = True
+    rail._mode = "developer"
     rail._client = MagicMock()
     return rail
 
@@ -49,10 +52,49 @@ def _mock_generate(responses: list[tuple[str, int, int]]) -> Any:
 
 @pytest.mark.asyncio
 async def test_faithfulness_disabled_without_api_key_passes_with_skipped_status() -> None:
-    rail = FaithfulnessRail(api_key=None, model_name="gemini-3.6-flash")
+    rail = FaithfulnessRail(mode="disabled", model_name="gemini-3.6-flash")
     decision = await rail.check("Some answer.", [_make_chunk("c1")])
     assert decision.outcome == "pass"
     assert decision.details["faithfulness_status"] == "skipped_no_key"
+
+
+@pytest.mark.asyncio
+async def test_vertex_mode_missing_project_falls_back_to_disabled() -> None:
+    with patch("google.genai.Client"):
+        rail = FaithfulnessRail(mode="vertex", model_name="gemini-3.6-flash", project=None)
+    assert not rail._enabled
+    assert rail._mode == "disabled"
+    decision = await rail.check("Some answer.", [_make_chunk("c1")])
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_no_key"
+
+
+@pytest.mark.asyncio
+async def test_developer_mode_missing_api_key_falls_back_to_disabled() -> None:
+    with patch("google.genai.Client"):
+        rail = FaithfulnessRail(mode="developer", model_name="gemini-3.6-flash", api_key=None)
+    assert not rail._enabled
+    assert rail._mode == "disabled"
+    decision = await rail.check("Some answer.", [_make_chunk("c1")])
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_no_key"
+
+
+@pytest.mark.asyncio
+async def test_invalid_mode_falls_back_to_disabled_logs_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from typing import cast as typing_cast
+
+    with patch("google.genai.Client"):
+        with caplog.at_level(logging.ERROR, logger="finsentry.rails.output.faithfulness"):
+            rail = FaithfulnessRail(
+                mode=typing_cast(Mode, "invalid_mode"),
+                model_name="gemini-3.6-flash",
+            )
+    assert not rail._enabled
+    assert rail._mode == "disabled"
+    assert any("invalid mode" in r.message.lower() for r in caplog.records)
 
 
 @pytest.mark.asyncio

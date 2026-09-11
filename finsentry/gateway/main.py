@@ -8,7 +8,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import psycopg
@@ -29,7 +29,7 @@ from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
 from finsentry.rails.input.prompt_guard import PromptGuard2Rail
-from finsentry.rails.output.faithfulness import FaithfulnessRail
+from finsentry.rails.output.faithfulness import FaithfulnessRail, Mode
 from finsentry.rails.output.guardrails_schema import SchemaEnforcementRail
 from finsentry.rails.output.regulated_phrases import RegulatedPhraseRail
 from finsentry.rails.output.schema import RagAnswerResponse
@@ -158,9 +158,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _schema_rail = SchemaEnforcementRail()
     _phrase_rail = RegulatedPhraseRail()
     _faithfulness_rail = FaithfulnessRail(
-        api_key=os.getenv("GEMINI_API_KEY"),
+        mode=cast(Mode, os.getenv("GEMINI_MODE", "disabled")),
         model_name=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
-        threshold=0.7,
+        project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+        location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
+        api_key=os.getenv("GEMINI_API_KEY"),
     )
 
     yield

@@ -27,9 +27,11 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Literal
 
 from finsentry.rails.base import RailDecision
+
+Mode = Literal["vertex", "developer", "disabled"]
 
 log = logging.getLogger(__name__)
 
@@ -89,20 +91,42 @@ class FaithfulnessRail:
 
     def __init__(
         self,
-        api_key: str | None,
+        mode: Mode,
         model_name: str,
+        project: str | None = None,
+        location: str = "global",
+        api_key: str | None = None,
         threshold: float = 0.7,
         per_call_timeout_seconds: float = _PER_CALL_TIMEOUT,
     ) -> None:
         self._model_name = model_name
         self._threshold = threshold
         self._per_call_timeout = per_call_timeout_seconds
-        self._enabled = bool(api_key)
+        self._mode = mode
+        self._enabled = mode != "disabled"
         self._client: Any = None
-        if self._enabled:
-            from google import genai
+        if not self._enabled:
+            return
+        from google import genai
 
+        if mode == "vertex":
+            if not project:
+                log.error("Faithfulness vertex mode requires GOOGLE_CLOUD_PROJECT")
+                self._enabled = False
+                self._mode = "disabled"
+                return
+            self._client = genai.Client(vertexai=True, project=project, location=location)
+        elif mode == "developer":
+            if not api_key:
+                log.error("Faithfulness developer mode requires GEMINI_API_KEY")
+                self._enabled = False
+                self._mode = "disabled"
+                return
             self._client = genai.Client(api_key=api_key)
+        else:
+            log.error("Faithfulness invalid mode %r — disabling", mode)
+            self._enabled = False
+            self._mode = "disabled"
 
     async def check(
         self,
