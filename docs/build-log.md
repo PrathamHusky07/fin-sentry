@@ -1,5 +1,72 @@
 # Build Log
 
+## 2026-09-11 — Day 4A: async evaluation pipeline producer side (commits d4a-0..d4a-7)
+
+### What shipped
+
+**Commit d4a-0** — `docs/build-log.md`, `docs/adr/005-output-rail-architecture.md`.
+Documentation drift corrections only. Build log test count formula corrected. ADR 005
+latency accounting paragraph updated from "Gemini Developer API free tier" to "Vertex AI
+Standard tier" to match the actual deployment.
+
+**Commit d4a-1** — `finsentry/gateway/main.py`, `.env.example`. `DOWNSTREAM_MODEL` read
+from env at module level with a startup WARNING if empty. `app_trace_id` (UUID4) and
+`request_start_time` set at handler entry so all observability for a request shares one
+stable correlation ID. 2 new tests (trace ID in response, short-circuit path).
+
+**Commit d4a-2** — `finsentry/events/__init__.py`, `finsentry/events/schema.py`,
+`tests/events/__init__.py`, `tests/events/test_schema.py`. `RagResponseEvent` Pydantic model
+with `status: Literal["success", "blocked", "error"]` and lifecycle fields. `to_kafka_json()`
+and `from_kafka_json()` round-trip helpers. 7 schema tests.
+
+**Commit d4a-3** — `finsentry/events/producer.py`, `requirements.txt`, `.env.example`,
+`tests/events/test_producer.py`. `RagEventProducer` with `mode: Literal["kafka", "disabled"]`.
+Disabled mode no-ops. Kafka mode uses aiokafka with 5-second request timeout. Broker-
+unreachable at startup self-transitions to disabled and logs at ERROR. 5 producer tests.
+
+**Commit d4a-4** — `finsentry/gateway/main.py`, `tests/gateway/test_rag_event_emission.py`.
+`asyncio.create_task(_rag_event_producer.emit(...))` at 6 lifecycle points: input rail block,
+no-trustworthy-sources, schema block, phrase block, faithfulness block, success. Events carry
+app_trace_id, status, block_rail, block_reason, model_used, retrieved chunk IDs/texts, and
+total_latency_ms. 9 event emission tests.
+
+**Commit d4a-5** — `finsentry/observability/tracing.py`, `finsentry/gateway/main.py`,
+`requirements.txt`, `tests/observability/test_tracing.py`. OTel tracer module with
+`get_tracer()` and `set_app_trace_id()`. 10 named spans in rag_query: input_rails,
+embed_query, vector_search, retrieval_rail, assemble_prompt, downstream_llm, schema_rail,
+phrase_rail, faithfulness_rail, build_response. `set_app_trace_id(get_current_span(), ...)` at
+handler entry links app_trace_id (UUID4) and OTel trace_id (32-hex) on any active root span.
+OTel deps bumped to >=1.28.0. 4 tracing tests.
+
+**Commit d4a-6** — `scripts/smoke_test_infra.py`. Redpanda round-trip (aiokafka produce +
+consume on _smoke_test topic, 5-second window) and RisingWave version check (psycopg async,
+SELECT version()). Prints WARNING if v3.0.x detected (known ~5-hour playground crash). Exit
+code 0 = all checks passed. Importable without infra running.
+
+**Commit d4a-7** — `docs/adr/006-async-evaluation-pipeline-producer.md`, `docs/build-log.md`
+(this entry). ADR 006 records 8 design decisions: single topic vs per-lifecycle topics, JSON
+vs Avro, aiokafka vs confluent-kafka, fire-and-forget emit, KAFKA_MODE=disabled default,
+app_trace_id vs OTel trace_id separation, 10 named spans, RisingWave v3.0.x crash mitigation.
+
+### Test count
+
+190 (Day 3 close baseline) + 2 trace ID tests + 7 schema tests + 5 producer tests
++ 9 event emission tests + 4 tracing tests = **217 passed, 2 deselected**
+
+### User action items for Day 4B
+
+To run the full async pipeline, start the Docker Compose stack and verify infrastructure:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+python scripts/smoke_test_infra.py
+```
+
+Day 4B resumes at the consumer side: a judge worker that reads from `rag_responses`,
+calls Gemini Flash for quality scoring, and writes results to a RisingWave materialized view.
+
+---
+
 ## 2026-09-11 — Day 3 closeout: evaluator integrity + three-rail trace (commits d3c-fix-7..d3c-fix-11)
 
 ### What shipped
