@@ -107,8 +107,8 @@ Overall: ALL ASSERTIONS PASS
 
 ### Test count
 
-163 passing (Session C baseline) + 3 mode tests + 9 cost governance tests + 1 observability
-contract test = **176 passed, 2 deselected** (slow).
+163 passing (Session C baseline) + 3 mode tests + 8 cost governance tests + 1 observability
+contract test = **177 passed, 2 deselected** (slow).
 
 ### User action items (post-session verification)
 

@@ -47,7 +47,6 @@ async def run_pair(
     answer: str,
     chunks: list[FakeChunk],
     expected_pass: bool,
-    print_raw_first: bool = False,
 ) -> tuple[bool, dict[str, object]]:
     t0 = time.monotonic()
     decision = await rail.check(answer, chunks)
@@ -77,7 +76,7 @@ async def run_pair(
     print(f"  Supported claims:  {supported}")
     print(f"  Unsupported:       {unsupported}")
     if cost_report:
-        print(f"  Cost this pair:    ${cost_report.get('run_total_usd', 0):.6f} USD")
+        print(f"  Cost cumulative through this pair: ${cost_report.get('run_total_usd', 0):.6f} USD")
 
     if expected_pass:
         passed = decision.outcome == "pass" and isinstance(score, float) and score >= 0.7
@@ -157,7 +156,6 @@ async def main() -> None:
 
     result_a, usage_a = await run_pair(
         "Pair A (faithful — should PASS)", rail, answer_a, [chunk_a], expected_pass=True,
-        print_raw_first=True,
     )
     result_b, usage_b = await run_pair(
         "Pair B (unfaithful — should BLOCK)", rail, answer_b, [chunk_b], expected_pass=False

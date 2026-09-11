@@ -41,7 +41,11 @@ log = logging.getLogger(__name__)
 
 _DOWNSTREAM_URL: str = os.getenv("DOWNSTREAM_URL", "")
 _DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-_DEFAULT_RAG_MODEL = "gemini-2.5-flash"
+# Model routing identifier for the OpenAI-compatible downstream RAG server (Ollama/vLLM).
+# NOT a Gemini model reference; the Faithfulness rail uses GEMINI_MODEL separately.
+# NOTE: "gemini-2.5-flash" is stale for the Ollama downstream at localhost:11434 — update
+# when the local model tag is confirmed.
+_DOWNSTREAM_MODEL_ROUTING_ID = "gemini-2.5-flash"
 
 _adapter: InputRailsAdapter | None = None
 _embed_model: Any = None  # SentenceTransformer; ignore_missing_imports in mypy config
@@ -395,7 +399,7 @@ async def _call_downstream_rag(
                     client.post(
                         f"{downstream_url}/v1/chat/completions",
                         json={
-                            "model": _DEFAULT_RAG_MODEL,
+                            "model": _DOWNSTREAM_MODEL_ROUTING_ID,
                             "messages": prompt_messages,
                         },
                     ),
