@@ -7,7 +7,7 @@ and the gateway rail score identically for the same input).
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -18,7 +18,6 @@ from finsentry.judges.metrics.faithfulness_core import (
     evaluate_faithfulness,
 )
 from finsentry.rails.output.cost_governance import CostBudget
-
 
 # ---------------------------------------------------------------------------
 # Helpers

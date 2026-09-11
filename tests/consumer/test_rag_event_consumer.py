@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,7 +12,6 @@ import pytest
 
 from finsentry.consumer.rag_event_consumer import RagEventConsumer
 from finsentry.events.schema import RagResponseEvent
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -24,7 +23,7 @@ def _make_event(**overrides: Any) -> RagResponseEvent:
         "schema_version": "1.0",
         "event_id": str(uuid.uuid4()),
         "app_trace_id": str(uuid.uuid4()),
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
         "status": "success",
         "endpoint": "/v1/rag/query",
         "query": "What is Apple revenue?",

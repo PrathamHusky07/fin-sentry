@@ -20,7 +20,6 @@ from finsentry.events.producer import RagEventProducer
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker
 from finsentry.gateway.main import RetrievedChunk, app
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -101,7 +100,10 @@ async def test_rag_query_total_root_span_wraps_child_spans() -> None:
 
     with ExitStack() as stack:
         stack.enter_context(
-            patch("finsentry.gateway.main._fetch_chunks", new=AsyncMock(return_value=[_make_chunk()]))
+            patch(
+                "finsentry.gateway.main._fetch_chunks",
+                new=AsyncMock(return_value=[_make_chunk()]),
+            )
         )
         stack.enter_context(
             patch(
@@ -142,7 +144,6 @@ async def test_error_path_emits_error_event_with_error_kind() -> None:
     The embed step has no try/except, so an exception there propagates to the outer
     rag.query.total handler which fires 0b error emission logic.
     """
-    import numpy as np
 
     producer, mock_emit = _make_producer()
 

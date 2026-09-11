@@ -702,7 +702,7 @@ async def _rag_query_inner(
     with _tracer.start_as_current_span("rag.downstream_llm"):
         try:
             answer = await _call_downstream_rag(
-                prompt_messages, _DOWNSTREAM_URL, _rag_breaker
+                prompt_messages, _DOWNSTREAM_URL, _rag_breaker  # type: ignore[arg-type]
             )
         except _DownstreamCircuitOpenError as exc:
             return JSONResponse(

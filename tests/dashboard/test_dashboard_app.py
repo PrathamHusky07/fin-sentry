@@ -9,7 +9,6 @@ from httpx import ASGITransport, AsyncClient
 
 from finsentry.dashboard.app import _fmt, _render_html, _skip_rate, _success_rate, app
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

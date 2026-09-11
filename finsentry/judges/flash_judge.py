@@ -22,7 +22,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from finsentry.events.schema import JudgeVerdictEvent, RagResponseEvent
@@ -58,7 +58,7 @@ class JudgeVerdictProducer:
 
     async def start(self) -> None:
         if self._producer is None:
-            from aiokafka import AIOKafkaProducer
+            from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 
             self._producer = AIOKafkaProducer(bootstrap_servers=self._bootstrap_servers)
         await self._producer.start()
@@ -172,7 +172,8 @@ class FlashJudge:
                     log.exception("FlashJudge: faithfulness error for %s", event.app_trace_id)
                     faithfulness_status = "skipped_evaluator_error"
                 else:
-                    faithfulness_score = faith_result.score if faith_result.status == "complete" else None
+                    is_complete = faith_result.status == "complete"
+                    faithfulness_score = faith_result.score if is_complete else None
                     faithfulness_status = faith_result.status
                     total_in += faith_result.total_input_tokens
                     total_out += faith_result.total_output_tokens
@@ -183,7 +184,8 @@ class FlashJudge:
                     log.exception("FlashJudge: answer_relevance error for %s", event.app_trace_id)
                     answer_relevance_status = "skipped_evaluator_error"
                 else:
-                    answer_relevance_score = ar_result.score if ar_result.status == "complete" else None
+                    ar_complete = ar_result.status == "complete"
+                    answer_relevance_score = ar_result.score if ar_complete else None
                     answer_relevance_status = ar_result.status
                     total_in += ar_result.total_input_tokens
                     total_out += ar_result.total_output_tokens
@@ -194,7 +196,8 @@ class FlashJudge:
                     log.exception("FlashJudge: context_relevance error for %s", event.app_trace_id)
                     context_relevance_status = "skipped_evaluator_error"
                 else:
-                    context_relevance_score = cr_result.score if cr_result.status == "complete" else None
+                    cr_complete = cr_result.status == "complete"
+                    context_relevance_score = cr_result.score if cr_complete else None
                     context_relevance_status = cr_result.status
                     total_in += cr_result.total_input_tokens
                     total_out += cr_result.total_output_tokens
@@ -209,7 +212,7 @@ class FlashJudge:
             event_id=str(uuid.uuid4()),
             source_event_id=event.event_id,
             app_trace_id=event.app_trace_id,
-            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            timestamp_utc=datetime.now(UTC).isoformat(),
             faithfulness_score=faithfulness_score,
             faithfulness_status=faithfulness_status,
             answer_relevance_score=answer_relevance_score,

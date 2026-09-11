@@ -23,7 +23,7 @@ import signal
 
 from finsentry.consumer.rag_event_consumer import RagEventConsumer
 from finsentry.events.schema import RagResponseEvent
-from finsentry.judges.flash_judge import FlashJudge, JudgeVerdictProducer, flash_judge_from_env
+from finsentry.judges.flash_judge import JudgeVerdictProducer, flash_judge_from_env
 
 log = logging.getLogger(__name__)
 

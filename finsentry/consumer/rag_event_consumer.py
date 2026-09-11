@@ -73,7 +73,7 @@ class RagEventConsumer:
     async def start(self) -> None:
         """Start the underlying Kafka consumer (connects and subscribes)."""
         if self._consumer is None:
-            from aiokafka import AIOKafkaConsumer
+            from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
 
             self._consumer = AIOKafkaConsumer(
                 self._topic,

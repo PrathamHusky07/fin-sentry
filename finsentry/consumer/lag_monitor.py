@@ -86,8 +86,9 @@ class ConsumerLagMonitor:
             resp.raise_for_status()
             return self._parse_response(resp.json())
         except httpx.HTTPStatusError as exc:
-            log.warning("ConsumerLagMonitor: HTTP error %s for group %s", exc.response.status_code, self._group_id)
-            return ConsumerLagReport(group_id=self._group_id, error=f"http_{exc.response.status_code}")
+            code = exc.response.status_code
+            log.warning("ConsumerLagMonitor: HTTP error %s for group %s", code, self._group_id)
+            return ConsumerLagReport(group_id=self._group_id, error=f"http_{code}")
         except Exception as exc:
             log.warning("ConsumerLagMonitor: request failed — %s", exc)
             return ConsumerLagReport(group_id=self._group_id, error=str(exc))

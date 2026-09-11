@@ -34,7 +34,6 @@ to RailDecision without duplicating the Es et al. logic.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Literal
 
@@ -42,10 +41,12 @@ from finsentry.judges.metrics.faithfulness_core import (
     CLAIM_EXTRACTION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
     FaithfulnessResult,
-    _SkipError as _GeminiSkipError,
-    _strip_json_fences,
+    _strip_json_fences,  # noqa: F401  # re-exported for test backward compat
     evaluate_faithfulness,
     make_gemini_generate_fn,
+)
+from finsentry.judges.metrics.faithfulness_core import (
+    _SkipError as _GeminiSkipError,
 )
 from finsentry.rails.base import RailDecision
 from finsentry.rails.output.cost_governance import CostBudget

@@ -21,13 +21,18 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from finsentry.consumer.lag_monitor import ConsumerLagMonitor, ConsumerLagReport, lag_monitor_from_env
+from finsentry.consumer.lag_monitor import (
+    ConsumerLagMonitor,
+    ConsumerLagReport,
+    lag_monitor_from_env,
+)
 
 log = logging.getLogger(__name__)
 
@@ -49,15 +54,17 @@ def _rw_dsn() -> str:
 
 
 @asynccontextmanager
-async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
     global _pool, _lag_monitor
     try:
-        import asyncpg  # type: ignore[import-untyped]
+        import asyncpg  # type: ignore[import-not-found]
 
         _pool = await asyncpg.create_pool(_rw_dsn(), min_size=1, max_size=3)
         log.info("Dashboard connected to RisingWave")
     except Exception as exc:
-        log.warning("Dashboard: could not connect to RisingWave — %s (running in offline mode)", exc)
+        log.warning(
+            "Dashboard: could not connect to RisingWave — %s (running in offline mode)", exc
+        )
         _pool = None
     _lag_monitor = lag_monitor_from_env()
     yield
@@ -209,7 +216,13 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
 
     if lag_report is not None and lag_report.ok:
         lag_str = str(lag_report.total_lag)
-        lag_color = "#22c55e" if lag_report.total_lag < 100 else "#f59e0b" if lag_report.total_lag < 1000 else "#ef4444"
+        lag = lag_report.total_lag
+        if lag < 100:
+            lag_color = "#22c55e"
+        elif lag < 1000:
+            lag_color = "#f59e0b"
+        else:
+            lag_color = "#ef4444"
         backlog_html = f"""
   <p class="section-title">Consumer Backlog</p>
   <div class="grid">
@@ -270,7 +283,7 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
 </head>
 <body>
   <h1>FinSentry Evaluation Dashboard</h1>
-  <p class="subtitle">{connection_badge} &nbsp;&bull;&nbsp; Real-time quality metrics from RisingWave</p>
+  <p class="subtitle">{connection_badge} &nbsp;&bull;&nbsp; Real-time quality metrics</p>
 
   <p class="section-title">Request Throughput (last 1-minute window)</p>
   <div class="grid">

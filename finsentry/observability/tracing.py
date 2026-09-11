@@ -53,10 +53,10 @@ def configure_tracer_provider(exporter: Literal["console", "otlp", "none"]) -> N
     provider = TracerProvider()
 
     if exporter == "console":
+        from opentelemetry.sdk.trace.export import ConsoleSpanExporter
         from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: F401
             InMemorySpanExporter,
         )
-        from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 

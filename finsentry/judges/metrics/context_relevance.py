@@ -22,9 +22,9 @@ from typing import Any, Literal
 
 from finsentry.judges.metrics.faithfulness_core import (
     GenerateFn,
-    _SkipError,
     _call_with_timeout,
     _estimate_cost,
+    _SkipError,
     _strip_json_fences,
 )
 from finsentry.rails.output.cost_governance import CostBudget
