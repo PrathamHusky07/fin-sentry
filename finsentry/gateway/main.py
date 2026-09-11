@@ -569,6 +569,10 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
                 },
                 status_code=422,
             )
+        output_trace["schema-enforcement"] = {
+            "outcome": "pass",
+            "reason": schema_decision.reason,
+        }
         # Parsed RagAnswerResponse is in schema_decision.details["parsed"]
         parsed_answer: RagAnswerResponse = schema_decision.details["parsed"]
     else:
@@ -590,6 +594,10 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
                 },
                 status_code=422,
             )
+        output_trace["regulated-phrases"] = {
+            "outcome": "pass",
+            "reason": phrase_decision.reason,
+        }
 
     # Rail C: faithfulness (async, fail-open per ADR 005)
     if _faithfulness_rail is not None:

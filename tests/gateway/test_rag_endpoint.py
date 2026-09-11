@@ -304,11 +304,16 @@ async def test_rag_query_populates_output_rail_trace_on_success(
     fake_breaker: AsyncCircuitBreaker,
     fake_embed_model: MagicMock,
 ) -> None:
-    """Successful RAG response includes output_rail_trace with faithfulness metadata
-    and cost report. Locks the observability contract."""
+    """Successful RAG response includes output_rail_trace with all three rail decisions.
+
+    Locks the observability contract: schema-enforcement, regulated-phrases, and
+    faithfulness keys must be present with outcome='pass'.
+    """
     import json
 
     from finsentry.rails.base import RailDecision
+    from finsentry.rails.output.guardrails_schema import SchemaEnforcementRail
+    from finsentry.rails.output.regulated_phrases import RegulatedPhraseRail
 
     chunk = _make_chunk("abc123", ticker="AAPL", text="Apple reported record revenue.")
     rag_answer = json.dumps({
@@ -354,6 +359,9 @@ async def test_rag_query_populates_output_rail_trace_on_success(
         patch.object(gw, "_embed_model", fake_embed_model),
         patch.object(gw, "_rag_breaker", fake_breaker),
         patch.object(gw, "_adapter", None),
+        patch.object(gw, "_retrieval_rail", None),
+        patch.object(gw, "_schema_rail", SchemaEnforcementRail()),
+        patch.object(gw, "_phrase_rail", RegulatedPhraseRail()),
         patch.object(gw, "_faithfulness_rail", mock_faith_rail),
         patch("finsentry.gateway.main._fetch_chunks", AsyncMock(return_value=[chunk])),
         patch(
@@ -374,7 +382,17 @@ async def test_rag_query_populates_output_rail_trace_on_success(
     assert body["answer"]["citations"][0]["chunk_id"] == "abc123"
     assert body["answer"]["confidence"] == "high"
 
-    faith_trace = body["output_rail_trace"]["faithfulness"]
+    trace = body["output_rail_trace"]
+
+    # All three rails must be present with outcome='pass'
+    assert "schema-enforcement" in trace
+    assert trace["schema-enforcement"]["outcome"] == "pass"
+
+    assert "regulated-phrases" in trace
+    assert trace["regulated-phrases"]["outcome"] == "pass"
+
+    assert "faithfulness" in trace
+    faith_trace = trace["faithfulness"]
     assert faith_trace["faithfulness_status"] == "passed"
     assert faith_trace["cost"]["thoughts_tokens_total"] == 400
     assert faith_trace["cost"]["run_total_usd"] == 0.0025
