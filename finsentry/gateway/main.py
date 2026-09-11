@@ -41,11 +41,17 @@ log = logging.getLogger(__name__)
 
 _DOWNSTREAM_URL: str = os.getenv("DOWNSTREAM_URL", "")
 _DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-# Model routing identifier for the OpenAI-compatible downstream RAG server (Ollama/vLLM).
-# NOT a Gemini model reference; the Faithfulness rail uses GEMINI_MODEL separately.
-# NOTE: "gemini-2.5-flash" is stale for the Ollama downstream at localhost:11434 — update
-# when the local model tag is confirmed.
-_DOWNSTREAM_MODEL_ROUTING_ID = "gemini-2.5-flash"
+# Model routing identifier for the OpenAI-compatible downstream RAG server.
+# For Ollama, this is the tag from `ollama list`. Do NOT confuse with GEMINI_MODEL.
+# Empty default is intentional: a missing env var logs a WARNING at startup rather
+# than silently sending a stale model name (e.g. "gemini-2.5-flash") to an Ollama server.
+_DOWNSTREAM_MODEL_ROUTING_ID: str = os.getenv("DOWNSTREAM_MODEL", "").strip()
+
+if _DOWNSTREAM_URL and not _DOWNSTREAM_MODEL_ROUTING_ID:
+    log.warning(
+        "DOWNSTREAM_MODEL not set; the downstream RAG call will send an empty model field. "
+        "Set DOWNSTREAM_MODEL to the Ollama tag (e.g. llama3.1:8b) or the vLLM model name."
+    )
 
 _adapter: InputRailsAdapter | None = None
 _embed_model: Any = None  # SentenceTransformer; ignore_missing_imports in mypy config
@@ -471,6 +477,12 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     if not _DATABASE_URL:
         return JSONResponse({"error": "DATABASE_URL not configured"}, status_code=503)
 
+    # Established at handler entry so all observability across this request
+    # (input rails, retrieval, downstream, output rails, event emit) shares
+    # one stable correlation ID and a common start reference.
+    app_trace_id = str(uuid.uuid4())
+    request_start_time = time.monotonic()  # noqa: F841 — consumed in M4 event emit
+
     query = request_body.query
     ticker = request_body.ticker
     top_k = request_body.top_k
@@ -525,7 +537,7 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
                     confidence="low",
                 ),
                 retrieved_chunks=[],
-                retrieval_trace_id=str(uuid.uuid4()),
+                retrieval_trace_id=app_trace_id,
             ).model_dump()
         )
 
@@ -623,7 +635,7 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     response = RagQueryResponse(
         answer=parsed_answer,
         retrieved_chunks=filtered_chunks,
-        retrieval_trace_id=str(uuid.uuid4()),
+        retrieval_trace_id=app_trace_id,
         output_rail_trace=output_trace,
     )
     return JSONResponse(response.model_dump())

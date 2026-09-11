@@ -396,3 +396,87 @@ async def test_rag_query_populates_output_rail_trace_on_success(
     assert faith_trace["faithfulness_status"] == "passed"
     assert faith_trace["cost"]["thoughts_tokens_total"] == 400
     assert faith_trace["cost"]["run_total_usd"] == 0.0025
+
+
+async def test_rag_query_generates_single_trace_id_used_in_response(
+    fake_breaker: AsyncCircuitBreaker,
+    fake_embed_model: MagicMock,
+) -> None:
+    """retrieval_trace_id is a valid UUID4; two separate requests produce distinct IDs."""
+    import json
+    import re
+
+    uuid4_re = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    )
+
+    chunk = _make_chunk("abc123")
+    rag_answer = json.dumps({
+        "answer": "Revenue was X.",
+        "citations": [{"chunk_id": "abc123", "quote": "Revenue was X."}],
+        "confidence": "high",
+    })
+
+    async def _run_request() -> str:
+        with (
+            patch.object(gw, "_DOWNSTREAM_URL", "http://fake-llm"),
+            patch.object(gw, "_DATABASE_URL", "postgresql://fake"),
+            patch.object(gw, "_embed_model", fake_embed_model),
+            patch.object(gw, "_rag_breaker", fake_breaker),
+            patch.object(gw, "_adapter", None),
+            patch.object(gw, "_retrieval_rail", None),
+            patch.object(gw, "_schema_rail", None),
+            patch.object(gw, "_phrase_rail", None),
+            patch.object(gw, "_faithfulness_rail", None),
+            patch("finsentry.gateway.main._fetch_chunks", AsyncMock(return_value=[chunk])),
+            patch(
+                "finsentry.gateway.main._call_downstream_rag",
+                AsyncMock(return_value=rag_answer),
+            ),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post("/v1/rag/query", json={"query": "Revenue?"})
+        assert resp.status_code == 200
+        return str(resp.json()["retrieval_trace_id"])
+
+    id1 = await _run_request()
+    id2 = await _run_request()
+
+    assert uuid4_re.match(id1), f"id1 not a valid UUID4: {id1}"
+    assert uuid4_re.match(id2), f"id2 not a valid UUID4: {id2}"
+    assert id1 != id2, "Two separate requests must produce distinct trace IDs"
+
+
+async def test_rag_query_short_circuit_response_carries_valid_trace_id(
+    fake_breaker: AsyncCircuitBreaker,
+    fake_embed_model: MagicMock,
+) -> None:
+    """The no-trustworthy-sources short-circuit path returns a valid UUID4 trace ID."""
+    import re
+
+    uuid4_re = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    )
+
+    raw_chunks = [_make_chunk("c1")]
+    mock_rail = MagicMock()
+    mock_rail.check_chunks.return_value = []
+
+    with (
+        patch.object(gw, "_DOWNSTREAM_URL", "http://fake-llm"),
+        patch.object(gw, "_DATABASE_URL", "postgresql://fake"),
+        patch.object(gw, "_embed_model", fake_embed_model),
+        patch.object(gw, "_rag_breaker", fake_breaker),
+        patch.object(gw, "_adapter", None),
+        patch.object(gw, "_retrieval_rail", mock_rail),
+        patch("finsentry.gateway.main._fetch_chunks", AsyncMock(return_value=raw_chunks)),
+        patch("finsentry.gateway.main._call_downstream_rag", AsyncMock(return_value="")),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/v1/rag/query", json={"query": "Revenue?"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"]["answer"] == "No trustworthy sources found for this query."
+    trace_id = body["retrieval_trace_id"]
+    assert uuid4_re.match(trace_id), f"Short-circuit trace_id not a valid UUID4: {trace_id}"
