@@ -3,7 +3,7 @@ Reference-free Faithfulness rail: measures whether the generated answer's
 factual claims are supported by the retrieved context.
 
 Methodology: Es et al. 2023 (RAGAS paper), reference-free variant.
-  1. Claim extraction: prompt Gemini to extract atomic factual claims from answer.
+  1. Claim extraction: prompt Gemini to extract atomic claims from answer.
   2. Per-claim NLI: for each claim, prompt Gemini to verify against context.
   3. Score: supported_claims / total_claims (1.0 when total_claims == 0).
 
@@ -15,10 +15,16 @@ which violate the project's zero-cost constraint. See ADR 005.
 Failure policy (consistent with ADR 004 taxonomy and config/rails.yml):
   - API key absent: skip (rail disabled at init).
   - 429 RESOURCE_EXHAUSTED: fail-open, status skipped_rate_limit. Do not retry.
-  - Timeout (per-call 8s, total budget 20s): fail-open, skipped_timeout.
+  - Timeout (per-call 30s, total budget 120s): fail-open, skipped_timeout.
+    Values reflect empirical latency of gemini-3.6-flash on Vertex AI (~10-15s
+    per call observed in Session C smoke test; 12-16s per call in the
+    Day-3-close smoke test).
   - 500/502/503 from Gemini: fail-open, skipped_upstream_error.
   - Safety filter rejection: fail-open, skipped_safety_filter.
   - 403/401 auth error: fail-open + ERROR log (config bug worth investigating).
+  - Evaluator failure (malformed or non-list claim extraction response, malformed
+    or ambiguous verdict response): fail-open, skipped_evaluator_error with
+    sub_reason field distinguishing the exact failure type.
   - All fail-open paths annotate output_rail_trace with faithfulness_status.
 """
 from __future__ import annotations
@@ -136,11 +142,7 @@ class FaithfulnessRail:
         retrieved_chunks: list[Any],  # list[RetrievedChunk]; avoid circular import
     ) -> RailDecision:
         if not self._enabled:
-            return RailDecision(
-                outcome="pass",
-                reason="faithfulness rail disabled (no api key)",
-                details={"faithfulness_status": "skipped_no_key"},
-            )
+            return self._fail_open_response("skipped_no_key", 0, 0, 0, 0)
 
         deadline = time.monotonic() + _TOTAL_BUDGET
         total_input_tokens = 0
@@ -169,23 +171,44 @@ class FaithfulnessRail:
             total_calls += 1
             self._budget.record_call(in_tok, out_tok, thoughts_tok)
         except _GeminiSkipError as exc:
-            return RailDecision(
-                outcome="pass",
-                reason=f"faithfulness skipped: {exc.status}",
-                details={"faithfulness_status": exc.status, **exc.extra},
+            return self._fail_open_response(
+                exc.status,
+                total_calls,
+                total_input_tokens,
+                total_output_tokens,
+                total_thoughts_tokens,
+                extra=exc.extra if exc.extra else None,
             )
 
+        # Distinguish evaluator failure (case 3) from legitimate empty result (case 2).
+        # Case 2: successful parse returning [] — no verifiable claims, score = 1.0.
+        # Case 3: JSONDecodeError, ValueError, or non-list JSON — evaluator failure,
+        # fail-open with sub_reason "claim_extraction_parse_failure".
         try:
-            claims: list[str] = json.loads(_strip_json_fences(claims_raw))
-            if not isinstance(claims, list):
-                claims = []
+            _parsed_claims = json.loads(_strip_json_fences(claims_raw))
         except (json.JSONDecodeError, ValueError):
-            claims = []
+            _parsed_claims = None
+
+        if not isinstance(_parsed_claims, list):
+            return self._fail_open_response(
+                "skipped_evaluator_error",
+                total_calls,
+                total_input_tokens,
+                total_output_tokens,
+                total_thoughts_tokens,
+                extra={
+                    "sub_reason": "claim_extraction_parse_failure",
+                    "raw_response_snippet": claims_raw[:200],
+                },
+            )
+
+        claims: list[str] = [str(c) for c in _parsed_claims]
 
         # Enforce claim cap
         claims = claims[:_MAX_CLAIMS]
 
         if not claims:
+            # Case 2: Gemini returned [] — legitimate zero-claim answer
             return RailDecision(
                 outcome="pass",
                 reason="faithfulness: no claims to verify",
@@ -224,23 +247,49 @@ class FaithfulnessRail:
                 total_calls += 1
                 self._budget.record_call(in_tok, out_tok, thoughts_tok)
             except _GeminiSkipError as exc:
-                return RailDecision(
-                    outcome="pass",
-                    reason=f"faithfulness skipped mid-verification: {exc.status}",
-                    details={
-                        "faithfulness_status": exc.status,
-                        "claims_verified_before_skip": len(supported) + len(unsupported),
-                        **exc.extra,
-                    },
+                return self._fail_open_response(
+                    exc.status,
+                    total_calls,
+                    total_input_tokens,
+                    total_output_tokens,
+                    total_thoughts_tokens,
+                    partial_supported=supported,
+                    partial_unsupported=unsupported,
+                    extra=exc.extra if exc.extra else None,
                 )
 
-            verdict = "no"
+            # Distinguish verdict parse errors from ambiguous values from valid yes/no.
+            # Case 1: valid dict with verdict "yes" or "no" — count normally.
+            # Case 2: valid dict with ambiguous verdict value — fail-open, verdict_ambiguous.
+            # Case 3: JSONDecodeError, ValueError, or non-dict JSON — fail-open, verdict_parse_failure.
             try:
-                verdict_data = json.loads(_strip_json_fences(verdict_raw))
-                if isinstance(verdict_data, dict):
-                    verdict = str(verdict_data.get("verdict", "no")).lower().strip()
+                _vdata = json.loads(_strip_json_fences(verdict_raw))
             except (json.JSONDecodeError, ValueError):
-                verdict = "no"
+                _vdata = None
+
+            _verdict_error = None
+            verdict = "no"
+
+            if isinstance(_vdata, dict):
+                _v = str(_vdata.get("verdict", "")).lower().strip()
+                if _v in ("yes", "no"):
+                    verdict = _v
+                else:
+                    _verdict_error = "verdict_ambiguous"
+            else:
+                _verdict_error = "verdict_parse_failure"
+
+            if _verdict_error is not None:
+                return self._fail_open_response(
+                    "skipped_evaluator_error",
+                    total_calls,
+                    total_input_tokens,
+                    total_output_tokens,
+                    total_thoughts_tokens,
+                    partial_supported=supported,
+                    partial_unsupported=unsupported,
+                    extra={"sub_reason": _verdict_error},
+                )
 
             if verdict == "yes":
                 supported.append(claim)
@@ -273,6 +322,44 @@ class FaithfulnessRail:
             outcome="pass",
             reason="faithfulness check passed",
             details={"faithfulness_status": "passed", **base_details},
+        )
+
+    def _fail_open_response(
+        self,
+        status: str,
+        total_calls: int,
+        total_input_tokens: int,
+        total_output_tokens: int,
+        total_thoughts_tokens: int,
+        partial_supported: list[str] | None = None,
+        partial_unsupported: list[str] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> RailDecision:
+        """Build a uniform fail-open RailDecision with accumulated telemetry.
+
+        Routes all fail-open paths through a single shape so callers can rely
+        on consistent keys (faithfulness_status, gemini_calls, cost, etc.).
+        """
+        details: dict[str, Any] = {
+            "faithfulness_status": status,
+            "gemini_calls": total_calls,
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "thoughts_tokens": total_thoughts_tokens,
+            "cost": self._budget.report(),
+        }
+        if partial_supported is not None:
+            details["supported_claims_partial"] = partial_supported
+            details["unsupported_claims_partial"] = partial_unsupported or []
+            details["claims_verified_before_skip"] = (
+                len(partial_supported) + len(partial_unsupported or [])
+            )
+        if extra:
+            details.update(extra)
+        return RailDecision(
+            outcome="pass",
+            reason=f"faithfulness fail-open: {status}",
+            details=details,
         )
 
     def _estimate_next_call_cost(self) -> float:

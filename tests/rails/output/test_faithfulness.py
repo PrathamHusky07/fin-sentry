@@ -50,7 +50,7 @@ def _mock_generate(responses: list[tuple[str, int, int, int]]) -> Any:
     return _side_effect
 
 
-# --- test cases ---
+# --- existing mode / disabled tests ---
 
 
 @pytest.mark.asyncio
@@ -59,6 +59,8 @@ async def test_faithfulness_disabled_without_api_key_passes_with_skipped_status(
     decision = await rail.check("Some answer.", [_make_chunk("c1")])
     assert decision.outcome == "pass"
     assert decision.details["faithfulness_status"] == "skipped_no_key"
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -70,6 +72,8 @@ async def test_vertex_mode_missing_project_falls_back_to_disabled() -> None:
     decision = await rail.check("Some answer.", [_make_chunk("c1")])
     assert decision.outcome == "pass"
     assert decision.details["faithfulness_status"] == "skipped_no_key"
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -81,6 +85,8 @@ async def test_developer_mode_missing_api_key_falls_back_to_disabled() -> None:
     decision = await rail.check("Some answer.", [_make_chunk("c1")])
     assert decision.outcome == "pass"
     assert decision.details["faithfulness_status"] == "skipped_no_key"
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -98,6 +104,9 @@ async def test_invalid_mode_falls_back_to_disabled_logs_error(
     assert not rail._enabled
     assert rail._mode == "disabled"
     assert any("invalid mode" in r.message.lower() for r in caplog.records)
+
+
+# --- happy path tests ---
 
 
 @pytest.mark.asyncio
@@ -191,6 +200,64 @@ async def test_faithfulness_zero_claims_scores_1_0() -> None:
     assert decision.details["faithfulness_status"] == "passed"
 
 
+# --- Task 1: claim extraction evaluator-failure semantics ---
+
+
+@pytest.mark.asyncio
+async def test_claim_extraction_valid_empty_list_passes_with_score_1_0() -> None:
+    """Case 2: Gemini returns '[]' — legitimate zero-claim answer. Score = 1.0, no fail-open."""
+    rail = _make_rail()
+    responses: list[tuple[str, int, int, int]] = [("[]", 50, 10, 0)]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("No claims here.", [_make_chunk("c1")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["score"] == 1.0
+    assert decision.details["faithfulness_status"] == "passed"
+    # Case 2 is a full PASS with complete telemetry, not a skip
+    assert "supported_claims" in decision.details
+    assert decision.details["supported_claims"] == []
+
+
+@pytest.mark.asyncio
+async def test_claim_extraction_malformed_json_fails_open_evaluator_error() -> None:
+    """Case 3: Gemini returns unparseable text — evaluator failure, fail-open."""
+    rail = _make_rail()
+    responses: list[tuple[str, int, int, int]] = [("not json at all", 50, 10, 0)]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("Some answer.", [_make_chunk("c1")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_evaluator_error"
+    assert decision.details["sub_reason"] == "claim_extraction_parse_failure"
+    assert "raw_response_snippet" in decision.details
+    assert "not json at all" in decision.details["raw_response_snippet"]
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 1  # extraction call was made and recorded
+
+
+@pytest.mark.asyncio
+async def test_claim_extraction_valid_json_but_not_list_fails_open_evaluator_error() -> None:
+    """Case 3: Gemini returns valid JSON but not a list — evaluator failure, fail-open."""
+    rail = _make_rail()
+    responses: list[tuple[str, int, int, int]] = [('{"foo": "bar"}', 50, 10, 0)]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("Some answer.", [_make_chunk("c1")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_evaluator_error"
+    assert decision.details["sub_reason"] == "claim_extraction_parse_failure"
+    assert "raw_response_snippet" in decision.details
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 1
+
+
+# --- existing fail-open path tests (updated with cost assertions) ---
+
+
 @pytest.mark.asyncio
 async def test_faithfulness_rate_limit_fails_open() -> None:
     rail = _make_rail()
@@ -203,6 +270,8 @@ async def test_faithfulness_rate_limit_fails_open() -> None:
 
     assert decision.outcome == "pass"
     assert decision.details["faithfulness_status"] == "skipped_rate_limit"
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -220,6 +289,8 @@ async def test_faithfulness_timeout_fails_open() -> None:
 
     assert decision.outcome == "pass"
     assert "skipped_timeout" in decision.details.get("faithfulness_status", "")
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -234,6 +305,8 @@ async def test_faithfulness_upstream_500_fails_open() -> None:
 
     assert decision.outcome == "pass"
     assert decision.details["faithfulness_status"] == "skipped_upstream_error"
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -250,6 +323,105 @@ async def test_faithfulness_auth_error_fails_open_logs_error(
 
     assert decision.outcome == "pass"
     assert decision.details["faithfulness_status"] == "skipped_auth_error"
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 0
+
+
+# --- Task 2: verdict parsing evaluator-failure semantics ---
+
+
+@pytest.mark.asyncio
+async def test_verdict_malformed_json_fails_open_not_false_block() -> None:
+    """Case 3: verdict call returns garbage — fail-open (not a block), telemetry accumulated."""
+    rail = _make_rail()
+    responses: list[tuple[str, int, int, int]] = [
+        (json.dumps(["Single claim."]), 100, 30, 0),  # extraction
+        ("garbage {not json}", 50, 20, 10),  # verdict — malformed
+    ]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("Single claim.", [_make_chunk("c1")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_evaluator_error"
+    assert decision.details["sub_reason"] == "verdict_parse_failure"
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 2  # extraction + 1 verdict call
+    assert decision.details["gemini_calls"] == 2
+
+
+@pytest.mark.asyncio
+async def test_verdict_ambiguous_value_fails_open() -> None:
+    """Case 2: verdict dict present but value is 'maybe' — verdict_ambiguous, fail-open."""
+    rail = _make_rail()
+    responses: list[tuple[str, int, int, int]] = [
+        (json.dumps(["Single claim."]), 100, 30, 0),
+        (json.dumps({"verdict": "maybe", "rationale": "unclear"}), 50, 20, 0),
+    ]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("Single claim.", [_make_chunk("c1")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_evaluator_error"
+    assert decision.details["sub_reason"] == "verdict_ambiguous"
+    assert "cost" in decision.details
+
+
+@pytest.mark.asyncio
+async def test_verdict_missing_key_fails_open() -> None:
+    """Case 2: verdict dict has no 'verdict' key — verdict_ambiguous, fail-open."""
+    rail = _make_rail()
+    responses: list[tuple[str, int, int, int]] = [
+        (json.dumps(["Single claim."]), 100, 30, 0),
+        (json.dumps({"rationale": "no verdict key here"}), 50, 20, 0),
+    ]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("Single claim.", [_make_chunk("c1")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_evaluator_error"
+    assert decision.details["sub_reason"] == "verdict_ambiguous"
+
+
+@pytest.mark.asyncio
+async def test_verdict_partially_verified_before_failure_reports_partial_telemetry() -> None:
+    """5 claims; verdicts 1-3 succeed, verdict 4 malformed.
+
+    Expects: fail-open with claims_verified_before_skip=3, partial supported list,
+    and tokens accumulated across all 5 attempted calls (extraction + 4 verdicts).
+    """
+    rail = _make_rail()
+    claims = ["c1", "c2", "c3", "c4", "c5"]
+    responses: list[tuple[str, int, int, int]] = [
+        (json.dumps(claims), 100, 30, 0),  # extraction
+        (json.dumps({"verdict": "yes", "rationale": "ok"}), 50, 20, 10),  # c1
+        (json.dumps({"verdict": "yes", "rationale": "ok"}), 50, 20, 10),  # c2
+        (json.dumps({"verdict": "yes", "rationale": "ok"}), 50, 20, 10),  # c3
+        ("malformed json", 30, 10, 5),  # c4 — verdict call succeeds, response malformed
+    ]
+
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        decision = await rail.check("c1 c2 c3 c4 c5", [_make_chunk("ctx")])
+
+    assert decision.outcome == "pass"
+    assert decision.details["faithfulness_status"] == "skipped_evaluator_error"
+    assert decision.details["sub_reason"] == "verdict_parse_failure"
+    assert decision.details["claims_verified_before_skip"] == 3
+    assert decision.details["supported_claims_partial"] == ["c1", "c2", "c3"]
+    assert decision.details["unsupported_claims_partial"] == []
+    # 5 Gemini calls made and recorded: extraction + 4 verdict calls
+    assert decision.details["gemini_calls"] == 5
+    assert "cost" in decision.details
+    assert decision.details["cost"]["call_count"] == 5
+    # Token totals: 100+50*3+30 input, 30+20*3+10 output, 0+10*3+5 thoughts
+    assert decision.details["input_tokens"] == 280
+    assert decision.details["output_tokens"] == 100
+    assert decision.details["thoughts_tokens"] == 35
+
+
+# --- other existing tests ---
 
 
 @pytest.mark.asyncio
