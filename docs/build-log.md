@@ -1,5 +1,76 @@
 # Build Log
 
+## 2026-09-11 — Day 4B: async evaluation pipeline consumer side (commits d4b-0..d4b-8)
+
+### What shipped
+
+**Commit d4b-0 (d4a-fix-1)** — Closed 10 Day 4A gaps: `configure_tracer_provider()` added to
+`tracing.py`; root span wraps `rag.query.total` in `main.py`; error events emitted at 5 internal
+error sites; `error_detail` max_length=500 bound on `RagResponseEvent`; RisingWave version check
+operator-precedence fix in `smoke_test_infra.py`; ADR 006 Decisions 9-10 appended; `.env.example`
+updated with `KAFKA_CONSUMER_GROUP`, `OTEL_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`; 4 root span
+tests + 11 version check tests added. 238 passed total.
+
+**Commit d4b-1** — `finsentry/judges/metrics/faithfulness_core.py` extracted from
+`FaithfulnessRail`. `evaluate_faithfulness()` accepts a `GenerateFn` callable so callers control
+the Gemini API call. `FaithfulnessRail` becomes a thin adapter passing `self._generate` as the
+callable. Prompt constants re-exported for test backward compatibility. All 28 pre-existing
+faithfulness tests pass unchanged. 3 new core tests. 238 passed total.
+
+**Commit d4b-2** — `finsentry/judges/metrics/answer_relevance.py` and
+`finsentry/judges/metrics/context_relevance.py`. AnswerRelevance: single-call scoring with prompt
+guards against verbosity bias (explicit "precision over length" instruction) and refusal bias
+("evaluating" framing). ContextRelevance: per-chunk independent scoring with mean aggregation —
+adding irrelevant chunks degrades the score. Both share the `GenerateFn` / `CostBudget` pattern.
+14 new tests. 252 passed total.
+
+**Commit d4b-3** — `finsentry/consumer/rag_event_consumer.py`. `RagEventConsumer` wraps aiokafka
+with `asyncio.Semaphore(5)` for bounded concurrency, `_shutdown_event` for SIGTERM-safe drain, per-
+message commit after handler completes, and schema_version guard. `inject_consumer()` enables
+testing without a real Kafka broker. 9 new tests. 261 passed total.
+
+**Commit d4b-4** — `finsentry/judges/flash_judge.py`, `JudgeVerdictEvent` appended to
+`events/schema.py`, `finsentry/consumer/main.py`. `FlashJudge` runs all three metrics via
+`asyncio.gather`. `JudgeVerdictProducer` wraps aiokafka with `inject_producer()` for testing.
+`consumer/main.py` wires the full pipeline. 8 new tests. 269 passed total.
+
+**Commit d4b-5** — `infra/risingwave/init.sql`, `scripts/init_risingwave.py`. 2 Kafka sources
+(rag-responses, judge-verdicts) and 5 windowed materialized views: `mv_request_throughput_1m`,
+`mv_faithfulness_5m`, `mv_relevance_5m`, `mv_token_usage_5m`, `mv_ticker_quality_1h`. The
+init script supports `--dry-run` to verify SQL without connecting. No new tests (SQL only).
+
+**Commit d4b-6** — `finsentry/dashboard/app.py`. FastAPI app on port 8081 with GET /, /metrics,
+/health. Queries the five RisingWave views via asyncpg pool. HTML dashboard renders metric cards;
+falls back to "—" sentinel in offline mode when RisingWave is unreachable. 9 new tests. 278 passed.
+
+**Commit d4b-7** — `finsentry/consumer/lag_monitor.py`. `ConsumerLagMonitor` polls Redpanda Admin
+API (/v1/kafka/groups/.../offsets) for per-partition lag. GET /backlog on the dashboard returns
+JSON lag report. Dashboard HTML shows a Backlog card color-coded green/amber/red. 6 new tests.
+284 passed total.
+
+**Commit d4b-8** — `docs/adr/007-async-evaluation-pipeline-consumer.md`, `docs/build-log.md`
+(this entry). ADR 007 records 10 design decisions: Semaphore(5) sizing, per-evaluation CostBudget,
+asyncio.gather for metrics, nullable scores vs sentinels, schema_version guard, commit-after-
+handler, asyncpg pool, graceful offline mode, Redpanda Admin API for lag, non-success events
+skipped.
+
+### Test count
+
+238 (Day 4A close) + 46 new = **284 passed, 2 deselected**
+
+### Next session (Day 5)
+
+Day 5 targets the Frontier Judge tier (HHEM-2.1-open, Patronus Lynx 8B, Prometheus 2 7B) and
+the Cohen's kappa threshold sweep against the FinanceBench golden set. Start by:
+
+1. Verifying 284 passed: `pytest -m "not slow and not integration" -q`
+2. Starting the Docker Compose stack and running `scripts/smoke_test_infra.py`
+3. Initializing RisingWave: `python scripts/init_risingwave.py`
+4. Running the consumer: `python -m finsentry.consumer.main`
+5. Sending test events through the gateway to verify the full pipeline end-to-end
+
+---
+
 ## 2026-09-11 — Day 4A: async evaluation pipeline producer side (commits d4a-0..d4a-7)
 
 ### What shipped
