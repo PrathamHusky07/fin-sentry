@@ -6,9 +6,10 @@ and renders a single-page HTML report. Designed for the interview demo:
 it shows current-window quality metrics without requiring a frontend build.
 
 Routes:
-    GET /         -> HTML dashboard (latest window snapshot)
+    GET /         -> HTML dashboard (latest window snapshot + backlog)
     GET /metrics  -> JSON payload (same data, machine-readable)
     GET /health   -> {"status": "ok"}
+    GET /backlog  -> JSON consumer lag report
 
 Environment variables:
     RISINGWAVE_HOST   (default: localhost)
@@ -26,7 +27,11 @@ from typing import Any, AsyncGenerator
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from finsentry.consumer.lag_monitor import ConsumerLagMonitor, ConsumerLagReport, lag_monitor_from_env
+
 log = logging.getLogger(__name__)
+
+_lag_monitor: ConsumerLagMonitor | None = None
 
 # ---------------------------------------------------------------------------
 # Database connection pool
@@ -45,7 +50,7 @@ def _rw_dsn() -> str:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
-    global _pool
+    global _pool, _lag_monitor
     try:
         import asyncpg  # type: ignore[import-untyped]
 
@@ -54,6 +59,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         log.warning("Dashboard: could not connect to RisingWave — %s (running in offline mode)", exc)
         _pool = None
+    _lag_monitor = lag_monitor_from_env()
     yield
     if _pool is not None:
         await _pool.close()
@@ -143,6 +149,31 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/backlog")
+async def backlog() -> JSONResponse:
+    if _lag_monitor is None:
+        return JSONResponse({"error": "lag monitor not initialized"}, status_code=503)
+    report = await _lag_monitor.fetch_lag()
+    return JSONResponse(
+        content={
+            "group_id": report.group_id,
+            "total_lag": report.total_lag,
+            "ok": report.ok,
+            "error": report.error,
+            "partitions": [
+                {
+                    "topic": p.topic,
+                    "partition": p.partition,
+                    "end_offset": p.end_offset,
+                    "committed_offset": p.committed_offset,
+                    "lag": p.lag,
+                }
+                for p in report.partitions
+            ],
+        }
+    )
+
+
 @app.get("/metrics")
 async def metrics() -> JSONResponse:
     data = await _fetch_metrics()
@@ -152,7 +183,10 @@ async def metrics() -> JSONResponse:
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
     data = await _fetch_metrics()
-    return HTMLResponse(content=_render_html(data))
+    lag_report: ConsumerLagReport | None = None
+    if _lag_monitor is not None:
+        lag_report = await _lag_monitor.fetch_lag()
+    return HTMLResponse(content=_render_html(data, lag_report))
 
 
 # ---------------------------------------------------------------------------
@@ -166,12 +200,37 @@ def _fmt(value: Any, suffix: str = "", na: str = "—") -> str:
     return f"{value}{suffix}"
 
 
-def _render_html(data: dict[str, Any]) -> str:
+def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = None) -> str:
     tp = data.get("throughput") or {}
     fa = data.get("faithfulness") or {}
     re = data.get("relevance") or {}
     tok = data.get("tokens") or {}
     connected = data.get("risingwave_connected", False)
+
+    if lag_report is not None and lag_report.ok:
+        lag_str = str(lag_report.total_lag)
+        lag_color = "#22c55e" if lag_report.total_lag < 100 else "#f59e0b" if lag_report.total_lag < 1000 else "#ef4444"
+        backlog_html = f"""
+  <p class="section-title">Consumer Backlog</p>
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Total Lag</div>
+      <div class="card-value" style="color:{lag_color}">{lag_str}</div>
+      <div class="card-sub">messages behind for group {lag_report.group_id}</div>
+    </div>
+  </div>"""
+    elif lag_report is not None:
+        backlog_html = f"""
+  <p class="section-title">Consumer Backlog</p>
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Total Lag</div>
+      <div class="card-value">—</div>
+      <div class="card-sub" style="color:#ef4444">Admin API error: {lag_report.error}</div>
+    </div>
+  </div>"""
+    else:
+        backlog_html = ""
 
     connection_badge = (
         '<span style="color:#22c55e">&#9679; RisingWave connected</span>'
@@ -274,6 +333,7 @@ def _render_html(data: dict[str, Any]) -> str:
       <div class="card-value">{_fmt(tok.get('gemini_calls_total'))}</div>
     </div>
   </div>
+  {backlog_html}
 </body>
 </html>"""
 
