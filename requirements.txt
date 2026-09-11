@@ -16,9 +16,10 @@ bitsandbytes>=0.43.0
 accelerate>=0.30.0
 
 # Observability
-opentelemetry-api>=1.25.0
-opentelemetry-sdk>=1.25.0
-opentelemetry-exporter-otlp>=1.25.0
+opentelemetry-api>=1.28.0
+opentelemetry-sdk>=1.28.0
+opentelemetry-exporter-otlp>=1.28.0
+opentelemetry-exporter-otlp-proto-grpc>=1.28.0
 
 # Ingestion
 edgartools>=2.0.0
