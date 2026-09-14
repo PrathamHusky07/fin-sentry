@@ -7,7 +7,15 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from finsentry.dashboard.app import _fmt, _fmt_cost, _render_html, _skip_rate, _success_rate, app
+from finsentry.dashboard.app import (
+    _fmt,
+    _fmt_cost,
+    _render_html,
+    _skip_rate,
+    _success_rate,
+    _to_jsonable,
+    app,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -118,3 +126,21 @@ def test_fmt_cost_formats_usd_with_six_decimal_places() -> None:
     assert _fmt_cost(0.000123) == "$0.000123"
     assert _fmt_cost(None) == "—"
     assert _fmt_cost(0.0) == "$0.000000"
+
+
+def test_to_jsonable_converts_nested_decimals() -> None:
+    import json
+    from decimal import Decimal
+    payload = {
+        "throughput": {"avg_latency_ms": Decimal("32150.0"), "total_requests": 2},
+        "cost": {"cost_total_usd": Decimal("0.016583")},
+        "nested_list": [Decimal("1.5"), {"x": Decimal("2.5")}],
+        "passthrough": "ok",
+    }
+    out = _to_jsonable(payload)
+    json.dumps(out)  # must not raise
+    assert out["throughput"]["avg_latency_ms"] == 32150.0
+    assert isinstance(out["throughput"]["avg_latency_ms"], float)
+    assert out["cost"]["cost_total_usd"] == 0.016583
+    assert out["nested_list"][1]["x"] == 2.5
+    assert out["passthrough"] == "ok"

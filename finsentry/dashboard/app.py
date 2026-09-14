@@ -19,10 +19,12 @@ Environment variables:
 """
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -42,6 +44,25 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 _lag_monitor: ConsumerLagMonitor | None = None
+
+
+def _to_jsonable(value: Any) -> Any:
+    """Coerce RisingWave numeric types to JSON-serializable primitives.
+
+    psycopg returns SQL NUMERIC/DECIMAL as Python Decimal, which stdlib
+    json.dumps cannot encode. Recursively convert Decimal -> float across
+    the nested metrics dict.
+    """
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_jsonable(v) for v in value]
+    return value
+
 
 # ---------------------------------------------------------------------------
 # Database connection pool
@@ -203,7 +224,7 @@ async def backlog() -> JSONResponse:
 @app.get("/metrics")
 async def metrics() -> JSONResponse:
     data = await _fetch_metrics()
-    return JSONResponse(content=data)
+    return JSONResponse(content=_to_jsonable(data))
 
 
 @app.get("/", response_class=HTMLResponse)

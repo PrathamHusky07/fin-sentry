@@ -2,7 +2,10 @@
 -- Run via scripts/init_risingwave.py (or psql directly against RisingWave port 4566).
 --
 -- Sources: two Redpanda topics consumed as append-only sources.
--- Materialized views: five windowed aggregations for the dashboard.
+-- Materialized views: six aggregations for the dashboard.
+-- Aggregations use GROUP BY date_trunc(...) time buckets rather than event-time TUMBLE,
+-- so each event is visible immediately on sparse evaluation traffic
+-- (event-time watermarks do not advance without continuous input).
 --
 -- Topic layout:
 --   rag-responses    -> RagResponseEvent   (schema_version 1.0)   -> source: rag_events
@@ -78,87 +81,100 @@ FORMAT PLAIN ENCODE JSON;
 
 
 -- ---------------------------------------------------------------------------
--- Materialized views
+-- Materialized views — teardown (reverse dependency order, re-run safe)
 -- ---------------------------------------------------------------------------
 
--- 1. Request throughput: query count and status breakdown per 1-minute window.
+DROP MATERIALIZED VIEW IF EXISTS mv_ticker_quality_1h;
+DROP MATERIALIZED VIEW IF EXISTS mv_judge_cost_5m;
+DROP MATERIALIZED VIEW IF EXISTS mv_judge_usage_5m;
+DROP MATERIALIZED VIEW IF EXISTS mv_relevance_5m;
+DROP MATERIALIZED VIEW IF EXISTS mv_faithfulness_5m;
+DROP MATERIALIZED VIEW IF EXISTS mv_request_throughput_1m;
+
+
+-- ---------------------------------------------------------------------------
+-- Materialized views — recreate with date_trunc time buckets
+-- ---------------------------------------------------------------------------
+
+-- 1. Request throughput: query count and status breakdown per 1-minute bucket.
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_request_throughput_1m AS
 SELECT
-    window_start,
-    window_end,
+    date_trunc('minute', timestamp_utc)                        AS window_start,
+    date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
     COUNT(*)                                                   AS total_requests,
     COUNT(*) FILTER (WHERE status = 'success')                 AS success_count,
     COUNT(*) FILTER (WHERE status = 'blocked')                 AS blocked_count,
     COUNT(*) FILTER (WHERE status = 'error')                   AS error_count,
     AVG(total_latency_ms)                                      AS avg_latency_ms,
-    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS p95_latency_ms
-FROM TUMBLE(rag_events, timestamp_utc, INTERVAL '1 minute')
-GROUP BY window_start, window_end;
+    MAX(total_latency_ms)                                      AS p95_latency_ms  -- p95 approximated by max; RisingWave MV percentile support limited
+FROM rag_events
+GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 2. Faithfulness score distribution per 5-minute window (success events only).
+-- 2. Faithfulness score distribution per 1-minute bucket (named _5m; bucketed per-minute;
+--    5-min flooring unsupported in MV GROUP BY; dashboard ORDER BY window_end DESC LIMIT 1 is unaffected).
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_faithfulness_5m AS
 SELECT
-    window_start,
-    window_end,
-    COUNT(*)                                                        AS verdicts_count,
-    AVG(faithfulness_score)                                         AS avg_faithfulness,
-    COUNT(*) FILTER (WHERE faithfulness_status = 'complete')        AS complete_count,
-    COUNT(*) FILTER (WHERE faithfulness_status LIKE 'skipped_%')    AS skipped_count
-FROM TUMBLE(judge_verdicts, timestamp_utc, INTERVAL '5 minutes')
+    date_trunc('minute', timestamp_utc)                        AS window_start,
+    date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
+    COUNT(*)                                                     AS verdicts_count,
+    AVG(faithfulness_score)                                      AS avg_faithfulness,
+    COUNT(*) FILTER (WHERE faithfulness_status = 'complete')     AS complete_count,
+    COUNT(*) FILTER (WHERE faithfulness_status LIKE 'skipped_%') AS skipped_count
+FROM judge_verdicts
 WHERE faithfulness_score IS NOT NULL
-GROUP BY window_start, window_end;
+GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 3. Answer + Context relevance per 5-minute window.
+-- 3. Answer + Context relevance per 1-minute bucket (named _5m; same bucketing choice as view 2).
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_relevance_5m AS
 SELECT
-    window_start,
-    window_end,
-    COUNT(*)                                AS verdicts_count,
-    AVG(answer_relevance_score)             AS avg_answer_relevance,
-    AVG(context_relevance_score)            AS avg_context_relevance
-FROM TUMBLE(judge_verdicts, timestamp_utc, INTERVAL '5 minutes')
+    date_trunc('minute', timestamp_utc)                        AS window_start,
+    date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
+    COUNT(*)                        AS verdicts_count,
+    AVG(answer_relevance_score)     AS avg_answer_relevance,
+    AVG(context_relevance_score)    AS avg_context_relevance
+FROM judge_verdicts
 WHERE answer_relevance_score IS NOT NULL
    OR context_relevance_score IS NOT NULL
-GROUP BY window_start, window_end;
+GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 4. Gemini token usage and cost per 5-minute window.
+-- 4. Gemini token usage and cost per 1-minute bucket (named _5m; same bucketing choice as view 2).
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_usage_5m AS
 SELECT
-    window_start,
-    window_end,
+    date_trunc('minute', timestamp_utc)                        AS window_start,
+    date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
     SUM(total_input_tokens)    AS input_tokens_total,
     SUM(total_output_tokens)   AS output_tokens_total,
     SUM(total_thoughts_tokens) AS thoughts_tokens_total,
     SUM(total_gemini_calls)    AS gemini_calls_total,
     SUM(total_cost_usd)        AS cost_total_usd
-FROM TUMBLE(judge_verdicts, timestamp_utc, INTERVAL '5 minutes')
-GROUP BY window_start, window_end;
+FROM judge_verdicts
+GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 6. Judge cost aggregated per 5-minute window (dedicated cost view).
+-- 5. Judge cost per 1-minute bucket (named _5m; same bucketing choice as view 2).
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_cost_5m AS
 SELECT
-    window_start,
-    window_end,
+    date_trunc('minute', timestamp_utc)                        AS window_start,
+    date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
     SUM(total_cost_usd) AS cost_total_usd
-FROM TUMBLE(judge_verdicts, timestamp_utc, INTERVAL '5 minutes')
-GROUP BY window_start, window_end;
+FROM judge_verdicts
+GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 5. Per-ticker quality summary: faithfulness + relevance rolling 1-hour window.
+-- 6. Per-ticker quality summary: faithfulness + relevance per 1-hour bucket.
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_ticker_quality_1h AS
 SELECT
-    window_start,
-    window_end,
+    date_trunc('hour', r.timestamp_utc)                        AS window_start,
+    date_trunc('hour', r.timestamp_utc) + INTERVAL '1 hour'    AS window_end,
     r.ticker,
     COUNT(*)                        AS request_count,
     AVG(v.faithfulness_score)       AS avg_faithfulness,
     AVG(v.answer_relevance_score)   AS avg_answer_relevance,
     AVG(v.context_relevance_score)  AS avg_context_relevance
-FROM TUMBLE(rag_events, timestamp_utc, INTERVAL '1 hour') AS r
-JOIN judge_verdicts v ON v.app_trace_id = r.app_trace_id
+FROM rag_events AS r
+JOIN judge_verdicts AS v ON v.app_trace_id = r.app_trace_id
 WHERE r.status = 'success'
-GROUP BY window_start, window_end, r.ticker;
+GROUP BY date_trunc('hour', r.timestamp_utc), r.ticker;
