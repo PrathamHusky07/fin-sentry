@@ -27,6 +27,7 @@ from typing import Any
 
 import psycopg
 import psycopg.rows
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -35,6 +36,8 @@ from finsentry.consumer.lag_monitor import (
     ConsumerLagReport,
     lag_monitor_from_env,
 )
+
+load_dotenv()
 
 log = logging.getLogger(__name__)
 

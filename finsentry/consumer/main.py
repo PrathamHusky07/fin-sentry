@@ -21,6 +21,8 @@ import logging
 import os
 import signal
 
+from dotenv import load_dotenv
+
 from finsentry.consumer.rag_event_consumer import RagEventConsumer
 from finsentry.events.schema import RagResponseEvent
 from finsentry.events.topics import (
@@ -29,6 +31,8 @@ from finsentry.events.topics import (
     RAG_RESPONSES_TOPIC,
 )
 from finsentry.judges.flash_judge import JudgeVerdictProducer, flash_judge_from_env
+
+load_dotenv()
 
 log = logging.getLogger(__name__)
 
