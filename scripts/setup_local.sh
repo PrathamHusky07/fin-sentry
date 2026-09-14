@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Local development setup for fin-sentry.
 # Idempotent: safe to run multiple times.
+
+# Resolve project root from the script's own location, so the script works
+# regardless of the operator's current working directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 set -euo pipefail
 
 echo "[1/6] Checking docker-compose stack is up..."
@@ -30,7 +37,7 @@ fi
 echo "  OK: Redpanda advertising internal listener correctly."
 
 echo "[4/6] Initializing RisingWave sources and materialized views..."
-python scripts/init_risingwave.py
+PYTHONPATH="$PROJECT_ROOT" python scripts/init_risingwave.py
 
 echo "[5/6] Verifying Ollama is running..."
 if ! curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
