@@ -74,8 +74,10 @@ def test_split_statements_preserves_multi_line_ddl() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_completed(returncode: int = 0, stderr: str = "") -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
+def _make_completed(
+    returncode: int = 0, stdout: str = "", stderr: str = ""
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
 def test_ensure_topics_calls_rpk_for_each_topic() -> None:
@@ -94,14 +96,22 @@ def test_ensure_topics_calls_rpk_for_each_topic() -> None:
 
 
 def test_ensure_topics_treats_topic_already_exists_as_success() -> None:
-    already_exists = _make_completed(returncode=1, stderr="TOPIC_ALREADY_EXISTS: rag-responses")
+    # rpk writes the marker to stdout and exits 1 (empirically verified)
+    already_exists = _make_completed(
+        returncode=1,
+        stdout="TOPIC_ALREADY_EXISTS: The topic has already been created",
+        stderr="",
+    )
     with patch("subprocess.run", return_value=already_exists):
         # Must not raise
         _ensure_topics(["rag-responses"])
 
 
 def test_ensure_topics_raises_on_unexpected_error() -> None:
-    failure = _make_completed(returncode=1, stderr="connection refused")
+    failure = _make_completed(returncode=1, stdout="", stderr="some real failure")
     with patch("subprocess.run", return_value=failure):
-        with pytest.raises(RuntimeError, match="Failed to ensure topic"):
+        with pytest.raises(RuntimeError, match="exit=1") as exc_info:
             _ensure_topics(["rag-responses"])
+    msg = str(exc_info.value)
+    assert "stdout=''" in msg
+    assert "stderr='some real failure'" in msg

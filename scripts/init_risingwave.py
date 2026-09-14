@@ -41,8 +41,9 @@ def _split_statements(sql: str) -> list[str]:
 def _ensure_topics(topic_names: list[str]) -> None:
     """Ensure Kafka topics exist in the Redpanda container via rpk.
 
-    rpk topic create returns 0 for both "created" and "already exists";
-    only non-zero exits without TOPIC_ALREADY_EXISTS in stderr are failures.
+    rpk exits non-zero for both failures and already-exists. The already-exists
+    marker appears in stdout in current rpk versions (not stderr), so both
+    streams are checked case-insensitively to survive future rpk output drift.
     """
     print(f"[topic-check] Ensuring topics exist: {', '.join(topic_names)}")
     for topic in topic_names:
@@ -52,9 +53,15 @@ def _ensure_topics(topic_names: list[str]) -> None:
             text=True,
             timeout=10,
         )
-        if result.returncode != 0 and "TOPIC_ALREADY_EXISTS" not in result.stderr:
+        # rpk writes the "already exists" status to stdout and exits non-zero.
+        # Check both streams case-insensitively so future rpk versions that
+        # change output stream or casing don't regress this path.
+        combined = ((result.stdout or "") + (result.stderr or "")).upper()
+        already_exists = "TOPIC_ALREADY_EXISTS" in combined or "ALREADY BEEN CREATED" in combined
+        if result.returncode != 0 and not already_exists:
             raise RuntimeError(
-                f"Failed to ensure topic {topic!r}: {result.stderr.strip()}"
+                f"Failed to ensure topic {topic!r}: "
+                f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
             )
     print("[topic-check] OK")
 
