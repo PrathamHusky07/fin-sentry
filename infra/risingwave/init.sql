@@ -8,7 +8,7 @@
 --   rag-responses    -> RagResponseEvent   (schema_version 1.0)   -> source: rag_events
 --   judge-verdicts   -> JudgeVerdictEvent  (schema_version 1.0)   -> source: judge_verdicts
 --
--- RisingWave uses PostgreSQL wire protocol; syntax below is RisingWave SQL.
+-- RisingWave uses PostgreSQL wire protocol - syntax below is RisingWave SQL.
 
 -- ---------------------------------------------------------------------------
 -- Sources

@@ -138,6 +138,26 @@ underlying policy decision. A downstream consumer can filter for status="blocked
 block_rail="retrieval-rail" and see the full distribution of retrieval failures without the
 caller ever receiving a 4xx or 5xx.
 
+## Decision 11 — Redpanda dual-listener configuration for internal-vs-host client separation
+
+During Day 4B empirical verification, RisingWave's CREATE SOURCE failed with
+"Meta data fetch error / TimedOutQueue". Root cause: Day 1's compose file ran Redpanda in
+`--mode dev-container` which advertises the Kafka API as `127.0.0.1:9092`. This works for
+host clients using Docker port forwarding, but fails for in-Docker clients (RisingWave)
+because `127.0.0.1` inside RisingWave's container refers to RisingWave itself.
+
+Fix: dual-listener configuration. Redpanda now runs two Kafka listeners: INTERNAL on port
+9092 advertising `redpanda:9092` for in-Docker traffic, and EXTERNAL on port 19092
+advertising `localhost:19092` for host traffic. Configuration in `docker-compose.dev.yml`
+via explicit `--kafka-addr` and `--advertise-kafka-addr` flags, dropping `--mode
+dev-container`.
+
+Consequences: host-side processes (gateway, consumer, dashboard) connect via
+`localhost:19092`. In-Docker services (RisingWave sources) connect via `redpanda:9092`
+(already the value in `infra/risingwave/init.sql`). `.env.example` updated to
+`KAFKA_BOOTSTRAP_SERVERS=localhost:19092`. This is the standard Kafka production
+pattern. Every Kafka deployment supporting mixed-network clients uses dual listeners.
+
 ## Consequences
 
 - Gateway latency is not affected by Kafka broker health (fire-and-forget emit).
@@ -147,4 +167,6 @@ caller ever receiving a 4xx or 5xx.
   surfaces share one stable correlation key per request.
 - RisingWave v3.0.3 requires periodic container restart in long dev sessions.
 - Day 3 sync Faithfulness rail and Day 4 async Flash judge coexist intentionally.
+- Host-side processes connect to Redpanda via localhost:19092 (EXTERNAL listener).
+- In-Docker processes (RisingWave) connect via redpanda:9092 (INTERNAL listener).
 - Consumer lag is the signal for async plane health. No sync fallback is ever introduced.

@@ -23,14 +23,21 @@ services:
     command:
       - redpanda
       - start
-      - --mode dev-container
-      - --smp 1
+      - --smp=1
       - --default-log-level=warn
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
+      - --advertise-kafka-addr=INTERNAL://redpanda:9092,EXTERNAL://localhost:19092
+      - --pandaproxy-addr=INTERNAL://0.0.0.0:8082,EXTERNAL://0.0.0.0:18082
+      - --advertise-pandaproxy-addr=INTERNAL://redpanda:8082,EXTERNAL://localhost:18082
     ports:
       - "9092:9092"
+      - "19092:19092"
       - "9644:9644"
-      - "8081:8081"
       - "8082:8082"
+      - "18082:18082"
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     healthcheck:

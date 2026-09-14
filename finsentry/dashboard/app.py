@@ -59,7 +59,7 @@ def _rw_dsn() -> str:
 async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
     global _pool, _lag_monitor
     try:
-        import psycopg_pool  # type: ignore[import-not-found]  # lazy; optional at import time
+        import psycopg_pool  # lazy; optional at import time
 
         pool = psycopg_pool.AsyncConnectionPool(_rw_dsn(), min_size=1, max_size=3, open=False)
         await pool.open(wait=True)

@@ -1,5 +1,60 @@
 # Build Log
 
+## 2026-09-14 — Day 4B closeout: SQL splitter, topic pre-creation, dual-listener compose
+
+### What shipped
+
+**Commit d4b-fix-2** — Bring-up hardening for empirical end-to-end verification.
+
+- **SQL splitter rewrite** (`scripts/init_risingwave.py`): `_split_statements` now strips
+  block comments (`/* */`) and line comments (`--`) before splitting on `;`. Fixes the failure
+  where a SQL header comment containing `;` syntax produced a malformed first statement. The
+  progress print line now shows the first 60 chars of the stripped statement.
+- **Topic pre-creation** (`_ensure_topics`): before executing SQL, the script shells out to
+  `rpk topic create` via `docker exec finsentry-redpanda`. Fixes `CREATE SOURCE` failures on
+  fresh setups where topics don't exist yet. Topic names imported from
+  `finsentry.events.topics` (single source of truth). Treats `TOPIC_ALREADY_EXISTS` as
+  success; only unexpected errors raise.
+- **Compose verification**: `docker-compose.dev.yml` dual-listener config confirmed correct
+  (operator's manual edit from Day 4B verification). No changes needed. `.env.example`
+  updated to `KAFKA_BOOTSTRAP_SERVERS=localhost:19092` with dual-listener documentation.
+- **Gateway startup check** (`finsentry/gateway/main.py::lifespan`): `log.warning` if
+  `DOWNSTREAM_URL` is set but `DOWNSTREAM_MODEL` is empty, guarding against Ollama calls
+  with an empty model field.
+- **Local setup script** (`scripts/setup_local.sh`): idempotent bash script that starts the
+  compose stack, waits for health, verifies Redpanda dual-listener, initializes RisingWave,
+  and checks Ollama.
+- **ADR 006 Decision 11**: documents the dual-listener root cause and fix for the interview
+  record.
+
+### Tests
+
+287 (prior) + 7 new = **294 passed** (expected).
+
+New tests: `test_split_statements_splits_two_simple_statements`,
+`test_split_statements_handles_semicolon_in_line_comment`,
+`test_split_statements_handles_block_comment_with_semicolons`,
+`test_split_statements_drops_pure_comment_chunks`,
+`test_split_statements_preserves_multi_line_ddl`,
+`test_ensure_topics_calls_rpk_for_each_topic`,
+`test_ensure_topics_treats_topic_already_exists_as_success`.
+
+### Empirical verification path
+
+1. `bash scripts/setup_local.sh` from project root.
+2. Terminal 1: `uvicorn finsentry.gateway.main:app --port 8000`
+3. Terminal 2: `python -m finsentry.consumer.main`
+4. Terminal 3: `uvicorn finsentry.dashboard.app:app --port 8081`
+5. `python scripts/smoke_test_e2e.py`
+
+### Next session (Day 5)
+
+Frontier judge tier: HHEM-2.1-open, Patronus Lynx 8B, Prometheus 2 7B. Cohen's kappa
+threshold sweep against the FinanceBench golden set. Start with `pytest -m "not slow" -x -q`
+to confirm 294 pass.
+
+---
+
 ## 2026-09-11 — Day 4B: async evaluation pipeline consumer side (commits d4b-0..d4b-8)
 
 ### What shipped

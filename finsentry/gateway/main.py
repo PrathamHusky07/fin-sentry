@@ -151,6 +151,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         cast(Literal["console", "otlp", "none"], os.getenv("OTEL_EXPORTER", "none"))
     )
 
+    if os.getenv("DOWNSTREAM_URL") and not os.getenv("DOWNSTREAM_MODEL"):
+        log.warning(
+            "DOWNSTREAM_URL is set but DOWNSTREAM_MODEL is empty. "
+            "The downstream RAG call will fail. Set DOWNSTREAM_MODEL "
+            "to the Ollama tag (e.g. 'llama3.1:8b') or vLLM model name."
+        )
+
     # Load bge-small-en-v1.5 in a thread; ~130 MB download on first run, then
     # served from ~/.cache/huggingface/. Blocking, so off the event loop.
     from sentence_transformers import SentenceTransformer

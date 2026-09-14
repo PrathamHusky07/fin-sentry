@@ -15,6 +15,7 @@ scripts/
 !scripts/diagnostic_output_rails_e2e.py
 !scripts/init_risingwave.py
 !scripts/smoke_test_e2e.py
+!scripts/setup_local.sh
 # Unit tests for scripts are under tests/, not scripts/
 !tests/scripts/
 

@@ -19,32 +19,53 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import re
+import subprocess
 import sys
+
+from finsentry.events.topics import JUDGE_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
 
 _SQL_PATH = pathlib.Path(__file__).parent.parent / "infra" / "risingwave" / "init.sql"
 
 
 def _split_statements(sql: str) -> list[str]:
-    """Split on semicolons, skip blank lines and pure comments."""
-    parts = sql.split(";")
-    statements = []
-    for part in parts:
-        stripped = part.strip()
-        if not stripped:
-            continue
-        non_comment = "\n".join(
-            line for line in stripped.splitlines()
-            if not line.strip().startswith("--")
-        ).strip()
-        if non_comment:
-            statements.append(stripped)
-    return statements
+    """Split SQL text on statement-ending semicolons, ignoring semicolons inside
+    -- line comments and /* */ block comments. Empty and comment-only chunks
+    are dropped. Preserves comments inside the returned statements for context."""
+    stripped_block = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    stripped_line = re.sub(r"--[^\n]*", "", stripped_block)
+    parts = stripped_line.split(";")
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _ensure_topics(topic_names: list[str]) -> None:
+    """Ensure Kafka topics exist in the Redpanda container via rpk.
+
+    rpk topic create returns 0 for both "created" and "already exists";
+    only non-zero exits without TOPIC_ALREADY_EXISTS in stderr are failures.
+    """
+    print(f"[topic-check] Ensuring topics exist: {', '.join(topic_names)}")
+    for topic in topic_names:
+        result = subprocess.run(
+            ["docker", "exec", "finsentry-redpanda", "rpk", "topic", "create", topic],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0 and "TOPIC_ALREADY_EXISTS" not in result.stderr:
+            raise RuntimeError(
+                f"Failed to ensure topic {topic!r}: {result.stderr.strip()}"
+            )
+    print("[topic-check] OK")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Initialize RisingWave sources and views")
     parser.add_argument("--dry-run", action="store_true", help="Print statements without executing")
     args = parser.parse_args(argv)
+
+    if not args.dry_run:
+        _ensure_topics([RAG_RESPONSES_TOPIC, JUDGE_VERDICTS_TOPIC])
 
     sql = _SQL_PATH.read_text()
     statements = _split_statements(sql)
@@ -77,8 +98,8 @@ def main(argv: list[str] | None = None) -> int:
 
     with conn.cursor() as cur:
         for i, stmt in enumerate(statements, 1):
-            first_line = stmt.splitlines()[0][:80]
-            print(f"[{i}/{len(statements)}] {first_line}...")
+            preview = stmt[:60].replace("\n", " ")
+            print(f"[{i}/{len(statements)}] {preview}...")
             try:
                 cur.execute(stmt)
                 print(f"  OK")
