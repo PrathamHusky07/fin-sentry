@@ -191,7 +191,13 @@ _ok(f"Gateway responded (status={resp.status_code}, app_trace_id={app_trace_id})
 # ---------------------------------------------------------------------------
 
 _step(6, f"Polling '{TOPIC_RAG}' for event with matching app_trace_id")
-result = _rpk(["topic", "consume", TOPIC_RAG, "--num", "1", "--timeout", "10s"])
+try:
+    result = _rpk(["topic", "consume", TOPIC_RAG, "-n", "1"], timeout=15)
+except subprocess.TimeoutExpired:
+    _fail(
+        f"No message arrived on '{TOPIC_RAG}' within 15 seconds. "
+        "Is the gateway running with KAFKA_MODE=kafka?"
+    )
 if result.returncode != 0:
     _fail(
         f"rpk consume on '{TOPIC_RAG}' failed: {result.stderr.strip()}\n"
@@ -233,7 +239,14 @@ else:
 # ---------------------------------------------------------------------------
 
 _step(7, f"Polling '{TOPIC_VERDICTS}' for judge verdict (up to 90 seconds)")
-result = _rpk(["topic", "consume", TOPIC_VERDICTS, "--num", "1", "--timeout", "90s"], timeout=100)
+try:
+    result = _rpk(["topic", "consume", TOPIC_VERDICTS, "-n", "1"], timeout=100)
+except subprocess.TimeoutExpired:
+    _fail(
+        f"No verdict arrived on '{TOPIC_VERDICTS}' within 100 seconds. "
+        "Consumer may be slow or Vertex Gemini may be rate-limited. "
+        "Check the consumer terminal for FlashJudge verdict log lines."
+    )
 if result.returncode != 0:
     _fail(
         f"rpk consume on '{TOPIC_VERDICTS}' failed: {result.stderr.strip()}\n"
