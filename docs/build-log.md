@@ -133,7 +133,7 @@ docker compose -f docker-compose.dev.yml up -d
 python scripts/smoke_test_infra.py
 ```
 
-Day 4B resumes at the consumer side: a judge worker that reads from `rag_responses`,
+Day 4B resumes at the consumer side: a judge worker that reads from `rag-responses`,
 calls Gemini Flash for quality scoring, and writes results to a RisingWave materialized view.
 
 ---

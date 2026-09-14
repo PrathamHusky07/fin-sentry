@@ -5,8 +5,8 @@
 -- Materialized views: five windowed aggregations for the dashboard.
 --
 -- Topic layout:
---   rag-responses    -> RagResponseEvent   (schema_version 1.0)
---   judge-verdicts   -> JudgeVerdictEvent  (schema_version 1.0)
+--   rag-responses    -> RagResponseEvent   (schema_version 1.0)   -> source: rag_events
+--   judge-verdicts   -> JudgeVerdictEvent  (schema_version 1.0)   -> source: judge_verdicts
 --
 -- RisingWave uses PostgreSQL wire protocol; syntax below is RisingWave SQL.
 
@@ -14,7 +14,7 @@
 -- Sources
 -- ---------------------------------------------------------------------------
 
-CREATE SOURCE IF NOT EXISTS rag_responses (
+CREATE SOURCE IF NOT EXISTS rag_events (
     schema_version        VARCHAR,
     event_id              VARCHAR,
     app_trace_id          VARCHAR,
@@ -61,7 +61,12 @@ CREATE SOURCE IF NOT EXISTS judge_verdicts (
     total_input_tokens          INT,
     total_output_tokens         INT,
     total_thoughts_tokens       INT,
-    total_gemini_calls          INT
+    total_gemini_calls          INT,
+    judge_tier                  VARCHAR,
+    judge_model                 VARCHAR,
+    status                      VARCHAR,
+    evaluation_latency_ms       INT,
+    total_cost_usd              DOUBLE PRECISION
 )
 WITH (
     connector        = 'kafka',
@@ -87,7 +92,7 @@ SELECT
     COUNT(*) FILTER (WHERE status = 'error')                   AS error_count,
     AVG(total_latency_ms)                                      AS avg_latency_ms,
     PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS p95_latency_ms
-FROM TUMBLE(rag_responses, timestamp_utc, INTERVAL '1 minute')
+FROM TUMBLE(rag_events, timestamp_utc, INTERVAL '1 minute')
 GROUP BY window_start, window_end;
 
 
@@ -119,15 +124,26 @@ WHERE answer_relevance_score IS NOT NULL
 GROUP BY window_start, window_end;
 
 
--- 4. Gemini token usage per 5-minute window (cost proxy).
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_token_usage_5m AS
+-- 4. Gemini token usage and cost per 5-minute window.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_usage_5m AS
 SELECT
     window_start,
     window_end,
     SUM(total_input_tokens)    AS input_tokens_total,
     SUM(total_output_tokens)   AS output_tokens_total,
     SUM(total_thoughts_tokens) AS thoughts_tokens_total,
-    SUM(total_gemini_calls)    AS gemini_calls_total
+    SUM(total_gemini_calls)    AS gemini_calls_total,
+    SUM(total_cost_usd)        AS cost_total_usd
+FROM TUMBLE(judge_verdicts, timestamp_utc, INTERVAL '5 minutes')
+GROUP BY window_start, window_end;
+
+
+-- 6. Judge cost aggregated per 5-minute window (dedicated cost view).
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_cost_5m AS
+SELECT
+    window_start,
+    window_end,
+    SUM(total_cost_usd) AS cost_total_usd
 FROM TUMBLE(judge_verdicts, timestamp_utc, INTERVAL '5 minutes')
 GROUP BY window_start, window_end;
 
@@ -142,7 +158,7 @@ SELECT
     AVG(v.faithfulness_score)       AS avg_faithfulness,
     AVG(v.answer_relevance_score)   AS avg_answer_relevance,
     AVG(v.context_relevance_score)  AS avg_context_relevance
-FROM TUMBLE(rag_responses, timestamp_utc, INTERVAL '1 hour') AS r
+FROM TUMBLE(rag_events, timestamp_utc, INTERVAL '1 hour') AS r
 JOIN judge_verdicts v ON v.app_trace_id = r.app_trace_id
 WHERE r.status = 'success'
 GROUP BY window_start, window_end, r.ticker;

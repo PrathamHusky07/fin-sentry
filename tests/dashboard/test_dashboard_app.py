@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from finsentry.dashboard.app import _fmt, _render_html, _skip_rate, _success_rate, app
+from finsentry.dashboard.app import _fmt, _fmt_cost, _render_html, _skip_rate, _success_rate, app
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -19,6 +19,7 @@ def _mock_metrics(
     faithfulness: dict[str, Any] | None = None,
     relevance: dict[str, Any] | None = None,
     tokens: dict[str, Any] | None = None,
+    cost: dict[str, Any] | None = None,
     connected: bool = False,
 ) -> dict[str, Any]:
     return {
@@ -26,6 +27,7 @@ def _mock_metrics(
         "faithfulness": faithfulness,
         "relevance": relevance,
         "tokens": tokens,
+        "cost": cost,
         "risingwave_connected": connected,
     }
 
@@ -110,3 +112,9 @@ def test_success_rate_computes_correctly() -> None:
 def test_skip_rate_returns_dash_on_zero_verdicts() -> None:
     fa = {"verdicts_count": 0, "skipped_count": 0}
     assert _skip_rate(fa) == "—"
+
+
+def test_fmt_cost_formats_usd_with_six_decimal_places() -> None:
+    assert _fmt_cost(0.000123) == "$0.000123"
+    assert _fmt_cost(None) == "—"
+    assert _fmt_cost(0.0) == "$0.000000"

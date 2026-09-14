@@ -17,6 +17,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from finsentry.events.topics import DEFAULT_CONSUMER_GROUP, RAG_RESPONSES_TOPIC
+
 log = logging.getLogger(__name__)
 
 _DEFAULT_ADMIN_URL = "http://localhost:9644"
@@ -119,6 +121,6 @@ class ConsumerLagMonitor:
 def lag_monitor_from_env() -> ConsumerLagMonitor:
     return ConsumerLagMonitor(
         admin_url=os.getenv("REDPANDA_ADMIN_URL", _DEFAULT_ADMIN_URL),
-        group_id=os.getenv("KAFKA_CONSUMER_GROUP", "finsentry-rag-flash-judge"),
-        topic=os.getenv("KAFKA_TOPIC", "rag-responses"),
+        group_id=os.getenv("KAFKA_CONSUMER_GROUP", DEFAULT_CONSUMER_GROUP),
+        topic=os.getenv("KAFKA_TOPIC", RAG_RESPONSES_TOPIC),
     )

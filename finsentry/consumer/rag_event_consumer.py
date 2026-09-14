@@ -25,6 +25,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from finsentry.events.schema import RagResponseEvent
+from finsentry.events.topics import DEFAULT_CONSUMER_GROUP, RAG_RESPONSES_TOPIC
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +81,12 @@ class RagEventConsumer:
                 bootstrap_servers=self._bootstrap_servers,
                 group_id=self._group_id,
                 value_deserializer=lambda b: b,
-                auto_offset_reset="earliest",
+                # "latest" prevents a new consumer group from replaying every
+                # historical event through Gemini on first startup — that would
+                # burn Vertex quota on events the operator did not intend to
+                # re-evaluate. For historical replay, reset offsets manually:
+                #   rpk group seek --to earliest <group>
+                auto_offset_reset="latest",
                 enable_auto_commit=False,
             )
         await self._consumer.start()
@@ -100,13 +106,22 @@ class RagEventConsumer:
 
         pending: set[asyncio.Task[None]] = set()
 
-        async def _bounded_handle(event: RagResponseEvent) -> None:
+        async def _bounded_handle_and_commit(msg: Any, event: RagResponseEvent) -> None:
             async with self._semaphore:
                 if self._handler is not None:
                     try:
                         await self._handler(event)
                     except Exception:
                         log.exception("Handler error for event %s", event.event_id)
+                # Commit AFTER handler completes. Commits from concurrent tasks can
+                # arrive out of receive order — intentional at-least-once semantics.
+                # A crash mid-processing may re-deliver already-processed events.
+                # Re-running an event through Gemini is idempotent from the dashboard
+                # perspective: a new verdict row with the same app_trace_id appears.
+                try:
+                    await self._consumer.commit()
+                except Exception:
+                    log.exception("Commit failed for offset %s", msg.offset)
 
         try:
             async for msg in self._consumer:
@@ -114,12 +129,11 @@ class RagEventConsumer:
                     break
                 event = self._parse_message(msg)
                 if event is None:
-                    await self._consumer.commit()
+                    await self._consumer.commit()  # drop invalid event but advance offset
                     continue
-                task = asyncio.create_task(_bounded_handle(event))
+                task = asyncio.create_task(_bounded_handle_and_commit(msg, event))
                 pending.add(task)
                 task.add_done_callback(pending.discard)
-                await self._consumer.commit()
         finally:
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
@@ -153,7 +167,7 @@ class RagEventConsumer:
 def consumer_from_env() -> RagEventConsumer:
     """Build a RagEventConsumer from environment variables."""
     return RagEventConsumer(
-        bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
-        topic=os.getenv("KAFKA_TOPIC", "rag-responses"),
-        group_id=os.getenv("KAFKA_CONSUMER_GROUP", "finsentry-rag-flash-judge"),
+        bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        topic=os.getenv("KAFKA_TOPIC", RAG_RESPONSES_TOPIC),
+        group_id=os.getenv("KAFKA_CONSUMER_GROUP", DEFAULT_CONSUMER_GROUP),
     )

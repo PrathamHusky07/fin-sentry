@@ -63,6 +63,12 @@ async def test_flash_judge_disabled_returns_skipped_no_key() -> None:
     assert verdict.faithfulness_score is None
     assert verdict.source_event_id == event.event_id
     assert verdict.app_trace_id == event.app_trace_id
+    # New metadata fields
+    assert verdict.judge_tier == "flash"
+    assert verdict.judge_model == judge._model_name
+    assert verdict.status == "failed"  # 0 of 3 metrics completed
+    assert verdict.evaluation_latency_ms >= 0
+    assert verdict.total_cost_usd == 0.0
 
 
 @pytest.mark.anyio
@@ -115,6 +121,12 @@ async def test_flash_judge_with_mock_generate_fn_scores_all_three_metrics() -> N
     assert verdict.context_relevance_status == "complete"
     assert verdict.context_relevance_score == 0.8
     assert verdict.total_gemini_calls == 4
+    # New metadata fields
+    assert verdict.judge_tier == "flash"
+    assert verdict.judge_model == judge._model_name
+    assert verdict.status == "complete"  # all 3 metrics returned a score
+    assert verdict.evaluation_latency_ms >= 0
+    assert verdict.total_cost_usd >= 0.0
 
 
 @pytest.mark.anyio

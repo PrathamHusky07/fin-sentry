@@ -21,9 +21,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from finsentry.events.schema import JudgeVerdictEvent, RagResponseEvent
 from finsentry.judges.metrics.answer_relevance import evaluate_answer_relevance
@@ -39,7 +40,8 @@ from finsentry.rails.output.cost_governance import CostBudget
 
 log = logging.getLogger(__name__)
 
-_FLASH_MODEL = "gemini-2.5-flash"
+# Fallback if GEMINI_MODEL env var is unset. Matches ADR 005 post-Vertex-migration default.
+_FLASH_MODEL = "gemini-3.6-flash"
 
 
 class JudgeVerdictProducer:
@@ -139,6 +141,8 @@ class FlashJudge:
         context_relevance_status: str | None = None
         total_in = total_out = total_thoughts = total_calls = 0
 
+        eval_start = time.monotonic()
+
         if generate_fn is None:
             faithfulness_status = "skipped_no_key"
             answer_relevance_status = "skipped_no_key"
@@ -208,6 +212,20 @@ class FlashJudge:
                 answer_relevance_status = "skipped_non_success"
                 context_relevance_status = "skipped_non_success"
 
+        evaluation_latency_ms = int((time.monotonic() - eval_start) * 1000)
+
+        # Derive overall status from how many of the three metrics completed.
+        complete_count = sum(
+            1 for s in (faithfulness_status, answer_relevance_status, context_relevance_status)
+            if s == "complete"
+        )
+        if complete_count == 3:
+            verdict_status: Literal["complete", "partial", "failed"] = "complete"
+        elif complete_count >= 1:
+            verdict_status = "partial"
+        else:
+            verdict_status = "failed"
+
         return JudgeVerdictEvent(
             event_id=str(uuid.uuid4()),
             source_event_id=event.event_id,
@@ -223,6 +241,11 @@ class FlashJudge:
             total_output_tokens=total_out,
             total_thoughts_tokens=total_thoughts,
             total_gemini_calls=total_calls,
+            judge_tier="flash",
+            judge_model=self._model_name,
+            status=verdict_status,
+            evaluation_latency_ms=evaluation_latency_ms,
+            total_cost_usd=budget.report()["run_total_usd"],
         )
 
 

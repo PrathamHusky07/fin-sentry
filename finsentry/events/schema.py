@@ -104,5 +104,15 @@ class JudgeVerdictEvent(BaseModel):
     total_thoughts_tokens: int = 0
     total_gemini_calls: int = 0
 
+    # Judge metadata
+    judge_tier: Literal["flash", "frontier"] = "flash"  # "frontier" emitted by Day 5
+    judge_model: str = ""  # e.g. "gemini-3.6-flash"
+    status: Literal["complete", "partial", "failed"] = "complete"
+    # "complete"  — all 3 metrics returned a score
+    # "partial"   — 1 or 2 metrics returned a score
+    # "failed"    — 0 metrics returned a score
+    evaluation_latency_ms: int = 0
+    total_cost_usd: float = 0.0
+
     def to_kafka_json(self) -> bytes:
         return self.model_dump_json().encode("utf-8")

@@ -14,6 +14,7 @@ import logging
 from typing import Any, Literal
 
 from finsentry.events.schema import RagResponseEvent
+from finsentry.events.topics import RAG_RESPONSES_TOPIC
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class RagEventProducer:
         self,
         mode: Literal["kafka", "disabled"],
         bootstrap_servers: str,
-        topic: str = "rag_responses",
+        topic: str = RAG_RESPONSES_TOPIC,
     ) -> None:
         self._mode: Literal["kafka", "disabled"] = mode
         self._bootstrap_servers = bootstrap_servers

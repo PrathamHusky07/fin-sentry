@@ -25,6 +25,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import psycopg
+import psycopg.rows
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -57,9 +59,11 @@ def _rw_dsn() -> str:
 async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
     global _pool, _lag_monitor
     try:
-        import asyncpg  # type: ignore[import-not-found]
+        import psycopg_pool  # type: ignore[import-not-found]  # lazy; optional at import time
 
-        _pool = await asyncpg.create_pool(_rw_dsn(), min_size=1, max_size=3)
+        pool = psycopg_pool.AsyncConnectionPool(_rw_dsn(), min_size=1, max_size=3, open=False)
+        await pool.open(wait=True)
+        _pool = pool
         log.info("Dashboard connected to RisingWave")
     except Exception as exc:
         log.warning(
@@ -84,9 +88,11 @@ async def _fetch_one(sql: str) -> dict[str, Any] | None:
     if _pool is None:
         return None
     try:
-        async with _pool.acquire() as conn:
-            row = await conn.fetchrow(sql)
-            return dict(row) if row else None
+        async with _pool.connection() as conn:
+            async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                await cur.execute(sql)
+                row: dict[str, Any] | None = await cur.fetchone()
+                return row
     except Exception:
         log.exception("Dashboard query failed: %s", sql[:80])
         return None
@@ -130,8 +136,17 @@ async def _fetch_metrics() -> dict[str, Any]:
     tokens = await _fetch_one(
         """
         SELECT input_tokens_total, output_tokens_total, thoughts_tokens_total,
-               gemini_calls_total, window_start, window_end
-        FROM mv_token_usage_5m
+               gemini_calls_total, cost_total_usd, window_start, window_end
+        FROM mv_judge_usage_5m
+        ORDER BY window_end DESC
+        LIMIT 1
+        """
+    )
+
+    cost = await _fetch_one(
+        """
+        SELECT cost_total_usd, window_start, window_end
+        FROM mv_judge_cost_5m
         ORDER BY window_end DESC
         LIMIT 1
         """
@@ -142,6 +157,7 @@ async def _fetch_metrics() -> dict[str, Any]:
         "faithfulness": faithfulness,
         "relevance": relevance,
         "tokens": tokens,
+        "cost": cost,
         "risingwave_connected": _pool is not None,
     }
 
@@ -207,11 +223,18 @@ def _fmt(value: Any, suffix: str = "", na: str = "—") -> str:
     return f"{value}{suffix}"
 
 
+def _fmt_cost(value: Any, na: str = "—") -> str:
+    if value is None:
+        return na
+    return f"${float(value):.6f}"
+
+
 def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = None) -> str:
     tp = data.get("throughput") or {}
     fa = data.get("faithfulness") or {}
     re = data.get("relevance") or {}
     tok = data.get("tokens") or {}
+    cost = data.get("cost") or {}
     connected = data.get("risingwave_connected", False)
 
     if lag_report is not None and lag_report.ok:
@@ -344,6 +367,20 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
     <div class="card">
       <div class="card-label">Gemini Calls</div>
       <div class="card-value">{_fmt(tok.get('gemini_calls_total'))}</div>
+    </div>
+  </div>
+
+  <p class="section-title">Judge Cost (last 5-minute window)</p>
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Total Cost (USD)</div>
+      <div class="card-value">{_fmt_cost(cost.get('cost_total_usd'))}</div>
+      <div class="card-sub">Vertex AI Standard tier pricing</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Cost (from usage view)</div>
+      <div class="card-value">{_fmt_cost(tok.get('cost_total_usd'))}</div>
+      <div class="card-sub">Cross-check via mv_judge_usage_5m</div>
     </div>
   </div>
   {backlog_html}

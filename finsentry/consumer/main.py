@@ -4,12 +4,12 @@ Run with:
     python -m finsentry.consumer.main
 
 Environment variables:
-    KAFKA_BOOTSTRAP_SERVERS   (default: localhost:19092)
+    KAFKA_BOOTSTRAP_SERVERS   (default: localhost:9092)
     KAFKA_TOPIC               (default: rag-responses)
     KAFKA_CONSUMER_GROUP      (default: finsentry-rag-flash-judge)
     KAFKA_VERDICT_TOPIC       (default: judge-verdicts)
     GEMINI_MODE               (default: disabled)
-    GEMINI_MODEL              (default: gemini-2.5-flash)
+    GEMINI_MODEL              (default: gemini-3.6-flash)
     GOOGLE_CLOUD_PROJECT
     GOOGLE_CLOUD_LOCATION     (default: global)
     GEMINI_API_KEY
@@ -23,6 +23,11 @@ import signal
 
 from finsentry.consumer.rag_event_consumer import RagEventConsumer
 from finsentry.events.schema import RagResponseEvent
+from finsentry.events.topics import (
+    DEFAULT_CONSUMER_GROUP,
+    JUDGE_VERDICTS_TOPIC,
+    RAG_RESPONSES_TOPIC,
+)
 from finsentry.judges.flash_judge import JudgeVerdictProducer, flash_judge_from_env
 
 log = logging.getLogger(__name__)
@@ -31,10 +36,10 @@ log = logging.getLogger(__name__)
 async def _run() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:19092")
-    topic = os.getenv("KAFKA_TOPIC", "rag-responses")
-    group = os.getenv("KAFKA_CONSUMER_GROUP", "finsentry-rag-flash-judge")
-    verdict_topic = os.getenv("KAFKA_VERDICT_TOPIC", "judge-verdicts")
+    bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+    topic = os.getenv("KAFKA_TOPIC", RAG_RESPONSES_TOPIC)
+    group = os.getenv("KAFKA_CONSUMER_GROUP", DEFAULT_CONSUMER_GROUP)
+    verdict_topic = os.getenv("KAFKA_VERDICT_TOPIC", JUDGE_VERDICTS_TOPIC)
 
     judge = flash_judge_from_env()
     verdict_producer = JudgeVerdictProducer(bootstrap_servers=bootstrap, topic=verdict_topic)

@@ -14,8 +14,12 @@ eight design decisions made on the producer side.
 
 ## Decision 1 — Single event topic, not per-lifecycle topics
 
-One topic (`rag_responses`) carries all three lifecycle statuses: success, blocked, error.
+One topic (`rag-responses`) carries all three lifecycle statuses: success, blocked, error.
 Status is a first-class field in the event schema.
+
+Note: the original draft used an underscore-separated form. Corrected to `rag-responses` (hyphen)
+during the Day 4B closeout consolidation to match Redpanda topic naming conventions and the
+`RAG_RESPONSES_TOPIC` constant in `finsentry/events/topics.py`.
 
 **Alternatives considered**: separate topics per status (rag_blocked, rag_success, rag_error).
 

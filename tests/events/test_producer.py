@@ -47,7 +47,7 @@ async def test_producer_kafka_mode_emit_serializes_event_correctly() -> None:
     call_args = mock_aio_producer.send_and_wait.call_args
     topic = call_args.args[0]
     payload = call_args.args[1]
-    assert topic == "rag_responses"
+    assert topic == "rag-responses"
     assert isinstance(payload, bytes)
     restored = RagResponseEvent.from_kafka_json(payload)
     assert restored.status == "success"

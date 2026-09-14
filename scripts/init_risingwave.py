@@ -63,14 +63,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        import psycopg2  # type: ignore[import-untyped]
+        import psycopg  # type: ignore[import-untyped]
     except ImportError:
-        print("ERROR: psycopg2 not installed. Run: pip install psycopg2-binary", file=sys.stderr)
+        print("ERROR: psycopg not installed. Run: pip install 'psycopg[binary]'", file=sys.stderr)
         return 1
 
+    conninfo = f"host={host} port={port} user={user} dbname={db}"
     try:
-        conn = psycopg2.connect(host=host, port=port, user=user, dbname=db)
-        conn.autocommit = True
+        conn = psycopg.connect(conninfo, autocommit=True)
     except Exception as exc:
         print(f"ERROR: Could not connect to RisingWave at {host}:{port} — {exc}", file=sys.stderr)
         return 1

@@ -24,6 +24,7 @@ opentelemetry-exporter-otlp-proto-grpc>=1.28.0
 # Ingestion
 edgartools>=2.0.0
 psycopg[binary]>=3.1.0
+psycopg_pool>=3.1.0
 datasets>=2.20.0
 sentence-transformers>=3.0.0
 pgvector>=0.3.0

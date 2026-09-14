@@ -128,14 +128,79 @@ async def test_consumer_drops_unsupported_schema_version() -> None:
 
 @pytest.mark.anyio
 async def test_consumer_commits_after_each_message() -> None:
-    """commit() is called once per message, regardless of handler outcome."""
+    """commit() is called once per message, and only after the handler for that message finishes."""
+    call_log: list[str] = []
+
+    async def _handler(ev: RagResponseEvent) -> None:
+        call_log.append("handler")
+
     msgs = [_make_kafka_msg(_make_event().model_dump()) for _ in range(3)]
-    consumer = _make_consumer(msgs)
-    consumer.set_handler(AsyncMock())
+    # max_concurrency=1 gives deterministic sequential ordering: handler then commit per message
+    consumer = _make_consumer(msgs, max_concurrency=1)
+
+    async def _commit_tracking(*args: Any, **kwargs: Any) -> None:
+        call_log.append("commit")
+
+    consumer._consumer.commit.side_effect = _commit_tracking  # type: ignore[attr-defined]
+    consumer.set_handler(_handler)
     await consumer.start()
     await consumer.run()
 
     assert consumer._consumer.commit.call_count == 3  # type: ignore[attr-defined]
+    # With max_concurrency=1, each handler must complete before its commit fires
+    assert call_log == ["handler", "commit", "handler", "commit", "handler", "commit"]
+
+
+@pytest.mark.anyio
+async def test_consumer_commits_after_handler_completes() -> None:
+    """Within a single task, commit fires only after the handler coroutine finishes."""
+    event = _make_event()
+    msg = _make_kafka_msg(event.model_dump())
+
+    handler_completed = False
+    commit_saw_handler_done: list[bool] = []
+
+    async def _handler(ev: RagResponseEvent) -> None:
+        nonlocal handler_completed
+        await asyncio.sleep(0.01)  # simulate async work
+        handler_completed = True
+
+    async def _commit_tracking(*args: Any, **kwargs: Any) -> None:
+        commit_saw_handler_done.append(handler_completed)
+
+    consumer = _make_consumer([msg])
+    consumer._consumer.commit.side_effect = _commit_tracking  # type: ignore[attr-defined]
+    consumer.set_handler(_handler)
+    await consumer.start()
+    await consumer.run()
+
+    assert handler_completed is True
+    assert commit_saw_handler_done == [True]
+
+
+@pytest.mark.anyio
+async def test_consumer_uses_auto_offset_reset_latest() -> None:
+    """AIOKafkaConsumer is configured with auto_offset_reset='latest'.
+
+    New consumer groups must not replay all historical events through Gemini
+    on first startup. Historical replay requires an explicit rpk group seek.
+    """
+    from unittest.mock import patch as _patch
+
+    consumer = RagEventConsumer(
+        bootstrap_servers="localhost:9092",
+        topic="rag-responses",
+        group_id="test-group",
+    )
+
+    mock_instance = AsyncMock()
+    mock_instance.start = AsyncMock()
+
+    with _patch("aiokafka.AIOKafkaConsumer", return_value=mock_instance) as mock_consumer_cls:
+        await consumer.start()
+
+    call_kwargs = mock_consumer_cls.call_args[1]
+    assert call_kwargs.get("auto_offset_reset") == "latest"
 
 
 @pytest.mark.anyio
