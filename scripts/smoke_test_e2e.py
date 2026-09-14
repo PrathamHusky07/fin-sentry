@@ -25,8 +25,15 @@ TOPIC_RAG = "rag-responses"
 TOPIC_VERDICTS = "judge-verdicts"
 
 
+RPK_PREFIX = ["docker", "exec", "finsentry-redpanda", "rpk"]
+
+
 def _run(cmd: list[str], timeout: int = 15) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def _rpk(args: list[str], timeout: int = 15) -> subprocess.CompletedProcess[str]:
+    return _run([*RPK_PREFIX, *args], timeout=timeout)
 
 
 def _step(n: int, msg: str) -> None:
@@ -109,9 +116,14 @@ _ok("KAFKA_MODE=kafka confirmed")
 # ---------------------------------------------------------------------------
 
 _step(3, f"Ensuring topic '{TOPIC_RAG}' exists")
-result = _run(["rpk", "topic", "create", TOPIC_RAG], timeout=15)
-if result.returncode not in {0, 1}:  # 1 = topic already exists
-    print(f"  WARNING: rpk topic create returned {result.returncode}: {result.stderr.strip()}")
+result = _rpk(["topic", "create", TOPIC_RAG])
+combined = ((result.stdout or "") + (result.stderr or "")).upper()
+already_exists = "TOPIC_ALREADY_EXISTS" in combined or "ALREADY BEEN CREATED" in combined
+if result.returncode != 0 and not already_exists:
+    _fail(
+        f"rpk topic create returned exit={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
 else:
     _ok(f"Topic '{TOPIC_RAG}' ready")
 
@@ -179,10 +191,7 @@ _ok(f"Gateway responded (status={resp.status_code}, app_trace_id={app_trace_id})
 # ---------------------------------------------------------------------------
 
 _step(6, f"Polling '{TOPIC_RAG}' for event with matching app_trace_id")
-result = _run(
-    ["rpk", "topic", "consume", TOPIC_RAG, "--num", "1", "--timeout", "10s"],
-    timeout=15,
-)
+result = _rpk(["topic", "consume", TOPIC_RAG, "--num", "1", "--timeout", "10s"])
 if result.returncode != 0:
     _fail(
         f"rpk consume on '{TOPIC_RAG}' failed: {result.stderr.strip()}\n"
@@ -224,10 +233,7 @@ else:
 # ---------------------------------------------------------------------------
 
 _step(7, f"Polling '{TOPIC_VERDICTS}' for judge verdict (up to 90 seconds)")
-result = _run(
-    ["rpk", "topic", "consume", TOPIC_VERDICTS, "--num", "1", "--timeout", "90s"],
-    timeout=100,
-)
+result = _rpk(["topic", "consume", TOPIC_VERDICTS, "--num", "1", "--timeout", "90s"], timeout=100)
 if result.returncode != 0:
     _fail(
         f"rpk consume on '{TOPIC_VERDICTS}' failed: {result.stderr.strip()}\n"
