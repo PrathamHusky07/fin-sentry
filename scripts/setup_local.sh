@@ -37,7 +37,7 @@ fi
 echo "  OK: Redpanda advertising internal listener correctly."
 
 echo "[4/6] Initializing RisingWave sources and materialized views..."
-PYTHONPATH="$PROJECT_ROOT" python scripts/init_risingwave.py
+python scripts/init_risingwave.py
 
 echo "[5/6] Verifying Ollama is running..."
 if ! curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then

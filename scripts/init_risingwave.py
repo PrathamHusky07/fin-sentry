@@ -23,7 +23,12 @@ import re
 import subprocess
 import sys
 
-from finsentry.events.topics import JUDGE_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
+# Kafka topic names — must match the source declarations in
+# infra/risingwave/init.sql and finsentry/events/topics.py. Duplicated
+# intentionally because SQL cannot import Python and this script must be
+# invocable without configuring PYTHONPATH. Keep all three copies in sync.
+_RAG_RESPONSES_TOPIC = "rag-responses"
+_JUDGE_VERDICTS_TOPIC = "judge-verdicts"
 
 _SQL_PATH = pathlib.Path(__file__).parent.parent / "infra" / "risingwave" / "init.sql"
 
@@ -72,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not args.dry_run:
-        _ensure_topics([RAG_RESPONSES_TOPIC, JUDGE_VERDICTS_TOPIC])
+        _ensure_topics([_RAG_RESPONSES_TOPIC, _JUDGE_VERDICTS_TOPIC])
 
     sql = _SQL_PATH.read_text()
     statements = _split_statements(sql)

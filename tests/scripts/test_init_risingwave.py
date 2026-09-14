@@ -12,7 +12,12 @@ import pytest
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from init_risingwave import _ensure_topics, _split_statements  # noqa: E402, I001
+from init_risingwave import (  # noqa: E402, I001
+    _JUDGE_VERDICTS_TOPIC,
+    _RAG_RESPONSES_TOPIC,
+    _ensure_topics,
+    _split_statements,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -115,3 +120,18 @@ def test_ensure_topics_raises_on_unexpected_error() -> None:
     msg = str(exc_info.value)
     assert "stdout=''" in msg
     assert "stderr='some real failure'" in msg
+
+
+# ---------------------------------------------------------------------------
+# Contract test: script constants must match finsentry.events.topics
+# ---------------------------------------------------------------------------
+
+
+def test_script_topic_constants_match_events_module() -> None:
+    """Contract: the script's local topic constants must match the canonical
+    Python definitions in finsentry.events.topics. If either side is renamed
+    without updating the other, the pipeline will silently break."""
+    from finsentry.events.topics import JUDGE_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
+
+    assert _RAG_RESPONSES_TOPIC == RAG_RESPONSES_TOPIC
+    assert _JUDGE_VERDICTS_TOPIC == JUDGE_VERDICTS_TOPIC
