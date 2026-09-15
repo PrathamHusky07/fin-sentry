@@ -85,10 +85,10 @@ FORMAT PLAIN ENCODE JSON;
 -- ---------------------------------------------------------------------------
 
 DROP MATERIALIZED VIEW IF EXISTS mv_ticker_quality_1h;
-DROP MATERIALIZED VIEW IF EXISTS mv_judge_cost_5m;
-DROP MATERIALIZED VIEW IF EXISTS mv_judge_usage_5m;
-DROP MATERIALIZED VIEW IF EXISTS mv_relevance_5m;
-DROP MATERIALIZED VIEW IF EXISTS mv_faithfulness_5m;
+DROP MATERIALIZED VIEW IF EXISTS mv_judge_cost_1m;
+DROP MATERIALIZED VIEW IF EXISTS mv_judge_usage_1m;
+DROP MATERIALIZED VIEW IF EXISTS mv_relevance_1m;
+DROP MATERIALIZED VIEW IF EXISTS mv_faithfulness_1m;
 DROP MATERIALIZED VIEW IF EXISTS mv_request_throughput_1m;
 
 
@@ -106,14 +106,13 @@ SELECT
     COUNT(*) FILTER (WHERE status = 'blocked')                 AS blocked_count,
     COUNT(*) FILTER (WHERE status = 'error')                   AS error_count,
     AVG(total_latency_ms)                                      AS avg_latency_ms,
-    MAX(total_latency_ms)                                      AS p95_latency_ms  -- p95 approximated by max; RisingWave MV percentile support limited
+    APPROX_PERCENTILE(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS p95_latency_ms
 FROM rag_events
 GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 2. Faithfulness score distribution per 1-minute bucket (named _5m; bucketed per-minute;
---    5-min flooring unsupported in MV GROUP BY; dashboard ORDER BY window_end DESC LIMIT 1 is unaffected).
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_faithfulness_5m AS
+-- 2. Faithfulness score distribution per 1-minute bucket.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_faithfulness_1m AS
 SELECT
     date_trunc('minute', timestamp_utc)                        AS window_start,
     date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
@@ -126,8 +125,8 @@ WHERE faithfulness_score IS NOT NULL
 GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 3. Answer + Context relevance per 1-minute bucket (named _5m; same bucketing choice as view 2).
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_relevance_5m AS
+-- 3. Answer + Context relevance per 1-minute bucket.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_relevance_1m AS
 SELECT
     date_trunc('minute', timestamp_utc)                        AS window_start,
     date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
@@ -140,8 +139,8 @@ WHERE answer_relevance_score IS NOT NULL
 GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 4. Gemini token usage and cost per 1-minute bucket (named _5m; same bucketing choice as view 2).
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_usage_5m AS
+-- 4. Gemini token usage and cost per 1-minute bucket.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_usage_1m AS
 SELECT
     date_trunc('minute', timestamp_utc)                        AS window_start,
     date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,
@@ -154,8 +153,8 @@ FROM judge_verdicts
 GROUP BY date_trunc('minute', timestamp_utc);
 
 
--- 5. Judge cost per 1-minute bucket (named _5m; same bucketing choice as view 2).
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_cost_5m AS
+-- 5. Judge cost per 1-minute bucket.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_judge_cost_1m AS
 SELECT
     date_trunc('minute', timestamp_utc)                        AS window_start,
     date_trunc('minute', timestamp_utc) + INTERVAL '1 minute'  AS window_end,

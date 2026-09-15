@@ -139,7 +139,7 @@ async def _fetch_metrics() -> dict[str, Any]:
         """
         SELECT verdicts_count, ROUND(avg_faithfulness::numeric, 3) AS avg_faithfulness,
                complete_count, skipped_count, window_start, window_end
-        FROM mv_faithfulness_5m
+        FROM mv_faithfulness_1m
         ORDER BY window_end DESC
         LIMIT 1
         """
@@ -151,7 +151,7 @@ async def _fetch_metrics() -> dict[str, Any]:
                ROUND(avg_answer_relevance::numeric, 3) AS avg_answer_relevance,
                ROUND(avg_context_relevance::numeric, 3) AS avg_context_relevance,
                window_start, window_end
-        FROM mv_relevance_5m
+        FROM mv_relevance_1m
         ORDER BY window_end DESC
         LIMIT 1
         """
@@ -161,7 +161,7 @@ async def _fetch_metrics() -> dict[str, Any]:
         """
         SELECT input_tokens_total, output_tokens_total, thoughts_tokens_total,
                gemini_calls_total, cost_total_usd, window_start, window_end
-        FROM mv_judge_usage_5m
+        FROM mv_judge_usage_1m
         ORDER BY window_end DESC
         LIMIT 1
         """
@@ -170,7 +170,7 @@ async def _fetch_metrics() -> dict[str, Any]:
     cost = await _fetch_one(
         """
         SELECT cost_total_usd, window_start, window_end
-        FROM mv_judge_cost_5m
+        FROM mv_judge_cost_1m
         ORDER BY window_end DESC
         LIMIT 1
         """
@@ -352,7 +352,7 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
     </div>
   </div>
 
-  <p class="section-title">Quality Scores (last 5-minute window)</p>
+  <p class="section-title">Quality Scores (last 1-minute window)</p>
   <div class="grid">
     <div class="card">
       <div class="card-label">Faithfulness</div>
@@ -374,7 +374,7 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
     </div>
   </div>
 
-  <p class="section-title">Gemini Token Usage (last 5-minute window)</p>
+  <p class="section-title">Gemini Token Usage (last 1-minute window)</p>
   <div class="grid">
     <div class="card">
       <div class="card-label">Input Tokens</div>
@@ -394,7 +394,7 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
     </div>
   </div>
 
-  <p class="section-title">Judge Cost (last 5-minute window)</p>
+  <p class="section-title">Judge Cost (last 1-minute window)</p>
   <div class="grid">
     <div class="card">
       <div class="card-label">Total Cost (USD)</div>
@@ -404,7 +404,7 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
     <div class="card">
       <div class="card-label">Cost (from usage view)</div>
       <div class="card-value">{_fmt_cost(tok.get('cost_total_usd'))}</div>
-      <div class="card-sub">Cross-check via mv_judge_usage_5m</div>
+      <div class="card-sub">Cross-check via mv_judge_usage_1m</div>
     </div>
   </div>
   {backlog_html}
