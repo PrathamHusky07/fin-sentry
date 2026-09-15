@@ -17,6 +17,8 @@ scripts/
 !scripts/smoke_test_e2e.py
 !scripts/setup_local.sh
 !scripts/measure_frontier_models.py
+!scripts/measure_hhem_isolated.py
+!scripts/measure_frontier_residency.py
 # Unit tests for scripts are under tests/, not scripts/
 !tests/scripts/
 
@@ -27,6 +29,7 @@ __pycache__/
 *.so
 .Python
 .venv/
+.venv-hhem/
 venv/
 env/
 .pytest_cache/
