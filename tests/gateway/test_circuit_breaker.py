@@ -583,3 +583,37 @@ async def test_late_failure_after_breaker_opens_does_not_reset_opened_at() -> No
     fake_now[0] = 31.0  # 31s from the original open
     is_open, _ = await breaker.is_open()
     assert not is_open, "Breaker must recover after 30s from first open, not from last failure"
+
+
+async def test_call_downstream_rag_includes_format_json() -> None:
+    """_call_downstream_rag sends format: 'json' in the request body (Ollama JSON mode)."""
+    from typing import Any
+
+    captured: dict[str, Any] = {}
+
+    async def fake_post(*args: object, **kwargs: object) -> MagicMock:
+        if "json" in kwargs:
+            captured.update({"json": kwargs["json"]})
+        r = MagicMock()
+        r.status_code = 200
+        r.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+        r.raise_for_status = MagicMock()
+        return r
+
+    client = MagicMock()
+    client.post = fake_post
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+
+    breaker = AsyncCircuitBreaker()
+    with patch("finsentry.gateway.main.httpx.AsyncClient", return_value=client):
+        result = await _call_downstream_rag(
+            [{"role": "user", "content": "test"}],
+            "http://fake-downstream",
+            breaker,
+        )
+
+    assert result == "ok"
+    assert captured.get("json", {}).get("format") == "json", (
+        "Ollama format:json must be present in the POST body"
+    )
