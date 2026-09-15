@@ -16,6 +16,7 @@ scripts/
 !scripts/init_risingwave.py
 !scripts/smoke_test_e2e.py
 !scripts/setup_local.sh
+!scripts/measure_frontier_models.py
 # Unit tests for scripts are under tests/, not scripts/
 !tests/scripts/
 

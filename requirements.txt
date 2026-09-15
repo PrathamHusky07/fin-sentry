@@ -44,6 +44,9 @@ aiokafka>=0.14.0
 # Config
 pyyaml>=6.0.0
 
+# Ops / measurement scripts
+psutil>=6.0.0
+
 # Dev
 ruff>=0.5.0
 mypy>=1.10.0
