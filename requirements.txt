@@ -46,6 +46,7 @@ pyyaml>=6.0.0
 
 # Ops / measurement scripts
 psutil>=6.0.0
+sentencepiece>=0.2.0
 
 # Dev
 ruff>=0.5.0

@@ -1,5 +1,92 @@
 # Build Log
 
+## 2026-09-15 — Day 5A Milestone 0: view rename, Ollama JSON mode, p95 percentile, sampling audit, frontier memory measurement
+
+### What shipped
+
+**Commit d5a-m0-rename** — Rename four materialized views from `_5m` to `_1m` in `infra/risingwave/init.sql`
+and update all SQL queries and HTML section labels in `finsentry/dashboard/app.py`. The names had claimed
+5-minute bucketing but the GROUP BY uses `date_trunc('minute', ...)` which produces 1-minute windows.
+Replaced `MAX(total_latency_ms)` p95 approximation with `APPROX_PERCENTILE(0.95) WITHIN GROUP (ORDER BY
+total_latency_ms)`. Confirmed supported on RisingWave v3.0.3 via a throwaway MV test against the live
+instance.
+
+**Commit d5a-m0-ollama** — Added `"format": "json"` to the Ollama downstream request payload in
+`_call_downstream_rag` (gateway/main.py:433). Ollama 0.34.0 confirmed via `/api/version`. The basic
+JSON mode constrains output to valid JSON at decode time. SchemaEnforcementRail stays in place as
+defense-in-depth. Test `test_call_downstream_rag_includes_format_json` captures POST kwargs and asserts
+the field. 299 passed, 2 deselected.
+
+**Commit d5a-m0-measure** — `scripts/measure_frontier_models.py` with isolated subprocess loading,
+psutil RSS tracking, and backend selection (bitsandbytes-4bit → mlx-lm → llama-cpp-python GGUF).
+Output: `docs/measurements/frontier-models-day5a-m0.json`.
+
+### Task 4 — Sampling inventory
+
+`finsentry/consumer/rag_event_consumer.py` has no sampling logic. The `asyncio.Semaphore(5)` provides
+backpressure-based queue depth capping (at most 5 concurrent in-flight judge evaluations), but the
+consumer processes 100% of events that pass schema and version checks. **Answer: (c) not implemented.**
+Semaphore provides bounded concurrency, not sampling. Milestone 1 must add sample-rate gating before
+the FlashJudge hand-off to enable the frontier tier's backpressure-driven sampling described in the spec.
+
+### Task 5 — Frontier model memory measurement
+
+Machine: Apple Silicon, 24 GB unified memory, Python 3.13, transformers 5.16.1.
+Available memory at run start: 3038 MB (87.6% used). Stack running (Redpanda, RisingWave, Postgres).
+
+**HHEM-2.1-Open**: Failed to load. Two independent errors:
+(1) AutoTokenizer fails with "You need sentencepiece or tiktoken" even with sentencepiece 0.2.2 installed;
+the custom code in the repo triggers a fast-tokenizer initialization path that bypasses the installed
+package. (2) The model class `HHEMv2ForSequenceClassification` raises `AttributeError: no attribute
+'all_tied_weights_keys'` under transformers 5.16.1; the model was written against the transformers 4.x
+API. Fix for Milestone 1: isolate HHEM in a separate venv pinning `transformers<5.0`, or replace with
+a compatible NLI model (e.g. cross-encoder/nli-deberta-v3-base). HHEM load does not block the 8B tier.
+
+**Patronus Lynx 8B**: Loaded via bitsandbytes-4bit. Load latency 218s (model download included
+~3 min). Inference latency 12.9s per prompt. psutil RSS after load: 269 MB — this is CPU-side only.
+On Apple Silicon, bitsandbytes uses the Metal/MPS backend and model weights live in unified GPU
+memory, which psutil does not track. Actual footprint is approximately 5-6 GB for a 4-bit 8B model
+(standard estimate: params * 0.5 bytes = 8B * 0.5 = ~4 GB + overhead).
+
+**Prometheus 2 7B**: Loaded via bitsandbytes-4bit. Load latency 171s. Inference latency 12.1s.
+Same psutil caveat; actual footprint ~4-5 GB for a 4-bit 7B model.
+
+**Available memory after run** (models released by isolated subprocesses): 4991 MB. The per-model
+memory figures cannot be read from psutil RSS on this machine. For Milestone 1 loading strategy:
+
+(a) Peak RSS per model (psutil, CPU-side only): HHEM ~N/A, Lynx ~269 MB, Prometheus ~264 MB.
+(b) Available memory at run time: 3038 MB with the Day 4B stack running (24 GB total).
+(c) Whether all three fit resident simultaneously: unknown from psutil alone. Given 24 GB unified
+    memory and estimated ~5 GB for Lynx + ~4 GB for Prometheus + ~0.4 GB for HHEM = ~9.4 GB, all
+    three should fit simultaneously if the OS is not holding >14 GB of wired memory.
+(d) Recommended loading strategy: lazy load per-tier, not preload all three at startup. Load HHEM
+    on first frontier-tier eval request after resolving the transformers 4.x pinning issue. Lynx and
+    Prometheus load on demand with a 300s timeout guard. A resident-memory check via
+    `torch.mps.current_allocated_memory()` should replace the psutil RSS measurement before
+    using these numbers for capacity planning.
+
+### Empirical gate results
+
+- `python scripts/init_risingwave.py`: 14/14 statements OK, all four renamed views exist.
+- `curl -sD - http://localhost:8081/metrics | head -20`: HTTP 200, populated JSON with faithfulness 1.0,
+  answer_relevance 1.0, context_relevance 0.76 (from prior Day 4B data in renamed views).
+- View row counts: mv_faithfulness_1m=2, mv_relevance_1m=2, mv_judge_usage_1m=3, mv_judge_cost_1m=3.
+- `pytest -m "not slow" -x -q`: 299 passed, 2 deselected.
+- `ruff check .`: all checks passed.
+- `mypy finsentry/ --strict`: no issues in 46 source files.
+
+### Next session (Day 5A Milestone 1)
+
+Build the frontier-tier consumer. Key inputs from this session:
+1. Resolve HHEM transformers compatibility: either pin transformers<5.0 in a separate process or
+   replace with a compatible cross-encoder NLI model.
+2. Sampling must be implemented in the consumer (currently 100% pass-through). Add a sample rate
+   config parameter to RagEventConsumer and wire backpressure-based rate reduction.
+3. Lynx and Prometheus load time is ~3-4 min including download on first run; cached load is
+   ~8-9s (weight loading only). Plan for lazy loading with a health-check signal.
+
+---
+
 ## 2026-09-14 — Day 4B closeout: SQL splitter, topic pre-creation, dual-listener compose
 
 ### What shipped

@@ -49,8 +49,9 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 
 model_name = "vectara/hallucination_evaluation_model"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name)
+# use_fast=False: HHEM uses DeBERTa-v3 tokenizer which needs the slow SentencePiece path
+tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, use_fast=False)
+model = AutoModelForSequenceClassification.from_pretrained(model_name, trust_remote_code=True)
 model.eval()
 
 load_latency_s = time.monotonic() - start_load
