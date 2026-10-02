@@ -774,6 +774,18 @@ async def _rag_query_inner(
         if _schema_rail is not None:
             schema_decision = _schema_rail.check(answer, retrieved_chunk_ids)
             if schema_decision.outcome == "block":
+                # TODO(d5a-m1): remove or gate behind DEV_DIAGNOSTIC_LOGS=1 before M1.
+                # Raw model output should not be logged in any production code path.
+                log.warning(
+                    "schema_rail_block",
+                    extra={
+                        "rail": "schema-enforcement",
+                        "reason": schema_decision.reason,
+                        "raw_ollama_response_snippet": answer[:500],
+                        "raw_response_length": len(answer),
+                        "app_trace_id": app_trace_id,
+                    },
+                )
                 if _rag_event_producer is not None:
                     asyncio.create_task(
                         _rag_event_producer.emit(
