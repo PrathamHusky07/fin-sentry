@@ -1,0 +1,29 @@
+{
+  "description": "Three-pair sanity set for HHEM-2.1-Open runtime compatibility verification. Acceptance: score(consistent) > score(contradictory) by at least 0.3. Calibration against the human-labeled golden set is a Day 6 concern.",
+  "pairs": [
+    {
+      "label": "consistent",
+      "premise": "The capital of France is Paris. It has been the capital since the 10th century.",
+      "hypothesis": "Paris is the capital of France.",
+      "expected_relative": "highest"
+    },
+    {
+      "label": "contradictory",
+      "premise": "The capital of France is Paris.",
+      "hypothesis": "The capital of France is Berlin.",
+      "expected_relative": "lowest"
+    },
+    {
+      "label": "unrelated",
+      "premise": "The capital of France is Paris.",
+      "hypothesis": "The company released a new laptop in June.",
+      "expected_relative": "diagnostic_only"
+    }
+  ],
+  "acceptance_criteria": {
+    "tokenizer_loads": true,
+    "model_loads": true,
+    "all_scores_in_0_1": true,
+    "ordering_consistent_gt_contradictory_by": 0.3
+  }
+}
