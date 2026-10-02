@@ -25,7 +25,7 @@ If you want to reach for anything else, ask first. The reason a specific library
 
 ## Model policy
 
-Default model is `claude-sonnet-4-6`. Escalate to Opus via `/model opus` only for architecture planning, multi-file refactors, integration debugging that has already resisted one Sonnet attempt, or the calibration and normalization math where a subtle bug is expensive. Drop to Haiku via `/model haiku` for mechanical work: file renames, README edits, dependency version bumps, adding docstrings to functions that already work, running formatters, and translating checked-in output data into a chart script.
+Default model is `claude-sonnet-5-5`. Escalate to Opus via `/model opus` only for architecture planning, multi-file refactors, integration debugging that has already resisted one Sonnet attempt, or the calibration and normalization math where a subtle bug is expensive. Drop to Haiku via `/model haiku` for mechanical work: file renames, README edits, dependency version bumps, adding docstrings to functions that already work, running formatters, and translating checked-in output data into a chart script.
 
 Do not run the entire session on Opus. It burns budget for no gain on tasks Sonnet handles cleanly. Do not run the whole session on Haiku either. It saves tokens on work that then needs to be redone. Match the tool to the task.
 
