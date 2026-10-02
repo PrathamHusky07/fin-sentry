@@ -1,0 +1,75 @@
+{
+  "run_ts": "2026-10-02T17:19:17Z",
+  "venv": ".venv-hhem",
+  "vm_stat_snapshots": [
+    {
+      "label": "before_hhem_isolated",
+      "page_size_bytes": 16384,
+      "raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     3578.\nPages active:                                 248252.\nPages inactive:                               247636.\nPages speculative:                               237.\nPages throttled:                                   0.\nPages wired down:                             276896.\nPages purgeable:                                   2.\n\"Translation faults\":                    25014958656.\nPages copy-on-write:                       432210803.\nPages zero filled:                        4472198864.\nPages reactivated:                        7762569363.\nPages purged:                              683620016.\nFile-backed pages:                            170181.\nAnonymous pages:                              325944.\nPages stored in compressor:                  6035118.\nPages occupied by compressor:                 736083.\nDecompressions:                          13509499096.\nCompressions:                            14005881280.\nPageins:                                   210738410.\nPageouts:                                    5833401.\nSwapins:                                   497015962.\nSwapouts:                                  513753913.\nPages tagged:                                 165210.\nPages tagged resident:                        125447.\nPages tagged compressed:                       39763.\nPages tag-storage:                             49152.\nPages tag-storage holding tags:                 5903.\nPages tag-storage free:                          145.\nPages tag-storage non-tag pageable:            43088.\nPages tag-storage non-tag wired:                  16.\nBytes of compressed tags:                    6773760.\nTagged compressions:                       174582058.\nTagged decompressions:                     172034817.\n",
+      "parsed_pages": {
+        "pages_free": 3578,
+        "pages_active": 248252,
+        "pages_inactive": 247636,
+        "pages_wired_down": 276896,
+        "pages_occupied_by_compressor": 736083
+      },
+      "parsed_mb": {
+        "pages_free": 55.9,
+        "pages_active": 3878.9,
+        "pages_inactive": 3869.3,
+        "pages_wired_down": 4326.5,
+        "pages_occupied_by_compressor": 11501.3
+      },
+      "parsed_counters": {
+        "swapouts": 513753913
+      }
+    },
+    {
+      "label": "after_hhem_isolated",
+      "page_size_bytes": 16384,
+      "raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    20356.\nPages active:                                 245610.\nPages inactive:                               239248.\nPages speculative:                              4972.\nPages throttled:                                   0.\nPages wired down:                             267200.\nPages purgeable:                                   2.\n\"Translation faults\":                    25015087946.\nPages copy-on-write:                       432212566.\nPages zero filled:                        4472240091.\nPages reactivated:                        7762632910.\nPages purged:                              683634814.\nFile-backed pages:                            186633.\nAnonymous pages:                              303197.\nPages stored in compressor:                  6061468.\nPages occupied by compressor:                 735296.\nDecompressions:                          13509537447.\nCompressions:                            14005948868.\nPageins:                                   210766452.\nPageouts:                                    5833409.\nSwapins:                                   497017016.\nSwapouts:                                  513769537.\nPages tagged:                                 165737.\nPages tagged resident:                        126484.\nPages tagged compressed:                       39253.\nPages tag-storage:                             49152.\nPages tag-storage holding tags:                 5903.\nPages tag-storage free:                          342.\nPages tag-storage non-tag pageable:            42891.\nPages tag-storage non-tag wired:                  16.\nBytes of compressed tags:                    6663616.\nTagged compressions:                       174582170.\nTagged decompressions:                     172035437.\n",
+      "parsed_pages": {
+        "pages_free": 20356,
+        "pages_active": 245610,
+        "pages_inactive": 239248,
+        "pages_wired_down": 267200,
+        "pages_occupied_by_compressor": 735296
+      },
+      "parsed_mb": {
+        "pages_free": 318.1,
+        "pages_active": 3837.7,
+        "pages_inactive": 3738.2,
+        "pages_wired_down": 4175.0,
+        "pages_occupied_by_compressor": 11489.0
+      },
+      "parsed_counters": {
+        "swapouts": 513769537
+      }
+    }
+  ],
+  "model": {
+    "model": "HHEM-2.1-Open",
+    "hub_id": "vectara/hallucination_evaluation_model",
+    "requested_backend": "transformers-deberta-v2",
+    "actual_device": null,
+    "hf_device_map": null,
+    "layers_on_cpu": null,
+    "layers_on_mps": null,
+    "baseline_rss_mb": 18.0,
+    "rss_after_load_mb": null,
+    "rss_after_warmup_mb": null,
+    "sampled_peak_rss_mb": 331.2,
+    "mps_allocated_mb_baseline": 0.0,
+    "mps_driver_allocated_mb_baseline": 0.4,
+    "mps_allocated_mb_after_load": null,
+    "mps_driver_allocated_mb_after_load": null,
+    "mps_allocated_mb_after_warmup": null,
+    "mps_driver_allocated_mb_after_warmup": null,
+    "load_latency_s": null,
+    "inf_latency_s": null,
+    "warmup_score": null,
+    "sanity_scores": null,
+    "error": "stat: path should be string, bytes, os.PathLike or integer, not NoneType",
+    "total_wall_s": 5.7
+  }
+}

@@ -79,14 +79,15 @@ model_name = "vectara/hallucination_evaluation_model"
 
 try:
     start_load = time.monotonic()
-    # HHEM-2.1-Open ships a custom HHEMv2Config via trust_remote_code that
-    # intercepts AutoTokenizer dispatch. The repository's tokenizer_config.json
-    # identifies DebertaV2Tokenizer, so we load it directly. The model itself
-    # still uses AutoModelForSequenceClassification + trust_remote_code=True.
+    # Phase 0B tried: tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
+    # That failed because the HHEM repo snapshot has no tokenizer vocab assets
+    # (verified in Task 1A). HHEM is built on microsoft/deberta-v3-base, so load
+    # the tokenizer from the base model. The HHEM model weights are still loaded
+    # from vectara/hallucination_evaluation_model with trust_remote_code=True.
     from transformers import DebertaV2Tokenizer, AutoModelForSequenceClassification
     import torch
 
-    tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
+    tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
     model = AutoModelForSequenceClassification.from_pretrained(model_name, trust_remote_code=True)
     model.eval()
 
