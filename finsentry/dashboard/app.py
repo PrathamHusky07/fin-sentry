@@ -6,10 +6,11 @@ and renders a single-page HTML report. Designed for the interview demo:
 it shows current-window quality metrics without requiring a frontend build.
 
 Routes:
-    GET /         -> HTML dashboard (latest window snapshot + backlog)
-    GET /metrics  -> JSON payload (same data, machine-readable)
-    GET /health   -> {"status": "ok"}
-    GET /backlog  -> JSON consumer lag report
+    GET /                  -> HTML dashboard (latest window snapshot + backlog)
+    GET /metrics           -> JSON payload (same data, machine-readable)
+    GET /metrics/frontier  -> JSON frontier-tier verdict/disagreement counts (last 15m)
+    GET /health            -> {"status": "ok"}
+    GET /backlog           -> JSON consumer lag report
 
 Environment variables:
     RISINGWAVE_HOST   (default: localhost)
@@ -122,6 +123,20 @@ async def _fetch_one(sql: str) -> dict[str, Any] | None:
         return None
 
 
+async def _fetch_all(sql: str) -> list[dict[str, Any]]:
+    if _pool is None:
+        return []
+    try:
+        async with _pool.connection() as conn:
+            async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                await cur.execute(sql)
+                rows: list[dict[str, Any]] = await cur.fetchall()
+                return rows
+    except Exception:
+        log.exception("Dashboard query failed: %s", sql[:80])
+        return []
+
+
 async def _fetch_metrics() -> dict[str, Any]:
     throughput = await _fetch_one(
         """
@@ -186,6 +201,37 @@ async def _fetch_metrics() -> dict[str, Any]:
     }
 
 
+_FRONTIER_WINDOW_MINUTES = 15
+
+
+async def _fetch_frontier_metrics() -> dict[str, Any]:
+    verdict_rows = await _fetch_all(
+        f"""
+        SELECT verdict, SUM(verdict_count) AS count
+        FROM mv_frontier_verdict_rate_1m
+        WHERE window_start >= NOW() - INTERVAL '{_FRONTIER_WINDOW_MINUTES} minutes'
+        GROUP BY verdict
+        """
+    )
+    disagreement_rows = await _fetch_all(
+        f"""
+        SELECT disagreement_classification, SUM(disagreement_count) AS count
+        FROM mv_frontier_disagreement_1m
+        WHERE window_start >= NOW() - INTERVAL '{_FRONTIER_WINDOW_MINUTES} minutes'
+        GROUP BY disagreement_classification
+        """
+    )
+
+    return {
+        "window_minutes": _FRONTIER_WINDOW_MINUTES,
+        "verdict_counts": {row["verdict"]: row["count"] for row in verdict_rows},
+        "disagreement_counts": {
+            row["disagreement_classification"]: row["count"] for row in disagreement_rows
+        },
+        "risingwave_connected": _pool is not None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -224,6 +270,12 @@ async def backlog() -> JSONResponse:
 @app.get("/metrics")
 async def metrics() -> JSONResponse:
     data = await _fetch_metrics()
+    return JSONResponse(content=_to_jsonable(data))
+
+
+@app.get("/metrics/frontier")
+async def frontier_metrics() -> JSONResponse:
+    data = await _fetch_frontier_metrics()
     return JSONResponse(content=_to_jsonable(data))
 
 
