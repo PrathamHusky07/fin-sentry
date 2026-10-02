@@ -1,5 +1,114 @@
 # Build Log
 
+## 2026-10-02 — d5a-m0-phase0b: measurement integrity + four independent gates
+
+Phase 0B fixed four instrumentation defects from Phase 0 and ran four independent empirical gates.
+M1 is deferred pending operator sign-off.
+
+### HHEM runtime compatibility (Task 1)
+
+Task 1A hypothesis: load tokenizer directly as `DebertaV2Tokenizer` to bypass the custom `HHEMv2Config`
+AutoTokenizer dispatch failure. Result: BLOCKED at the tokenizer step with a different error.
+
+Exact failure: `TypeError: stat: path should be string, bytes, os.PathLike or integer, not NoneType`
+from `tokenization_deberta_v2.py:103: if not os.path.isfile(vocab_file):` where `vocab_file is None`.
+
+Root cause: HHEM repo revision `8e4a2e6e96c708cc76c2344f7e4757df2515292c` has no tokenizer assets
+(tokenizer_config.json, spm.model, special_tokens_map.json — all in `.no_exist` cache). The repo
+contains only config.json, configuration_hhem_v2.py, model.safetensors, and modeling_hhem_v2.py.
+`DebertaV2Tokenizer` requires the SentencePiece vocab file, which is absent from this repo.
+
+The Phase 0 error (AutoTokenizer dispatch via HHEMv2Config) was a surface symptom. The underlying
+issue is that the HHEM repo was published without tokenizer assets. The tokenizer must be loaded
+from the underlying DeBERTa-v3 base model. Task 1C requires operator authorization before proceeding.
+
+HHEM runtime compatibility: BLOCKED. Sanity set: not run. Calibration: Day 6 concern, not Phase 0B.
+
+### Measurement integrity corrections (Task 2)
+
+Four defects corrected in both `scripts/measure_frontier_models.py` and
+`scripts/measure_hhem_isolated.py`:
+
+**2A — Swapouts corrected to counter-only.** `_capture_vm_stat` now separates `parsed_counters`
+(Swapouts as raw integer) from `parsed_pages` (page-count fields) and `parsed_mb` (page-count
+fields converted to MB). The Phase 0 `parsed_mb.swapouts = 2,116,758 MB` value was semantically
+wrong — Swapouts is a monotonic cumulative counter since boot, not a current memory snapshot.
+
+**2B — MPS baseline added.** All three worker scripts now record `mps_allocated_mb_baseline` and
+`mps_driver_allocated_mb_baseline` before any model load, giving a full MPS triple
+(baseline, after-load, after-warmup) per model.
+
+**2C — actual_device inspection.** After model load, each worker inspects `next(model.parameters()).device`
+and `model.hf_device_map`. Results are emitted as `requested_backend` (e.g. "bitsandbytes-4bit"),
+`actual_device` ("cpu", "mps", or "cuda"), `layers_on_cpu`, and `layers_on_mps`. Phase 0 reported
+`backend_used = "bitsandbytes-4bit"` based solely on the config constructor succeeding, not actual
+device placement.
+
+**2D — sampled_peak_rss renamed.** `peak_rss_mb` renamed to `sampled_peak_rss_mb` throughout.
+Module docstrings note: "Sampled at ~100ms cadence; spikes shorter than 100ms can be missed."
+
+**2E — Frontier models rerun.** With corrected instrumentation, Lynx and Prometheus now fail at
+the bitsandbytes step: `ValueError: Some modules are dispatched on the CPU or the disk. Make sure
+you have enough GPU RAM to fit the quantized model.` This is a bitsandbytes 0.50.2 regression from
+Phase 0. Phase 0 used an earlier bitsandbytes that allowed MPS dispatch without this guard. The
+measurement now correctly reports `requested_backend: "bitsandbytes-4bit"`, `actual_device: null`,
+`sampled_peak_rss_mb` (CPU-side RSS only). Previous Phase 0 JSON preserved at
+`docs/measurements/frontier-models-day5a-m0.previous.json`.
+
+**Known semantic quirks (document, not fixed in Phase 0B):**
+- Dashboard HTML escaping on error path.
+- Circuit breaker goes OPEN directly to CLOSED without HALF_OPEN state.
+- `verdicts_count` in `mv_relevance_1m` interpretation is ambiguous (counts judge calls, not unique queries).
+
+### Lynx + Prometheus simultaneous residency (Task 3)
+
+Result: NOT DEMONSTRATED. Root cause is the bitsandbytes 0.50.2 regression, not OOM.
+
+Both Lynx and Prometheus fail at backend initialization before reaching READY. The subprocess prints
+an ERROR JSON immediately (no SIGKILL, no OOM termination). The failure signal is:
+`bnb=Some modules are dispatched on the CPU or the disk... mlx=No module named 'mlx_lm'`
+
+This is distinct from an OOM failure. The kernel did not kill either subprocess. The bitsandbytes
+validate_environment guard rejects the load because device_map="auto" maps some layers to CPU with
+4-bit quantization. In Phase 0, an older bitsandbytes version allowed this. Now it raises.
+
+Hard gates: lynx_reached_ready=false, prometheus_reached_ready=false. No inference run.
+Supporting diagnostics (pages_free, compressor, swapouts, latency ratio): not captured
+(neither model reached the inference stage).
+System available at baseline: 3977 MB. No OOM kernel signal.
+Evidence file: `docs/measurements/frontier-residency-day5a-m0.json`.
+
+### Cold Ollama JSON verification (Task 4)
+
+4 of 5 queries returned HTTP 200 with valid JSON answer body. Query 5 returned HTTP 422
+(schema-enforcement block, empty answer field). Queries 6-8 (warm follow-up) returned HTTP 200.
+The `format:"json"` fix (d5a-m0-ollama commit) reduces but does not eliminate schema blocks.
+The failure is intermittent under warm-cache conditions, not systematic.
+
+Query 1 cold latency: 26.0s. Warm latency: 2.9-7.8s. Verdict: NOT STABLE (1/5 schema block).
+Evidence file: `docs/measurements/cold-ollama-json-day5a-m0.json`.
+Consumer was stopped during Task 4 per protocol.
+
+### Day 4B regression smoke (Task 5)
+
+CLEAN. `init_risingwave.py`: 14/14 OK. Dashboard HTTP 200. `mv_faithfulness_1m`: 2 rows (from
+Day 4B data). Consumer reconnected cleanly (generation 1). Consumer group started from latest
+offset (auto.offset.reset=latest behavior, not a regression).
+
+### Evidence summary (measured, not estimated)
+
+Memory values labeled "measured" below come from psutil RSS or torch.mps APIs run during this session.
+Values labeled "unknown" were not captured due to load failures.
+
+- HHEM sampled_peak_rss_mb (isolated venv, before model load fails): measured 331 MB
+- HHEM MPS baseline: measured 0.0 MB allocated, 0.4 MB driver
+- Lynx sampled_peak_rss_mb (main venv, before bnb guard): measured 652 MB
+- Prometheus sampled_peak_rss_mb (main venv, before bnb guard): measured 547 MB
+- Lynx actual GPU memory: unknown (model never loaded)
+- Prometheus actual GPU memory: unknown (model never loaded)
+
+---
+
 ## 2026-09-15 — Day 5A Milestone 0: view rename, Ollama JSON mode, p95 percentile, sampling audit, frontier memory measurement
 
 ### What shipped
