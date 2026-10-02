@@ -9,3 +9,6 @@ from typing import Final
 RAG_RESPONSES_TOPIC: Final[str] = "rag-responses"
 JUDGE_VERDICTS_TOPIC: Final[str] = "judge-verdicts"
 DEFAULT_CONSUMER_GROUP: Final[str] = "finsentry-rag-flash-judge"
+
+RAG_FRONTIER_VERDICTS_TOPIC: Final[str] = "rag-frontier-verdicts"
+DEFAULT_FRONTIER_CONSUMER_GROUP: Final[str] = "frontier-tier"

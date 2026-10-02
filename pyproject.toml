@@ -46,4 +46,5 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "slow: marks tests that download or load large models (deselect with -m 'not slow')",
+    "integration: marks tests that require live Docker infrastructure (Redpanda/RisingWave) — run explicitly with -m integration",
 ]
