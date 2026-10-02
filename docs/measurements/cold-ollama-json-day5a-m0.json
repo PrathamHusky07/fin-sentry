@@ -1,0 +1,60 @@
+{
+  "run_ts": "2026-10-02T17:35:00Z",
+  "method": "5 sequential POST /v1/rag/query with ticker=AAPL from cold Ollama state",
+  "ollama_version": "0.34.0",
+  "model": "llama3.1:8b",
+  "cold_state_confirmed": true,
+  "note": "format:json fix (d5a-m0-ollama commit) is in place. format:json constrains Ollama output at decode time. SchemaEnforcementRail stays in place as defense-in-depth.",
+  "queries": [
+    {
+      "query_number": 1,
+      "ollama_state": "cold",
+      "http_status": 200,
+      "latency_s": 26.039,
+      "answer_summary": "Apple's total net sales for fiscal year 2024 were $391,035 million.",
+      "schema_block": false
+    },
+    {
+      "query_number": 2,
+      "ollama_state": "warm",
+      "http_status": 200,
+      "latency_s": 7.834,
+      "answer_summary": "Apple's total net sales in fiscal year 2024 were $391,035 million",
+      "schema_block": false
+    },
+    {
+      "query_number": 3,
+      "ollama_state": "warm",
+      "http_status": 200,
+      "latency_s": 4.378,
+      "answer_summary": "The total net sales for 2024 was $391,035 million.",
+      "schema_block": false
+    },
+    {
+      "query_number": 4,
+      "ollama_state": "warm",
+      "http_status": 200,
+      "latency_s": 2.852,
+      "answer_summary": "Apple's total net sales in fiscal year 2024 were $391,035 million.",
+      "schema_block": false
+    },
+    {
+      "query_number": 5,
+      "ollama_state": "warm",
+      "http_status": 422,
+      "latency_s": 3.040,
+      "answer_summary": "",
+      "schema_block": true,
+      "failure_type": "schema-enforcement 422 — output_rail_block, answer field empty or malformed JSON from Ollama"
+    }
+  ],
+  "http_200_count": 4,
+  "http_422_count": 1,
+  "query_1_cold_latency_s": 26.039,
+  "acceptance_criteria_passed": false,
+  "verdict": "NOT STABLE",
+  "additional_runs": {
+    "queries_6_8": "HTTP 200 on all three warm follow-up queries (3.7s, 3.6s, 3.7s). The 422 is intermittent, not systematic.",
+    "interpretation": "format:json reduces but does not eliminate schema blocks under concurrent warm-cache conditions. 1 schema block in first 5 queries. Fix is incomplete per Phase 0B acceptance criteria."
+  }
+}

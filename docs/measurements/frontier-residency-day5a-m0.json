@@ -1,0 +1,60 @@
+{
+  "run_ts": "2026-10-02T17:23:16Z",
+  "machine": "Apple Silicon, 24 GB unified memory",
+  "simultaneous_residency": "NOT DEMONSTRATED",
+  "hard_gates": {
+    "lynx_reached_ready": false,
+    "prometheus_reached_ready": false,
+    "lynx_not_killed_by_signal": null,
+    "prometheus_not_killed_by_signal": null,
+    "lynx_infer_after_prometheus_loaded": false,
+    "prometheus_infer_after_both_loaded": false
+  },
+  "diagnostics": {
+    "swapouts_delta_boot_cumulative": null,
+    "lynx_warmup_latency_ms": null,
+    "lynx_second_infer_latency_ms": null,
+    "lynx_latency_ratio_2nd_vs_warmup": null,
+    "prometheus_warmup_latency_ms": null,
+    "prometheus_second_infer_latency_ms": null,
+    "prometheus_latency_ratio_2nd_vs_warmup": null
+  },
+  "hhem_stretch": null,
+  "steps": [
+    {
+      "step": "1_baseline",
+      "ts": "2026-10-02T17:23:12Z",
+      "vm_stat": {
+        "label": "baseline",
+        "page_size_bytes": 16384,
+        "parsed_pages": {
+          "pages_free": 3613,
+          "pages_active": 251009,
+          "pages_inactive": 246565,
+          "pages_wired_down": 254406,
+          "pages_occupied_by_compressor": 753856
+        },
+        "parsed_mb": {
+          "pages_free": 56.5,
+          "pages_active": 3922.0,
+          "pages_inactive": 3852.6,
+          "pages_wired_down": 3975.1,
+          "pages_occupied_by_compressor": 11779.0
+        },
+        "parsed_counters": {
+          "swapouts": 514002421
+        }
+      },
+      "mps": {
+        "mps_allocated_mb": 0.0,
+        "mps_driver_mb": 0.4
+      },
+      "system_available_mb": 3977.3
+    },
+    {
+      "step": "FATAL_ERROR",
+      "error": "Lynx reported ERROR: bnb=Some modules are dispatched on the CPU or the disk. Make sure you have enough GPU RAM to fit the quantized model. If you, mlx=No module named 'mlx_lm'"
+    }
+  ],
+  "notes": "pages_free near zero is NOT a failure signal on Apple Silicon. macOS drives free pages toward zero while using compression, inactive-page reclamation, and purgeable memory. Swapouts in parsed_counters is a monotonic cumulative counter since boot."
+}

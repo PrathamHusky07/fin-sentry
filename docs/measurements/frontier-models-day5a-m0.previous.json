@@ -1,0 +1,60 @@
+{
+  "run_ts": "2026-09-15T18:52:56Z",
+  "machine": "Apple Silicon, 24 GB unified memory",
+  "python_version": "3.13",
+  "transformers_version": "5.16.1",
+  "system_memory_before": {
+    "total_mb": 24576.0,
+    "available_mb": 3038.5,
+    "used_mb": 11560.0,
+    "percent": 87.6
+  },
+  "system_memory_after": {
+    "total_mb": 24576.0,
+    "available_mb": 4991.2,
+    "used_mb": 11564.3,
+    "percent": 79.7
+  },
+  "rss_note": "psutil.memory_info().rss measures CPU-side process RSS only. On Apple Silicon (unified memory), model weights are allocated via Metal/MPS and not reflected in psutil RSS. True in-memory footprint must be read from vm_stat wired pages or Activity Monitor GPU memory column during load.",
+  "models": [
+    {
+      "model": "HHEM-2.1-Open",
+      "hub_id": "vectara/hallucination_evaluation_model",
+      "backend": null,
+      "baseline_rss_mb": null,
+      "rss_after_load_mb": null,
+      "rss_after_warmup_mb": null,
+      "load_latency_s": null,
+      "inf_latency_s": null,
+      "warmup_score": null,
+      "error": "two separate failures: (1) AutoTokenizer.from_pretrained fails with ValueError: You need sentencepiece or tiktoken even though sentencepiece 0.2.2 is installed — the model custom code repo triggers a fast-tokenizer path that bypasses the installed package; (2) model class HHEMv2ForSequenceClassification raises AttributeError: no attribute 'all_tied_weights_keys' on transformers 5.16.1 (model was written for transformers 4.x API). Fix: pin transformers<5.0 in an isolated HHEM venv or wait for the model card to be updated.",
+      "total_wall_s": 8.0
+    },
+    {
+      "model": "Patronus-Lynx-8B",
+      "hub_id": "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct",
+      "backend": "bitsandbytes-4bit",
+      "baseline_rss_mb": 20.6,
+      "rss_after_load_mb": 268.8,
+      "rss_after_warmup_mb": 454.4,
+      "load_latency_s": 218.83,
+      "inf_latency_s": 12.9266,
+      "warmup_output_snippet": "You are a RAG evaluator. Given the context and the answer, determine faithfulnes",
+      "error": null,
+      "total_wall_s": 232.5
+    },
+    {
+      "model": "Prometheus-2-7B",
+      "hub_id": "prometheus-eval/prometheus-7b-v2.0",
+      "backend": "bitsandbytes-4bit",
+      "baseline_rss_mb": 20.5,
+      "rss_after_load_mb": 263.8,
+      "rss_after_warmup_mb": 409.8,
+      "load_latency_s": 170.97,
+      "inf_latency_s": 12.0927,
+      "warmup_output_snippet": "###Task Description:\nAn instruction, a response to evaluate, a reference answer,",
+      "error": null,
+      "total_wall_s": 183.7
+    }
+  ]
+}
