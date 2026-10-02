@@ -1,0 +1,85 @@
+{
+  "run_ts": "2026-10-02T21:00:00Z",
+  "method": "10 real POST /v1/rag/query against the live gateway, ticker=AAPL, with Docker infra, gateway, Flash consumer, and frontier consumer all running live. Gemini mode=vertex (real Vertex AI calls against the Google Cloud Free Trial project). HHEM disabled (FRONTIER_HHEM_ENABLED unset, defaults false, per the Task 2 decision in docs/measurements/hhem-main-venv-load-attempt-d5a-m1.json).",
+  "total_queries_issued": 10,
+  "gateway_http_status_counts": {
+    "200": 9,
+    "422": 1
+  },
+  "note_on_422": "Query 5 hit the schema-enforcement rail (not a frontier concern) -- consistent with Phase 0D's characterized Ollama semantic reliability (truncated_json / hallucinated_citation failure modes).",
+  "queries_sampled_into_frontier": 2,
+  "observed_sample_rate": 0.2,
+  "sample_rate_note": "2/10 is within normal binomial variance for p=0.1, n=10 (binomial(10, 0.1) has P(X>=2) ~ 0.26). Not a rate discrepancy; the deterministic-hash sampler was already validated at 10,000-UUID scale in tests/frontier/test_sampling.py (9-11%).",
+  "sampled_events": [
+    {
+      "app_trace_id": "7acf12b8-45ae-400e-a07c-0dae6ca2e6ce",
+      "gateway_event_ts": "2026-10-02T21:12:30.924999+00:00",
+      "frontier_verdict_ts": "2026-10-02T21:12:33.786762+00:00",
+      "end_to_end_latency_s": 2.861763,
+      "verdict": "frontier_degraded",
+      "disagreement_classification": "insufficient_judges",
+      "judge_results": [
+        {
+          "judge_id": "gemini-rubric",
+          "status": "success",
+          "faithfulness_score": 1.0,
+          "latency_ms": 2786,
+          "evidence": {
+            "cited_chunks_supporting": ["fecfcfbf665bb339"],
+            "cited_chunks_contradicting": []
+          }
+        }
+      ]
+    },
+    {
+      "app_trace_id": "2630a30d-4995-4c5c-bf58-efd0c1b04041",
+      "gateway_event_ts": "2026-10-02T21:14:09.718163+00:00",
+      "frontier_verdict_ts": "2026-10-02T21:14:12.038852+00:00",
+      "end_to_end_latency_s": 2.320689,
+      "verdict": "frontier_degraded",
+      "disagreement_classification": "insufficient_judges",
+      "judge_results": [
+        {
+          "judge_id": "gemini-rubric",
+          "status": "success",
+          "faithfulness_score": 1.0,
+          "latency_ms": 2294,
+          "evidence": {
+            "cited_chunks_supporting": ["fecfcfbf665bb339"],
+            "cited_chunks_contradicting": []
+          }
+        }
+      ]
+    }
+  ],
+  "per_judge_summary": {
+    "gemini-rubric": {
+      "calls": 2,
+      "successes": 2,
+      "success_rate": 1.0,
+      "latencies_ms": [2786, 2294],
+      "mean_latency_ms": 2540
+    },
+    "hhem-2.1-open": {
+      "calls": 0,
+      "note": "disabled this session; not constructed, not invoked"
+    }
+  },
+  "end_to_end_latency_distribution_s": {
+    "min": 2.320689,
+    "max": 2.861763,
+    "mean": 2.591226,
+    "n": 2,
+    "note": "End-to-end latency is dominated by the single Gemini call latency (2.29-2.79s of the 2.32-2.86s total) -- Kafka produce/consume plus RisingWave ingestion overhead is under a second combined."
+  },
+  "verdict_distribution": {
+    "frontier_degraded": 2
+  },
+  "disagreement_observations": "Both sampled events classified insufficient_judges (only one judge registered and succeeding, as expected with HHEM disabled this session). No multi-judge disagreement was observable in this run; the agreement/strong_disagreement paths are proven separately by tests/frontier/test_orchestrator.py (unit, stubbed judges) and tests/integration/test_frontier_consumer.py (real Redpanda, two stub judges) plus the manual two-event RisingWave verification in the Task 7 commit.",
+  "pipeline_stages_verified": {
+    "verdict_on_kafka_topic": "confirmed via rpk topic consume rag-frontier-verdicts",
+    "risingwave_views_have_rows": "confirmed via direct SQL join of rag_events and rag_frontier_verdicts on app_trace_id",
+    "dashboard_endpoint_returns_real_data": "confirmed via curl http://localhost:8081/metrics/frontier, restarted to pick up the Task 8 route"
+  },
+  "hhem_status_this_run": "disabled (Task 2 decision: transformers 5.x load incompatibility) -- Gemini-only verdicts appeared, correctly classified as frontier_degraded per the orchestrator's insufficient_judges rule, matching the M1 spec's explicit expectation for this case."
+}
