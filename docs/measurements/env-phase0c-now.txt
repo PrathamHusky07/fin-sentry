@@ -1,0 +1,207 @@
+=== python version ===
+Python 3.13.14
+=== pip freeze ===
+accelerate==1.14.0
+aiofiles==25.1.0
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
+aiohttp-retry==2.9.1
+aiokafka==0.14.0
+aiosignal==1.4.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+ast_serialize==0.11.0
+async-timeout==5.0.1
+attrs==26.1.0
+beautifulsoup4==4.15.0
+bitsandbytes==0.50.2
+blis==1.3.3
+catalogue==2.0.10
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+click==8.5.0
+cloudpathlib==0.25.0
+cloudpickle==3.1.2
+confection==1.3.3
+cryptography==48.0.1
+cymem==2.0.13
+dataclasses-json==0.6.7
+datasets==5.0.1
+dill==0.4.1
+distro==1.9.0
+edgartools==5.57.0
+en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
+fastapi==0.141.1
+fastembed==0.8.0
+filelock==3.32.6
+flatbuffers==25.12.19
+frozenlist==1.8.0
+fsspec==2026.6.0
+google-auth==2.58.0
+google-genai==2.22.0
+googleapis-common-protos==1.75.3
+grpcio==1.83.1
+h11==0.16.0
+hf-xet==1.6.0
+httpcore==1.0.9
+httpcore2==2.12.0
+httptools==0.8.0
+httpx==0.28.1
+httpx2==2.12.0
+httpxthrottlecache==0.6.1
+huggingface_hub==1.30.0
+humanize==4.16.0
+idna==3.19
+iniconfig==2.3.0
+Jinja2==3.1.6
+joblib==1.6.0
+jsonpatch==1.33
+jsonpointer==3.1.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+langchain-core==1.6.2
+langchain-protocol==0.0.19
+langchain-text-splitters==1.1.2
+langsmith==0.12.2
+lark==1.3.1
+librt==0.15.0
+loguru==0.7.3
+lxml==6.1.3
+markdown-it-py==4.2.0
+MarkupSafe==3.0.3
+marshmallow==3.26.2
+mdurl==0.1.2
+mmh3==5.3.0
+mpmath==1.3.0
+multidict==6.7.1
+multiprocess==0.70.19
+murmurhash==1.0.15
+mypy==2.3.1
+mypy_extensions==1.1.0
+narwhals==2.26.0
+nemoguardrails==0.24.0
+nest-asyncio==1.6.0
+networkx==3.6.1
+numpy==2.4.6
+onnxruntime==1.29.0
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-proto==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-semantic-conventions==0.65b0
+orjson==3.12.0
+packaging==26.3
+pandas==3.0.5
+pathspec==1.1.1
+pgvector==0.5.0
+phonenumbers==9.0.38
+pillow==12.3.0
+pluggy==1.6.0
+preshed==3.0.13
+presidio_analyzer==2.2.364
+presidio_anonymizer==2.2.364
+prompt_toolkit==3.0.53
+propcache==0.5.2
+protobuf==7.36.1
+psutil==7.2.2
+psycopg==3.3.5
+psycopg-binary==3.3.5
+psycopg-pool==3.3.1
+py_rust_stemmers==0.1.8
+pyarrow==25.0.1
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pycparser==3.0
+pydantic==2.13.5
+pydantic_core==2.46.5
+Pygments==2.21.0
+pyrate-limiter==4.5.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.3
+PyYAML==6.0.3
+rank-bm25==0.2.2
+RapidFuzz==3.14.6
+referencing==0.37.0
+regex==2026.9.3
+requests==2.34.2
+requests-file==3.0.1
+requests-toolbelt==1.0.0
+rich==15.0.0
+rpds-py==2026.6.3
+ruff==0.16.6
+safetensors==0.8.0
+scikit-learn==1.9.0
+scipy==1.18.1
+sentence-transformers==6.0.1
+sentencepiece==0.2.2
+setuptools==84.0.0
+shellingham==1.5.4
+simpleeval==1.0.7
+six==1.17.0
+smart_open==8.0.1
+sniffio==1.3.1
+soupsieve==2.9.2
+spacy==3.8.16
+spacy-legacy==3.0.12
+spacy-loggers==1.0.5
+srsly==2.5.3
+stamina==26.1.0
+starlette==1.6.0
+sympy==1.14.0
+tabulate==0.10.0
+tenacity==9.1.4
+textdistance==4.6.3
+thinc==8.3.13
+threadpoolctl==3.6.0
+tiktoken==0.14.0
+tldextract==5.3.2
+tokenizers==0.23.2
+torch==2.14.0
+tqdm==4.70.0
+transformers==5.16.1
+truststore==0.10.4
+typer==0.27.2
+types-PyYAML==6.0.12.20260906
+typing-inspect==0.9.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+Unidecode==1.4.0
+urllib3==2.7.0
+uuid_utils==0.17.1
+uvicorn==0.52.4
+uvloop==0.22.1
+wasabi==1.1.3
+watchfiles==1.2.0
+wcwidth==0.8.3
+weasel==1.0.0
+websockets==16.1.1
+wrapt==2.4.0
+xxhash==4.0.1
+yarl==1.24.5
+zstandard==0.25.0
+=== torch ===
+torch 2.14.0
+=== transformers ===
+transformers 5.16.1
+=== accelerate ===
+accelerate 1.14.0
+=== bitsandbytes ===
+bitsandbytes 0.50.2
+=== platform ===
+macOS-26.5.2-arm64-arm-64bit-Mach-O
+arm64
+=== git HEAD ===
+609090815c51be25e93c629367345dfa5d318f82
+=== git status ===
+ M docs/measurements/hhem-isolated-day5a-m0.json
+ M scripts/measure_frontier_models.py
+ M scripts/measure_hhem_isolated.py
+?? docs/measurements/env-phase0c-now.txt
+?? docs/measurements/hhem-isolated-day5a-m0.phase0b.json
