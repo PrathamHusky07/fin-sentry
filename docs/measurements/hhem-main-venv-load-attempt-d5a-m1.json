@@ -1,0 +1,9 @@
+{
+  "run_ts": "2026-10-02T20:42:35Z",
+  "environment": ".venv (main, transformers 5.16.1)",
+  "is_available": false,
+  "load_error": "'HHEMv2ForSequenceClassification' object has no attribute 'all_tied_weights_keys'",
+  "load_time_s": 6.17,
+  "decision": "HHEM_DISABLED_FOR_M1",
+  "decision_rationale": "trust_remote_code=True loading via AutoModelForSequenceClassification.from_pretrained fails in the main .venv (transformers 5.16.1) with the same all_tied_weights_keys AttributeError seen in the original Day 5A M0 Phase 0 run, now confirmed even via the correct loading path discovered in Phase 0D (model.predict(), no external tokenizer). This is a transformers 5.x internal API incompatibility with HHEM custom code, not a tokenizer pairing issue. Per Task 2 instructions, no attempt made to resolve transformers version compatibility in this session. Frontier tier proceeds with Gemini-only for M1; HHEMAdapter is wired but disabled via config."
+}
