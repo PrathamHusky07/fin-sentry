@@ -1,0 +1,206 @@
+{
+  "run_ts": "2026-10-02T19:53:30Z",
+  "machine": "Apple Silicon, 24 GB unified memory",
+  "python_version": "3.13",
+  "transformers_version": null,
+  "system_memory_before": {
+    "total_mb": 24576.0,
+    "available_mb": 4050.3,
+    "used_mb": 7915.6,
+    "percent": 83.5
+  },
+  "system_memory_after": {
+    "total_mb": 24576.0,
+    "available_mb": 4261.4,
+    "used_mb": 7639.2,
+    "percent": 82.7
+  },
+  "rss_note": "psutil.memory_info().rss measures CPU-side process RSS only. On Apple Silicon (unified memory), model weights are allocated via Metal/MPS and not reflected in psutil RSS. sampled_peak_rss_mb is the maximum RSS sampled at ~100ms intervals during load + warmup; spikes shorter than 100ms can be missed. MPS fields (mps_allocated_mb_*) reflect GPU-resident weight bytes via torch.mps.current_allocated_memory() and are the correct capacity planning signal on this machine. Swapouts in vm_stat parsed_counters is a monotonic cumulative counter since boot, not a current snapshot.",
+  "vm_stat_snapshots": [
+    {
+      "label": "before_first_model",
+      "page_size_bytes": 16384,
+      "raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     4227.\nPages active:                                 256329.\nPages inactive:                               254817.\nPages speculative:                               245.\nPages throttled:                                   0.\nPages wired down:                             250323.\nPages purgeable:                                   2.\n\"Translation faults\":                    25339184459.\nPages copy-on-write:                       435136661.\nPages zero filled:                        4518790061.\nPages reactivated:                        7874595358.\nPages purged:                              693316751.\nFile-backed pages:                            158959.\nAnonymous pages:                              352432.\nPages stored in compressor:                  6049743.\nPages occupied by compressor:                 746694.\nDecompressions:                          13715413643.\nCompressions:                            14219277205.\nPageins:                                   215507459.\nPageouts:                                    5884849.\nSwapins:                                   515008338.\nSwapouts:                                  532432156.\nPages tagged:                                 164318.\nPages tagged resident:                        126819.\nPages tagged compressed:                       37499.\nPages tag-storage:                             49152.\nPages tag-storage holding tags:                 5903.\nPages tag-storage free:                          235.\nPages tag-storage non-tag pageable:            42998.\nPages tag-storage non-tag wired:                  16.\nBytes of compressed tags:                    6327232.\nTagged compressions:                       177255004.\nTagged decompressions:                     174682097.\n",
+      "parsed_pages": {
+        "pages_free": 4227,
+        "pages_active": 256329,
+        "pages_inactive": 254817,
+        "pages_wired_down": 250323,
+        "pages_occupied_by_compressor": 746694
+      },
+      "parsed_mb": {
+        "pages_free": 66.0,
+        "pages_active": 4005.1,
+        "pages_inactive": 3981.5,
+        "pages_wired_down": 3911.3,
+        "pages_occupied_by_compressor": 11667.1
+      },
+      "parsed_counters": {
+        "swapouts": 532432156
+      }
+    },
+    {
+      "label": "after_hhem_2_1_open",
+      "page_size_bytes": 16384,
+      "raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    34133.\nPages active:                                 238726.\nPages inactive:                               248878.\nPages speculative:                              1419.\nPages throttled:                                   0.\nPages wired down:                             254986.\nPages purgeable:                                   2.\n\"Translation faults\":                    25339780454.\nPages copy-on-write:                       435144459.\nPages zero filled:                        4518888293.\nPages reactivated:                        7874760196.\nPages purged:                              693333776.\nFile-backed pages:                            173909.\nAnonymous pages:                              315114.\nPages stored in compressor:                  6084269.\nPages occupied by compressor:                 734035.\nDecompressions:                          13715728686.\nCompressions:                            14219633401.\nPageins:                                   215521201.\nPageouts:                                    5884955.\nSwapins:                                   515022798.\nSwapouts:                                  532472024.\nPages tagged:                                 165338.\nPages tagged resident:                        127040.\nPages tagged compressed:                       38298.\nPages tag-storage:                             49152.\nPages tag-storage holding tags:                 5968.\nPages tag-storage free:                          984.\nPages tag-storage non-tag pageable:            42184.\nPages tag-storage non-tag wired:                  16.\nBytes of compressed tags:                    6476224.\nTagged compressions:                       177260673.\nTagged decompressions:                     174686960.\n",
+      "parsed_pages": {
+        "pages_free": 34133,
+        "pages_active": 238726,
+        "pages_inactive": 248878,
+        "pages_wired_down": 254986,
+        "pages_occupied_by_compressor": 734035
+      },
+      "parsed_mb": {
+        "pages_free": 533.3,
+        "pages_active": 3730.1,
+        "pages_inactive": 3888.7,
+        "pages_wired_down": 3984.2,
+        "pages_occupied_by_compressor": 11469.3
+      },
+      "parsed_counters": {
+        "swapouts": 532472024
+      }
+    },
+    {
+      "label": "after_patronus_lynx_8b",
+      "page_size_bytes": 16384,
+      "raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    37212.\nPages active:                                 227883.\nPages inactive:                               241261.\nPages speculative:                              6103.\nPages throttled:                                   0.\nPages wired down:                             248838.\nPages purgeable:                                   2.\n\"Translation faults\":                    25339960933.\nPages copy-on-write:                       435149530.\nPages zero filled:                        4518957007.\nPages reactivated:                        7874815943.\nPages purged:                              693338221.\nFile-backed pages:                            179390.\nAnonymous pages:                              295857.\nPages stored in compressor:                  6107047.\nPages occupied by compressor:                 750752.\nDecompressions:                          13715785808.\nCompressions:                            14219715636.\nPageins:                                   215522152.\nPageouts:                                    5884985.\nSwapins:                                   515023266.\nSwapouts:                                  532472024.\nPages tagged:                                 165465.\nPages tagged resident:                        128700.\nPages tagged compressed:                       36765.\nPages tag-storage:                             49152.\nPages tag-storage holding tags:                 5962.\nPages tag-storage free:                          648.\nPages tag-storage non-tag pageable:            42526.\nPages tag-storage non-tag wired:                  16.\nBytes of compressed tags:                    6128000.\nTagged compressions:                       177261011.\nTagged decompressions:                     174688831.\n",
+      "parsed_pages": {
+        "pages_free": 37212,
+        "pages_active": 227883,
+        "pages_inactive": 241261,
+        "pages_wired_down": 248838,
+        "pages_occupied_by_compressor": 750752
+      },
+      "parsed_mb": {
+        "pages_free": 581.4,
+        "pages_active": 3560.7,
+        "pages_inactive": 3769.7,
+        "pages_wired_down": 3888.1,
+        "pages_occupied_by_compressor": 11730.5
+      },
+      "parsed_counters": {
+        "swapouts": 532472024
+      }
+    },
+    {
+      "label": "after_prometheus_2_7b",
+      "page_size_bytes": 16384,
+      "raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    32136.\nPages active:                                 241505.\nPages inactive:                               236292.\nPages speculative:                              4313.\nPages throttled:                                   0.\nPages wired down:                             247464.\nPages purgeable:                                  18.\n\"Translation faults\":                    25340061266.\nPages copy-on-write:                       435150718.\nPages zero filled:                        4519003555.\nPages reactivated:                        7874825320.\nPages purged:                              693338254.\nFile-backed pages:                            181806.\nAnonymous pages:                              300304.\nPages stored in compressor:                  6100870.\nPages occupied by compressor:                 750597.\nDecompressions:                          13715813972.\nCompressions:                            14219738330.\nPageins:                                   215522290.\nPageouts:                                    5884990.\nSwapins:                                   515023592.\nSwapouts:                                  532472024.\nPages tagged:                                 165470.\nPages tagged resident:                        128904.\nPages tagged compressed:                       36566.\nPages tag-storage:                             49152.\nPages tag-storage holding tags:                 5962.\nPages tag-storage free:                          847.\nPages tag-storage non-tag pageable:            42327.\nPages tag-storage non-tag wired:                  16.\nBytes of compressed tags:                    6078784.\nTagged compressions:                       177261024.\nTagged decompressions:                     174689041.\n",
+      "parsed_pages": {
+        "pages_free": 32136,
+        "pages_active": 241505,
+        "pages_inactive": 236292,
+        "pages_wired_down": 247464,
+        "pages_occupied_by_compressor": 750597
+      },
+      "parsed_mb": {
+        "pages_free": 502.1,
+        "pages_active": 3773.5,
+        "pages_inactive": 3692.1,
+        "pages_wired_down": 3866.6,
+        "pages_occupied_by_compressor": 11728.1
+      },
+      "parsed_counters": {
+        "swapouts": 532472024
+      }
+    },
+    {
+      "label": "after_all_models",
+      "page_size_bytes": 16384,
+      "raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    32073.\nPages active:                                 241504.\nPages inactive:                               236293.\nPages speculative:                              4313.\nPages throttled:                                   0.\nPages wired down:                             247464.\nPages purgeable:                                  18.\n\"Translation faults\":                    25340061727.\nPages copy-on-write:                       435150833.\nPages zero filled:                        4519003602.\nPages reactivated:                        7874825320.\nPages purged:                              693338254.\nFile-backed pages:                            181806.\nAnonymous pages:                              300304.\nPages stored in compressor:                  6100870.\nPages occupied by compressor:                 750597.\nDecompressions:                          13715813976.\nCompressions:                            14219738330.\nPageins:                                   215522291.\nPageouts:                                    5884990.\nSwapins:                                   515023592.\nSwapouts:                                  532472024.\nPages tagged:                                 165470.\nPages tagged resident:                        128904.\nPages tagged compressed:                       36566.\nPages tag-storage:                             49152.\nPages tag-storage holding tags:                 5962.\nPages tag-storage free:                          844.\nPages tag-storage non-tag pageable:            42330.\nPages tag-storage non-tag wired:                  16.\nBytes of compressed tags:                    6078784.\nTagged compressions:                       177261024.\nTagged decompressions:                     174689041.\n",
+      "parsed_pages": {
+        "pages_free": 32073,
+        "pages_active": 241504,
+        "pages_inactive": 236293,
+        "pages_wired_down": 247464,
+        "pages_occupied_by_compressor": 750597
+      },
+      "parsed_mb": {
+        "pages_free": 501.1,
+        "pages_active": 3773.5,
+        "pages_inactive": 3692.1,
+        "pages_wired_down": 3866.6,
+        "pages_occupied_by_compressor": 11728.1
+      },
+      "parsed_counters": {
+        "swapouts": 532472024
+      }
+    }
+  ],
+  "models": [
+    {
+      "model": "HHEM-2.1-Open",
+      "hub_id": "vectara/hallucination_evaluation_model",
+      "requested_backend": "transformers-deberta-v2",
+      "actual_device": null,
+      "hf_device_map": null,
+      "layers_on_cpu": null,
+      "layers_on_mps": null,
+      "baseline_rss_mb": 21.0,
+      "rss_after_load_mb": null,
+      "rss_after_warmup_mb": null,
+      "sampled_peak_rss_mb": 544.9,
+      "mps_allocated_mb_baseline": 0.0,
+      "mps_driver_allocated_mb_baseline": 0.4,
+      "mps_allocated_mb_after_load": null,
+      "mps_driver_allocated_mb_after_load": null,
+      "mps_allocated_mb_after_warmup": null,
+      "mps_driver_allocated_mb_after_warmup": null,
+      "load_latency_s": null,
+      "inf_latency_s": null,
+      "warmup_score": null,
+      "sanity_scores": null,
+      "error": "'HHEMv2ForSequenceClassification' object has no attribute 'all_tied_weights_keys'",
+      "total_wall_s": 9.3
+    },
+    {
+      "model": "Patronus-Lynx-8B",
+      "hub_id": "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct",
+      "requested_backend": null,
+      "actual_device": null,
+      "hf_device_map": null,
+      "layers_on_cpu": null,
+      "layers_on_mps": null,
+      "baseline_rss_mb": 21.1,
+      "rss_after_load_mb": null,
+      "rss_after_warmup_mb": null,
+      "sampled_peak_rss_mb": 662.7,
+      "mps_allocated_mb_baseline": 0.0,
+      "mps_driver_allocated_mb_baseline": 0.4,
+      "mps_allocated_mb_after_load": null,
+      "mps_driver_allocated_mb_after_load": null,
+      "mps_allocated_mb_after_warmup": null,
+      "mps_driver_allocated_mb_after_warmup": null,
+      "load_latency_s": null,
+      "inf_latency_s": null,
+      "warmup_output_snippet": null,
+      "error": "all backends failed: bnb=Some modules are dispatched on the CPU or the disk. Make sure you have enough GPU RAM to fit the quantized model. If you want to dispatch the model on the CPU or the disk while keeping these modules i, mlx=No module named 'mlx_lm', gguf=No module named 'llama_cpp'",
+      "total_wall_s": 6.0
+    },
+    {
+      "model": "Prometheus-2-7B",
+      "hub_id": "prometheus-eval/prometheus-7b-v2.0",
+      "requested_backend": null,
+      "actual_device": null,
+      "hf_device_map": null,
+      "layers_on_cpu": null,
+      "layers_on_mps": null,
+      "baseline_rss_mb": 21.1,
+      "rss_after_load_mb": null,
+      "rss_after_warmup_mb": null,
+      "sampled_peak_rss_mb": 542.7,
+      "mps_allocated_mb_baseline": 0.0,
+      "mps_driver_allocated_mb_baseline": 0.4,
+      "mps_allocated_mb_after_load": null,
+      "mps_driver_allocated_mb_after_load": null,
+      "mps_allocated_mb_after_warmup": null,
+      "mps_driver_allocated_mb_after_warmup": null,
+      "load_latency_s": null,
+      "inf_latency_s": null,
+      "warmup_output_snippet": null,
+      "error": "all backends failed: bnb=Some modules are dispatched on the CPU or the disk. Make sure you have enough GPU RAM to fit the quantized model. If you want to dispatch the model on the CPU or the disk while keeping these modules i, mlx=No module named 'mlx_lm'",
+      "total_wall_s": 5.6
+    }
+  ]
+}

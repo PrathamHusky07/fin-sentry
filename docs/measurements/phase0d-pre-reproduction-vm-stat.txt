@@ -1,0 +1,8 @@
+=== Baseline before Lynx reproduction ===
+Pages free:                                     4163.
+Pages active:                                 250302.
+Pages inactive:                               247996.
+Pages wired down:                             258129.
+Pages stored in compressor:                  6054158.
+Pages occupied by compressor:                 751652.
+available_mb=3956.5 percent_used=83.9
