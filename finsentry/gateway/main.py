@@ -786,8 +786,17 @@ async def _rag_query_inner(
             if schema_decision.outcome == "block":
                 # TODO(d5a-m1): remove or gate behind DEV_DIAGNOSTIC_LOGS=1 before M1.
                 # Raw model output should not be logged in any production code path.
+                # No log Formatter in this codebase renders `extra` fields into the
+                # output text (default uvicorn/logging formatters ignore them), so
+                # the diagnostic values are also placed directly in the message
+                # string to guarantee they show up in plain log output under grep.
                 log.warning(
-                    "schema_rail_block",
+                    "schema_rail_block reason=%s raw_response_length=%d "
+                    "raw_ollama_response_snippet=%r app_trace_id=%s",
+                    schema_decision.reason,
+                    len(raw_downstream_body),
+                    raw_downstream_body[:500],
+                    app_trace_id,
                     extra={
                         "rail": "schema-enforcement",
                         "reason": schema_decision.reason,
