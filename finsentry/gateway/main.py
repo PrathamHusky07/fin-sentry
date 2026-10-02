@@ -388,10 +388,16 @@ async def _call_downstream_rag(
     prompt_messages: list[dict[str, str]],
     downstream_url: str,
     breaker: AsyncCircuitBreaker,
+    raw_body_out: list[str] | None = None,
 ) -> str:
     """Call the downstream LLM with a 20-second total request budget and circuit breaker.
 
     Returns the assistant message content string.
+
+    If raw_body_out is given, the successful attempt's raw HTTP response text
+    (resp.text, before any JSON parsing or field extraction) is appended to it.
+    This lets callers inspect what the downstream actually sent even though
+    this function returns only the extracted content string.
 
     Raises:
         _DownstreamCircuitOpenError: breaker is OPEN; caller returns 503.
@@ -458,6 +464,8 @@ async def _call_downstream_rag(
             raise _RetryableError(resp.status_code)
 
         resp.raise_for_status()
+        if raw_body_out is not None:
+            raw_body_out.append(resp.text)
         data: dict[str, Any] = resp.json()
         return str(data["choices"][0]["message"]["content"])
 
@@ -711,9 +719,11 @@ async def _rag_query_inner(
 
     with _tracer.start_as_current_span("rag.downstream_llm"):
         try:
+            raw_body_holder: list[str] = []
             answer = await _call_downstream_rag(
-                prompt_messages, _DOWNSTREAM_URL, _rag_breaker  # type: ignore[arg-type]
+                prompt_messages, _DOWNSTREAM_URL, _rag_breaker, raw_body_holder  # type: ignore[arg-type]
             )
+            raw_downstream_body = raw_body_holder[-1] if raw_body_holder else answer
         except _DownstreamCircuitOpenError as exc:
             return JSONResponse(
                 {
@@ -781,8 +791,8 @@ async def _rag_query_inner(
                     extra={
                         "rail": "schema-enforcement",
                         "reason": schema_decision.reason,
-                        "raw_ollama_response_snippet": answer[:500],
-                        "raw_response_length": len(answer),
+                        "raw_ollama_response_snippet": raw_downstream_body[:500],
+                        "raw_response_length": len(raw_downstream_body),
                         "app_trace_id": app_trace_id,
                     },
                 )
