@@ -15,7 +15,10 @@ Usage:
 
 Output:
     stdout: JSON object with per-model measurements
-    stderr: human-readable summary table
+
+vm_stat notes:
+  - Swapouts is a monotonic cumulative counter since boot, not a current memory snapshot.
+  - sampled_peak_rss_mb is sampled at ~100ms cadence; spikes shorter than 100ms can be missed.
 
 Requires: psutil, transformers, torch. bitsandbytes or mlx-lm for 8B models.
 """
@@ -36,10 +39,23 @@ import psutil
 # ---------------------------------------------------------------------------
 
 def _capture_vm_stat(label: str) -> dict[str, Any]:
-    """Run /usr/bin/vm_stat and parse key page counts. macOS only."""
+    """Run /usr/bin/vm_stat and parse key page counts. macOS only.
+
+    Swapouts is a monotonic cumulative counter since boot, not a current memory snapshot.
+    Only page-count fields (pages_free, pages_active, pages_inactive, pages_wired_down,
+    pages_occupied_by_compressor) are converted to MB. Swapouts goes in parsed_counters
+    as a raw integer.
+    """
     vm_stat_path = "/usr/bin/vm_stat"
     if not os.path.exists(vm_stat_path):
-        return {"label": label, "error": "vm_stat not available", "raw": None, "parsed_pages": None, "parsed_mb": None}
+        return {
+            "label": label,
+            "error": "vm_stat not available",
+            "raw": None,
+            "parsed_pages": None,
+            "parsed_mb": None,
+            "parsed_counters": None,
+        }
     try:
         result = subprocess.run(
             [vm_stat_path],
@@ -49,7 +65,14 @@ def _capture_vm_stat(label: str) -> dict[str, Any]:
         )
         raw = result.stdout
     except Exception as exc:
-        return {"label": label, "error": str(exc), "raw": None, "parsed_pages": None, "parsed_mb": None}
+        return {
+            "label": label,
+            "error": str(exc),
+            "raw": None,
+            "parsed_pages": None,
+            "parsed_mb": None,
+            "parsed_counters": None,
+        }
 
     # Default Apple Silicon page size; overridden from header if present
     page_size = 16384
@@ -60,33 +83,47 @@ def _capture_vm_stat(label: str) -> dict[str, Any]:
             except (ValueError, IndexError):
                 pass
 
-    fields_to_extract = [
+    # Only page-count fields get MB conversion
+    page_fields = [
         ("Pages free:", "pages_free"),
         ("Pages active:", "pages_active"),
         ("Pages inactive:", "pages_inactive"),
         ("Pages wired down:", "pages_wired_down"),
         ("Pages occupied by compressor:", "pages_occupied_by_compressor"),
+    ]
+    # Swapouts is a cumulative counter since boot; no MB conversion
+    counter_fields = [
         ("Swapouts:", "swapouts"),
     ]
-    parsed: dict[str, int] = {}
+
+    parsed_pages: dict[str, int] = {}
+    parsed_counters: dict[str, int] = {}
     for line in raw.splitlines():
         stripped = line.strip()
-        for key, field in fields_to_extract:
+        for key, field in page_fields:
             if stripped.startswith(key):
                 try:
                     val = int(stripped.split(":")[1].strip().rstrip("."))
-                    parsed[field] = val
+                    parsed_pages[field] = val
+                except (ValueError, IndexError):
+                    pass
+        for key, field in counter_fields:
+            if stripped.startswith(key):
+                try:
+                    val = int(stripped.split(":")[1].strip().rstrip("."))
+                    parsed_counters[field] = val
                 except (ValueError, IndexError):
                     pass
 
-    parsed_mb: dict[str, float] = {k: round(v * page_size / 1024**2, 1) for k, v in parsed.items()}
+    parsed_mb: dict[str, float] = {k: round(v * page_size / 1024**2, 1) for k, v in parsed_pages.items()}
 
     return {
         "label": label,
         "page_size_bytes": page_size,
         "raw": raw,
-        "parsed_pages": parsed,
+        "parsed_pages": parsed_pages,
         "parsed_mb": parsed_mb,
+        "parsed_counters": parsed_counters,
     }
 
 
@@ -94,8 +131,8 @@ def _capture_vm_stat(label: str) -> dict[str, Any]:
 # Per-model subprocess worker scripts
 # These run inside isolated python processes so RSS is measured cleanly.
 # Each worker emits a single JSON object to stdout.
-# New fields vs. original: peak_rss_mb, mps_allocated_mb_after_load,
-#   mps_allocated_mb_after_warmup, mps_driver_allocated_mb_after_warmup.
+# Fields: sampled_peak_rss_mb, mps_allocated_mb_{baseline,after_load,after_warmup},
+#   requested_backend, actual_device, hf_device_map, layers_on_cpu, layers_on_mps.
 # ---------------------------------------------------------------------------
 
 _HHEM_WORKER = """
@@ -129,20 +166,53 @@ try:
 except Exception:
     pass
 
+# MPS baseline before any model load
+mps_alloc_baseline = None
+mps_driver_baseline = None
+if _mps_available:
+    try:
+        mps_alloc_baseline = round(torch.mps.current_allocated_memory() / 1024**2, 1)
+        mps_driver_baseline = round(torch.mps.driver_allocated_memory() / 1024**2, 1)
+    except Exception:
+        pass
+
 model_name = "vectara/hallucination_evaluation_model"
 
 try:
     start_load = time.monotonic()
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+    # HHEM-2.1-Open ships a custom HHEMv2Config via trust_remote_code that
+    # intercepts AutoTokenizer dispatch. The repository's tokenizer_config.json
+    # identifies DebertaV2Tokenizer, so we load it directly. The model itself
+    # still uses AutoModelForSequenceClassification + trust_remote_code=True.
+    from transformers import DebertaV2Tokenizer, AutoModelForSequenceClassification
     import torch
 
-    # use_fast=False: HHEM uses DeBERTa-v3 tokenizer which needs the slow SentencePiece path
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, use_fast=False)
+    tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(model_name, trust_remote_code=True)
     model.eval()
 
     load_latency_s = time.monotonic() - start_load
     rss_after_load = proc.memory_info().rss
+
+    # Inspect actual device placement (distinct from requested backend)
+    try:
+        first_param_device = str(next(model.parameters()).device)
+    except StopIteration:
+        first_param_device = "unknown"
+    hf_device_map = getattr(model, "hf_device_map", None)
+    if first_param_device.startswith("mps"):
+        actual_device = "mps"
+    elif first_param_device.startswith("cuda"):
+        actual_device = "cuda"
+    elif first_param_device.startswith("cpu"):
+        actual_device = "cpu"
+    else:
+        actual_device = first_param_device
+    layers_on_cpu = None
+    layers_on_mps = None
+    if hf_device_map:
+        layers_on_cpu = sum(1 for v in hf_device_map.values() if str(v) == "cpu")
+        layers_on_mps = sum(1 for v in hf_device_map.values() if str(v).startswith("mps"))
 
     _mps_alloc_after_load = None
     _mps_driver_after_load = None
@@ -153,13 +223,28 @@ try:
         except Exception:
             pass
 
-    pairs = [["The capital of France is Paris.", "France's capital is Paris."]]
+    # Warmup with a single consistent pair
+    warmup_pairs = [["The capital of France is Paris.", "France's capital is Paris."]]
     start_inf = time.monotonic()
     with torch.no_grad():
-        inputs = tokenizer.batch_encode_plus(pairs, return_tensors="pt", truncation=True, max_length=512)
+        inputs = tokenizer.batch_encode_plus(warmup_pairs, return_tensors="pt", truncation=True, max_length=512)
         logits = model(**inputs).logits.squeeze(dim=1)
-        score = torch.sigmoid(logits).item()
+        warmup_score = torch.sigmoid(logits).item()
     inf_latency_s = time.monotonic() - start_inf
+
+    # Three-pair sanity set: consistent / contradictory / unrelated
+    sanity_pairs = [
+        ["The capital of France is Paris. It has been the capital since the 10th century.", "Paris is the capital of France."],
+        ["The capital of France is Paris.", "The capital of France is Berlin."],
+        ["The capital of France is Paris.", "The company released a new laptop in June."],
+    ]
+    sanity_labels = ["consistent", "contradictory", "unrelated"]
+    sanity_scores = {}
+    with torch.no_grad():
+        for label, pair in zip(sanity_labels, sanity_pairs):
+            inp = tokenizer.batch_encode_plus([pair], return_tensors="pt", truncation=True, max_length=512)
+            lg = model(**inp).logits.squeeze(dim=1)
+            sanity_scores[label] = round(torch.sigmoid(lg).item(), 4)
 
     warmup_rss = proc.memory_info().rss
     _stop_sampler.set()
@@ -178,17 +263,25 @@ try:
     result = {
         "model": "HHEM-2.1-Open",
         "hub_id": model_name,
-        "backend": "transformers",
+        "requested_backend": "transformers-deberta-v2",
+        "actual_device": actual_device,
+        "hf_device_map": hf_device_map,
+        "layers_on_cpu": layers_on_cpu,
+        "layers_on_mps": layers_on_mps,
         "baseline_rss_mb": round(baseline_rss / 1024**2, 1),
         "rss_after_load_mb": round(rss_after_load / 1024**2, 1),
         "rss_after_warmup_mb": round(warmup_rss / 1024**2, 1),
-        "peak_rss_mb": round(peak_rss / 1024**2, 1),
+        "sampled_peak_rss_mb": round(peak_rss / 1024**2, 1),
+        "mps_allocated_mb_baseline": mps_alloc_baseline,
+        "mps_driver_allocated_mb_baseline": mps_driver_baseline,
         "mps_allocated_mb_after_load": _mps_alloc_after_load,
+        "mps_driver_allocated_mb_after_load": _mps_driver_after_load,
         "mps_allocated_mb_after_warmup": _mps_alloc_after_warmup,
         "mps_driver_allocated_mb_after_warmup": _mps_driver_after_warmup,
         "load_latency_s": round(load_latency_s, 2),
         "inf_latency_s": round(inf_latency_s, 4),
-        "warmup_score": round(score, 4),
+        "warmup_score": round(warmup_score, 4),
+        "sanity_scores": sanity_scores,
         "error": None,
     }
 except Exception as exc:
@@ -198,17 +291,25 @@ except Exception as exc:
     result = {
         "model": "HHEM-2.1-Open",
         "hub_id": model_name,
-        "backend": None,
+        "requested_backend": "transformers-deberta-v2",
+        "actual_device": None,
+        "hf_device_map": None,
+        "layers_on_cpu": None,
+        "layers_on_mps": None,
         "baseline_rss_mb": round(baseline_rss / 1024**2, 1),
         "rss_after_load_mb": None,
         "rss_after_warmup_mb": None,
-        "peak_rss_mb": round(peak_rss / 1024**2, 1),
+        "sampled_peak_rss_mb": round(peak_rss / 1024**2, 1),
+        "mps_allocated_mb_baseline": mps_alloc_baseline,
+        "mps_driver_allocated_mb_baseline": mps_driver_baseline,
         "mps_allocated_mb_after_load": None,
+        "mps_driver_allocated_mb_after_load": None,
         "mps_allocated_mb_after_warmup": None,
         "mps_driver_allocated_mb_after_warmup": None,
         "load_latency_s": None,
         "inf_latency_s": None,
         "warmup_score": None,
+        "sanity_scores": None,
         "error": str(exc),
     }
 
@@ -246,10 +347,21 @@ try:
 except Exception:
     pass
 
+# MPS baseline before any model load
+mps_alloc_baseline = None
+mps_driver_baseline = None
+if _mps_available:
+    try:
+        mps_alloc_baseline = round(torch.mps.current_allocated_memory() / 1024**2, 1)
+        mps_driver_baseline = round(torch.mps.driver_allocated_memory() / 1024**2, 1)
+    except Exception:
+        pass
+
 start_load = time.monotonic()
 
 model_name = "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct"
-backend_used = None
+requested_backend = None
+actual_device = None
 model = None
 tokenizer = None
 
@@ -262,13 +374,13 @@ try:
     model = AutoModelForCausalLM.from_pretrained(
         model_name, quantization_config=bnb_config, device_map="auto"
     )
-    backend_used = "bitsandbytes-4bit"
+    requested_backend = "bitsandbytes-4bit"
 except Exception as bnb_exc:
     bnb_error = str(bnb_exc)[:200]
     try:
         import mlx_lm
         model, tokenizer = mlx_lm.load(model_name)
-        backend_used = "mlx-lm"
+        requested_backend = "mlx-lm"
     except Exception as mlx_exc:
         try:
             from llama_cpp import Llama
@@ -277,7 +389,7 @@ except Exception as bnb_exc:
             gguf_path = hf_hub_download(repo_id=gguf_repo, filename="Patronus-Lynx-8B-Instruct-Q4_K_M.gguf")
             model = Llama(model_path=gguf_path, n_ctx=2048, verbose=False)
             tokenizer = None
-            backend_used = "llama-cpp-gguf"
+            requested_backend = "llama-cpp-gguf"
         except Exception as gguf_exc:
             _stop_sampler.set()
             _sampler_thread.join(timeout=1.0)
@@ -285,17 +397,24 @@ except Exception as bnb_exc:
             result = {
                 "model": "Patronus-Lynx-8B",
                 "hub_id": model_name,
-                "backend": None,
+                "requested_backend": None,
+                "actual_device": None,
+                "hf_device_map": None,
+                "layers_on_cpu": None,
+                "layers_on_mps": None,
                 "baseline_rss_mb": round(baseline_rss / 1024**2, 1),
                 "rss_after_load_mb": None,
                 "rss_after_warmup_mb": None,
-                "peak_rss_mb": round(peak_rss / 1024**2, 1),
+                "sampled_peak_rss_mb": round(peak_rss / 1024**2, 1),
+                "mps_allocated_mb_baseline": mps_alloc_baseline,
+                "mps_driver_allocated_mb_baseline": mps_driver_baseline,
                 "mps_allocated_mb_after_load": None,
+                "mps_driver_allocated_mb_after_load": None,
                 "mps_allocated_mb_after_warmup": None,
                 "mps_driver_allocated_mb_after_warmup": None,
                 "load_latency_s": None,
                 "inf_latency_s": None,
-                "warmup_score": None,
+                "warmup_output_snippet": None,
                 "error": f"all backends failed: bnb={bnb_error}, mlx={str(mlx_exc)[:100]}, gguf={str(gguf_exc)[:100]}",
             }
             json.dump(result, sys.stdout)
@@ -303,6 +422,26 @@ except Exception as bnb_exc:
 
 load_latency_s = time.monotonic() - start_load
 rss_after_load = proc.memory_info().rss
+
+# Inspect actual device placement (distinct from requested backend)
+try:
+    first_param_device = str(next(model.parameters()).device) if hasattr(model, "parameters") else "unknown"
+except StopIteration:
+    first_param_device = "unknown"
+hf_device_map = getattr(model, "hf_device_map", None)
+if first_param_device.startswith("mps"):
+    actual_device = "mps"
+elif first_param_device.startswith("cuda"):
+    actual_device = "cuda"
+elif first_param_device.startswith("cpu"):
+    actual_device = "cpu"
+else:
+    actual_device = first_param_device
+layers_on_cpu = None
+layers_on_mps = None
+if hf_device_map:
+    layers_on_cpu = sum(1 for v in hf_device_map.values() if str(v) == "cpu")
+    layers_on_mps = sum(1 for v in hf_device_map.values() if str(v).startswith("mps"))
 
 _mps_alloc_after_load = None
 _mps_driver_after_load = None
@@ -324,11 +463,11 @@ prompt = (
 
 start_inf = time.monotonic()
 try:
-    if backend_used == "mlx-lm":
+    if requested_backend == "mlx-lm":
         import mlx_lm
         output = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=50, verbose=False)
         generated = str(output)
-    elif backend_used == "llama-cpp-gguf":
+    elif requested_backend == "llama-cpp-gguf":
         output = model(prompt, max_tokens=50, stop=["\\n\\n"])
         generated = output["choices"][0]["text"]
     else:
@@ -359,12 +498,19 @@ if _mps_available:
 result = {
     "model": "Patronus-Lynx-8B",
     "hub_id": model_name,
-    "backend": backend_used,
+    "requested_backend": requested_backend,
+    "actual_device": actual_device,
+    "hf_device_map": hf_device_map,
+    "layers_on_cpu": layers_on_cpu,
+    "layers_on_mps": layers_on_mps,
     "baseline_rss_mb": round(baseline_rss / 1024**2, 1),
     "rss_after_load_mb": round(rss_after_load / 1024**2, 1),
     "rss_after_warmup_mb": round(warmup_rss / 1024**2, 1),
-    "peak_rss_mb": round(peak_rss / 1024**2, 1),
+    "sampled_peak_rss_mb": round(peak_rss / 1024**2, 1),
+    "mps_allocated_mb_baseline": mps_alloc_baseline,
+    "mps_driver_allocated_mb_baseline": mps_driver_baseline,
     "mps_allocated_mb_after_load": _mps_alloc_after_load,
+    "mps_driver_allocated_mb_after_load": _mps_driver_after_load,
     "mps_allocated_mb_after_warmup": _mps_alloc_after_warmup,
     "mps_driver_allocated_mb_after_warmup": _mps_driver_after_warmup,
     "load_latency_s": round(load_latency_s, 2),
@@ -406,10 +552,21 @@ try:
 except Exception:
     pass
 
+# MPS baseline before any model load
+mps_alloc_baseline = None
+mps_driver_baseline = None
+if _mps_available:
+    try:
+        mps_alloc_baseline = round(torch.mps.current_allocated_memory() / 1024**2, 1)
+        mps_driver_baseline = round(torch.mps.driver_allocated_memory() / 1024**2, 1)
+    except Exception:
+        pass
+
 start_load = time.monotonic()
 
 model_name = "prometheus-eval/prometheus-7b-v2.0"
-backend_used = None
+requested_backend = None
+actual_device = None
 model = None
 tokenizer = None
 
@@ -422,13 +579,13 @@ try:
     model = AutoModelForCausalLM.from_pretrained(
         model_name, quantization_config=bnb_config, device_map="auto"
     )
-    backend_used = "bitsandbytes-4bit"
+    requested_backend = "bitsandbytes-4bit"
 except Exception as bnb_exc:
     bnb_error = str(bnb_exc)[:200]
     try:
         import mlx_lm
         model, tokenizer = mlx_lm.load(model_name)
-        backend_used = "mlx-lm"
+        requested_backend = "mlx-lm"
     except Exception as mlx_exc:
         _stop_sampler.set()
         _sampler_thread.join(timeout=1.0)
@@ -436,17 +593,24 @@ except Exception as bnb_exc:
         result = {
             "model": "Prometheus-2-7B",
             "hub_id": model_name,
-            "backend": None,
+            "requested_backend": None,
+            "actual_device": None,
+            "hf_device_map": None,
+            "layers_on_cpu": None,
+            "layers_on_mps": None,
             "baseline_rss_mb": round(baseline_rss / 1024**2, 1),
             "rss_after_load_mb": None,
             "rss_after_warmup_mb": None,
-            "peak_rss_mb": round(peak_rss / 1024**2, 1),
+            "sampled_peak_rss_mb": round(peak_rss / 1024**2, 1),
+            "mps_allocated_mb_baseline": mps_alloc_baseline,
+            "mps_driver_allocated_mb_baseline": mps_driver_baseline,
             "mps_allocated_mb_after_load": None,
+            "mps_driver_allocated_mb_after_load": None,
             "mps_allocated_mb_after_warmup": None,
             "mps_driver_allocated_mb_after_warmup": None,
             "load_latency_s": None,
             "inf_latency_s": None,
-            "warmup_score": None,
+            "warmup_output_snippet": None,
             "error": f"all backends failed: bnb={bnb_error}, mlx={str(mlx_exc)[:100]}",
         }
         json.dump(result, sys.stdout)
@@ -454,6 +618,26 @@ except Exception as bnb_exc:
 
 load_latency_s = time.monotonic() - start_load
 rss_after_load = proc.memory_info().rss
+
+# Inspect actual device placement (distinct from requested backend)
+try:
+    first_param_device = str(next(model.parameters()).device) if hasattr(model, "parameters") else "unknown"
+except StopIteration:
+    first_param_device = "unknown"
+hf_device_map = getattr(model, "hf_device_map", None)
+if first_param_device.startswith("mps"):
+    actual_device = "mps"
+elif first_param_device.startswith("cuda"):
+    actual_device = "cuda"
+elif first_param_device.startswith("cpu"):
+    actual_device = "cpu"
+else:
+    actual_device = first_param_device
+layers_on_cpu = None
+layers_on_mps = None
+if hf_device_map:
+    layers_on_cpu = sum(1 for v in hf_device_map.values() if str(v) == "cpu")
+    layers_on_mps = sum(1 for v in hf_device_map.values() if str(v).startswith("mps"))
 
 _mps_alloc_after_load = None
 _mps_driver_after_load = None
@@ -479,7 +663,7 @@ prompt = (
 
 start_inf = time.monotonic()
 try:
-    if backend_used == "mlx-lm":
+    if requested_backend == "mlx-lm":
         import mlx_lm
         output = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=50, verbose=False)
         generated = str(output)
@@ -511,12 +695,19 @@ if _mps_available:
 result = {
     "model": "Prometheus-2-7B",
     "hub_id": model_name,
-    "backend": backend_used,
+    "requested_backend": requested_backend,
+    "actual_device": actual_device,
+    "hf_device_map": hf_device_map,
+    "layers_on_cpu": layers_on_cpu,
+    "layers_on_mps": layers_on_mps,
     "baseline_rss_mb": round(baseline_rss / 1024**2, 1),
     "rss_after_load_mb": round(rss_after_load / 1024**2, 1),
     "rss_after_warmup_mb": round(warmup_rss / 1024**2, 1),
-    "peak_rss_mb": round(peak_rss / 1024**2, 1),
+    "sampled_peak_rss_mb": round(peak_rss / 1024**2, 1),
+    "mps_allocated_mb_baseline": mps_alloc_baseline,
+    "mps_driver_allocated_mb_baseline": mps_driver_baseline,
     "mps_allocated_mb_after_load": _mps_alloc_after_load,
+    "mps_driver_allocated_mb_after_load": _mps_driver_after_load,
     "mps_allocated_mb_after_warmup": _mps_alloc_after_warmup,
     "mps_driver_allocated_mb_after_warmup": _mps_driver_after_warmup,
     "load_latency_s": round(load_latency_s, 2),
@@ -567,7 +758,8 @@ def _run_model_worker(worker_script: str, python: str) -> dict[str, Any]:
         return {
             "model": "unknown",
             "error": f"subprocess exit {result.returncode} with no stdout",
-            "backend": None,
+            "requested_backend": None,
+            "actual_device": None,
         }
 
     try:
@@ -576,7 +768,8 @@ def _run_model_worker(worker_script: str, python: str) -> dict[str, Any]:
         return {
             "model": "unknown",
             "error": f"JSON parse failed: {exc}; stdout={result.stdout[:200]!r}",
-            "backend": None,
+            "requested_backend": None,
+            "actual_device": None,
         }
 
 
@@ -623,7 +816,7 @@ def main() -> None:
                 "likely to exhaust memory. Previous model may not have been released."
             )
             print(msg, file=sys.stderr)
-            results.append({"model": name, "error": msg, "backend": None})
+            results.append({"model": name, "error": msg, "requested_backend": None, "actual_device": None})
             break
 
         t0 = time.monotonic()
@@ -642,12 +835,14 @@ def main() -> None:
                 f"  baseline_rss={result.get('baseline_rss_mb')} MB  "
                 f"after_load={result.get('rss_after_load_mb')} MB  "
                 f"after_warmup={result.get('rss_after_warmup_mb')} MB  "
-                f"peak_rss={result.get('peak_rss_mb')} MB  "
+                f"sampled_peak={result.get('sampled_peak_rss_mb')} MB  "
+                f"mps_baseline={result.get('mps_allocated_mb_baseline')} MB  "
                 f"mps_load={result.get('mps_allocated_mb_after_load')} MB  "
                 f"mps_warmup={result.get('mps_allocated_mb_after_warmup')} MB  "
+                f"requested_backend={result.get('requested_backend')}  "
+                f"actual_device={result.get('actual_device')}  "
                 f"load={result.get('load_latency_s')}s  "
-                f"inf={result.get('inf_latency_s')}s  "
-                f"backend={result.get('backend')}",
+                f"inf={result.get('inf_latency_s')}s",
                 file=sys.stderr,
             )
         print("", file=sys.stderr)
@@ -666,10 +861,12 @@ def main() -> None:
         "rss_note": (
             "psutil.memory_info().rss measures CPU-side process RSS only. "
             "On Apple Silicon (unified memory), model weights are allocated via Metal/MPS "
-            "and not reflected in psutil RSS. peak_rss_mb is the maximum RSS sampled at 100ms "
-            "intervals during load + warmup. MPS fields (mps_allocated_mb_*) reflect GPU-resident "
-            "weight bytes via torch.mps.current_allocated_memory() and are the correct capacity "
-            "planning signal on this machine."
+            "and not reflected in psutil RSS. sampled_peak_rss_mb is the maximum RSS sampled "
+            "at ~100ms intervals during load + warmup; spikes shorter than 100ms can be missed. "
+            "MPS fields (mps_allocated_mb_*) reflect GPU-resident weight bytes via "
+            "torch.mps.current_allocated_memory() and are the correct capacity planning signal "
+            "on this machine. Swapouts in vm_stat parsed_counters is a monotonic cumulative "
+            "counter since boot, not a current snapshot."
         ),
         "vm_stat_snapshots": vm_stat_snapshots,
         "models": results,
@@ -678,17 +875,18 @@ def main() -> None:
     # Summary table to stderr
     print("=== Summary ===", file=sys.stderr)
     print(
-        f"{'Model':<22} {'backend':<20} {'baseline':>10} {'peak_rss':>10} {'mps_load':>10} "
-        f"{'load_s':>8} {'inf_s':>8} {'error':<40}",
+        f"{'Model':<22} {'req_backend':<20} {'act_device':<12} {'baseline':>10} "
+        f"{'peak_rss':>10} {'mps_load':>10} {'load_s':>8} {'inf_s':>8} {'error':<40}",
         file=sys.stderr,
     )
-    print("-" * 130, file=sys.stderr)
+    print("-" * 140, file=sys.stderr)
     for r in results:
         print(
             f"{r.get('model','?'):<22} "
-            f"{str(r.get('backend','?')):<20} "
+            f"{str(r.get('requested_backend','?')):<20} "
+            f"{str(r.get('actual_device','?')):<12} "
             f"{str(r.get('baseline_rss_mb','?'))+' MB':>10} "
-            f"{str(r.get('peak_rss_mb','?'))+' MB':>10} "
+            f"{str(r.get('sampled_peak_rss_mb','?'))+' MB':>10} "
             f"{str(r.get('mps_allocated_mb_after_load','?'))+' MB':>10} "
             f"{str(r.get('load_latency_s','?')):>8} "
             f"{str(r.get('inf_latency_s','?')):>8} "
