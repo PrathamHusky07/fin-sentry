@@ -1,5 +1,164 @@
 # Build Log
 
+## 2026-10-02 — d5a-m1: frontier evaluation plane infrastructure
+
+Day 5 Milestone 1. Phase 0D closed the foundation diagnostics; this session
+built the frontier tier as a backend-agnostic evaluation plane, proven
+end-to-end against live infrastructure. M2 (FaithJudge peer-example
+retrieval) is next.
+
+### Corrections to the M1 brief before building (surfaced, operator confirmed)
+
+The task brief referenced `RagEvaluationEvent` in `finsentry/schemas/*.py` on
+topic `rag.evaluation.event.v1`. Neither exists — the real event is
+`RagResponseEvent` in `finsentry/events/schema.py` on topic `rag-responses`.
+Built against the real names. Two decisions needed an explicit call before
+writing code:
+
+- **Topic naming**: the new verdict topic is `rag-frontier-verdicts`, matching
+  the existing hyphenated, unversioned convention (`rag-responses`,
+  `judge-verdicts`), not the brief's dotted/versioned `rag.frontier.verdict.v1`.
+- **Budget guard**: FlashJudge creates a fresh, ephemeral `CostBudget()` per
+  event — there is no existing shared counter to tie the frontier tier into,
+  and building one would require modifying `flash_judge.py` (forbidden —
+  Flash tier stays read-only). The frontier tier instead gets its own
+  `CostBudget` instance, reusing the same class and pricing constants from
+  `cost_governance.py`, instantiated once and persisted for the life of the
+  frontier consumer process.
+
+### Architecture (Task 1 — `finsentry/frontier/types.py`, `protocol.py`)
+
+Dataclasses, not Pydantic — the frontier plane reads `RagResponseEvent` and
+`JudgeVerdictEvent` without extending either. Literal-typed fields
+(`JudgeResult.status`, `FrontierVerdictEvent.verdict` /
+`.disagreement_classification`) are validated in `__post_init__` since plain
+dataclasses don't enforce `Literal` at runtime — callers get a `ValueError` at
+construction, not a bad value three hops downstream in a materialized view.
+`FrontierJudge` is a `runtime_checkable` `Protocol` with `judge_id` /
+`judge_family` / `methodology` identity plus `evaluate()` / `health_check()`
+— the orchestrator depends only on this protocol, never a concrete adapter.
+
+### HHEM adapter (Task 2) — DISABLED for M1
+
+`finsentry/frontier/adapters/hhem_adapter.py` implements the loading path
+Phase 0D's custom-code read established: `AutoModelForSequenceClassification
+.from_pretrained(..., trust_remote_code=True)` then
+`model.predict([(premise, hypothesis)])` — no external tokenizer. Attempted a
+real load in the main `.venv` (transformers 5.16.1, not `.venv-hhem`): fails
+with `'HHEMv2ForSequenceClassification' object has no attribute
+'all_tied_weights_keys'`, the same error the original Phase 0 run saw, now
+confirmed even via the correct `predict()`-based path — a transformers 5.x
+internal API incompatibility with HHEM's custom code, not a tokenizer
+pairing issue. Per the M1 brief, no attempt made to resolve the transformers
+version conflict. Evidence:
+`docs/measurements/hhem-main-venv-load-attempt-d5a-m1.json`.
+
+HHEM is wired but gated off by default at the consumer layer
+(`FRONTIER_HHEM_ENABLED`, default `false`) rather than left to retry a
+known-failing ~6s load attempt on every startup. The adapter itself is fully
+tested (7 tests, mocked) and ready to flip on the moment the transformers
+incompatibility is resolved — no code change needed, only the env var.
+
+### Gemini rubric adapter (Task 3)
+
+`finsentry/frontier/adapters/gemini_rubric_adapter.py` + prompts/rubric_v1.py
+(`PROMPT_VERSION="frontier_rubric_v1"`). Absolute rubric scoring
+(0.0/0.5/1.0) on a single `faithfulness_to_citations` dimension with
+structured evidence in one call — deliberately not the Flash tier's
+claim-extraction-plus-per-claim-NLI RAGAS prompt. The model echoes
+`prompt_version` back in its JSON response; a mismatch is rejected as
+`model_error`, guarding against prompt drift without schema-enforced
+structured output. Reuses the `genai.Client(vertexai=True, ...)`
+construction pattern from `FlashJudge` (duplicated ~15 lines rather than
+importing from or refactoring Flash tier code).
+
+### Orchestrator (Task 4)
+
+`finsentry/frontier/orchestrator.py`. Every registered judge runs via
+`asyncio.gather` behind a per-judge timeout wrapper that converts any
+timeout or raise into a `JudgeResult` *before* `gather` sees it — so
+`return_exceptions=False` never actually has to swallow an exception; one
+never reaches it. Decision rule, in priority order: 0 successes ->
+`frontier_unavailable`; exactly 1 -> `frontier_degraded`; 2+ with
+`strong_disagreement` (score delta >= 0.3) -> `disagreement_review_needed`,
+overriding score; otherwise mean score vs. 0.7/0.3 placeholder thresholds ->
+`frontier_pass` / `frontier_fail` / `frontier_uncertain`. **These thresholds
+are explicitly uncalibrated placeholders** — Day 6's Cohen's kappa sweep
+against the golden set picks real values. The verdict is never a weighted
+average; disagreement is a first-class field (`score_delta`,
+`disagreement_classification`), not smoothed away.
+
+### Deterministic sampling (Task 5)
+
+`finsentry/frontier/sampling.py`: `sha256(app_trace_id) % 10 == 0`. Same
+trace id always produces the same decision, so a re-delivered event after a
+crash doesn't flip in or out of frontier evaluation. Validated at 10,000-UUID
+scale (9-11% tolerance).
+
+### Frontier consumer (Task 6)
+
+`finsentry/consumer/frontier_consumer.py` reuses `RagEventConsumer`
+(topic/group-id agnostic already) against `rag-responses` under its own
+consumer group (`frontier-tier`), independent of Flash's offsets. Publishes
+to `rag-frontier-verdicts` via a small `FrontierVerdictProducer` (mirrors
+`JudgeVerdictProducer`'s shape but typed to `FrontierVerdictEvent`, kept
+separate rather than modifying the Flash-tier producer). The handler wraps
+`orchestrator.evaluate()` itself in try/except — an orchestrator-level
+failure (not just a judge-level one, which the orchestrator already
+isolates) still publishes `frontier_unavailable` rather than dropping the
+event silently.
+
+Added an `integration` pytest marker for the new real-Redpanda tests
+(tagged `slow` too, so the existing `pytest -m "not slow"` convention keeps
+excluding them without changing that command). All three integration tests
+ran and passed against the live Docker stack.
+
+### RisingWave + dashboard (Tasks 7-8)
+
+`rag_frontier_verdicts` source + `mv_frontier_verdict_rate_1m` /
+`mv_frontier_disagreement_1m`, both `date_trunc('minute', evaluation_ts)`
+floored (consistent with every other MV, not `TUMBLE`). Ran live against the
+running RisingWave container (19/19 statements OK), published test events,
+confirmed both views return rows. Dashboard `GET /metrics/frontier` sums
+both views over the last 15 minutes; verified live against real data,
+restarted to pick up the route.
+
+### End-to-end smoke test (Task 9)
+
+Real event flow, no mocks: live gateway (`GEMINI_MODE=vertex`,
+`KAFKA_MODE=kafka`) -> `rag-responses` -> frontier consumer -> real Vertex
+Gemini rubric call -> `rag-frontier-verdicts` -> RisingWave -> dashboard. 10
+queries issued (9 HTTP 200, 1 HTTP 422 unrelated schema block — Phase 0D's
+already-characterized Ollama reliability), 2/10 sampled into frontier
+(normal variance for p=0.1, n=10). Both sampled events got a real Gemini
+call (`faithfulness_score=1.0`, real rubric reasoning and supporting
+citations), both correctly `frontier_degraded`/`insufficient_judges` since
+HHEM is disabled. End-to-end latency (gateway event timestamp to verdict
+landing in RisingWave): 2.32s and 2.86s, almost entirely the single Gemini
+call itself. Evidence: `docs/measurements/frontier-e2e-smoke-d5a-m1.json`.
+
+### Verification
+
+336 passed (299 + 37 new), 5 deselected (2 pre-existing `slow` + 3 new
+`integration`/`slow`). `ruff check .` and `mypy finsentry/ --strict` (57
+source files) both clean.
+
+### Known debts carried forward (M1-cleanup candidates)
+
+- HHEM adapter is fully built and tested but disabled — flip
+  `FRONTIER_HHEM_ENABLED=true` once the transformers 5.x incompatibility is
+  resolved (not an M1 concern; explicitly deferred, no workaround attempted).
+- Verdict pass/fail/uncertain thresholds (0.7/0.3) are uncalibrated
+  placeholders. Day 6's golden-set sweep is where real values get chosen.
+- The `ruff check .` / `scripts/` gitignore blind spot (directory-level
+  exclusion can't be reversed by file-level negation patterns) persists;
+  flagged in Phase 0C/0D, not fixed. `scripts/init_risingwave.py` has one
+  pre-existing F541 (`f"  OK"` with no placeholder) only visible via
+  `ruff check scripts/init_risingwave.py` directly.
+- `FrontierVerdictProducer` duplicates `JudgeVerdictProducer`'s shape rather
+  than sharing a generic base — deliberate, to avoid any Flash-tier
+  modification, but worth a shared-base refactor once both tiers are stable.
+
 ## 2026-10-02 — d5a-m0-phase0d: final investigation phase, M1 architecture decided
 
 Phase 0D fixed one implementation defect from Phase 0C, finished the Ollama diagnosis,
