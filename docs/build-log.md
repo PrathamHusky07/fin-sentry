@@ -1,5 +1,98 @@
 # Build Log
 
+## 2026-10-02 — d5a-m0-phase0d: final investigation phase, M1 architecture decided
+
+Phase 0D fixed one implementation defect from Phase 0C, finished the Ollama diagnosis,
+resolved the HHEM decision via a bounded code read, and ran one controlled Lynx+Prometheus
+reproducibility attempt. This is the final investigation phase; M1 proceeds next regardless
+of outcome.
+
+**Ollama diagnosis (Task 1).** Phase 0C's `schema_rail_block` log (`e9024e7`) logged `answer`,
+already one parsing step removed from the raw Ollama body (it's
+`data["choices"][0]["message"]["content"]` post-`resp.json()`, not `resp.text`). Fixed via an
+optional `raw_body_out: list[str]` out-param on `_call_downstream_rag` (`eda0d30`) rather than
+changing its `-> str` return contract, which ~15 existing test call sites and mocks depend on.
+A second defect surfaced when the Task 1F grep came back empty: no `Formatter` anywhere in this
+codebase renders `extra={}` fields into log text, so the diagnostic values never reached the log
+file at all. Fixed by also interpolating them into the message string via %-style formatting
+(`b6725cf`). Two 20-query cold-Ollama runs followed: run 1 (pre-render-fix) saw 18/20 HTTP 200,
+2/20 HTTP 422 (both `malformed_json`, classified `truncated_json` from the rail's own
+`details.raw_snippet`). Run 2 (post-fix, with working raw-body logs) saw 15/20 HTTP 200, 4/20
+HTTP 422, 1/20 HTTP 504 (downstream timeout, not a schema-rail block). Of the four 422s: two
+`truncated_json` and two a previously unseen mode, `hallucinated_citation`, on complete valid
+JSON where the model cited a fabricated or near-miss chunk_id. Zero `empty`/`empty_answer_field`
+cases in either run — Phase 0B's original 1/5 empty-answer observation was not reproduced.
+Evidence: `docs/measurements/cold-ollama-20queries-day5a-m0.json`.
+
+**HHEM decision (Task 2).** Read `configuration_hhem_v2.py` and `modeling_hhem_v2.py` from the
+hub snapshot (saved to `docs/measurements/hhem-custom-code-phase0d.txt`). HHEM's foundation model
+is `google/flan-t5-base` — a T5 model, not DeBERTa at all, which is why Phase 0C's DeBERTa
+tokenizer pairing crashed with `token_type_ids` (T5 doesn't accept that kwarg; DeBERTa tokenizers
+emit it by default). The intended entry point is `model.predict([(premise, hypothesis), ...])`,
+which tokenizes internally via `self.tokenzier` (built from
+`AutoTokenizer.from_pretrained("google/flan-t5-base")` inside `__init__`); the bare
+`forward(**kwargs)` path exists only for HF `text-classification` pipeline compatibility and
+expects T5-shaped inputs. Status: **HHEM_LOADABLE**. Path recorded, not executed, per task
+instructions — M1 will attempt `AutoModelForSequenceClassification.from_pretrained(..., trust_remote_code=True).predict(...)` directly, no external tokenizer construction.
+
+**Lynx + Prometheus reproducibility (Task 3).** Ran `scripts/measure_frontier_models.py`
+unmodified (the exact script that succeeded in Phase 0) with 4050.3 MB available at baseline —
+more headroom than Phase 0's 3038.5 MB. Both Lynx and Prometheus failed with the identical
+bitsandbytes guard error from Phase 0B (`bnb=Some modules are dispatched on the CPU or the
+disk...`). More memory than the original successful run and still failing rules out baseline
+available memory as the cause. Per task instructions, no workaround attempted and the
+simultaneous-residency test (3D) was not run since 3C already failed individually. Status:
+**NOT_REPRODUCIBLE**. Evidence: `docs/measurements/phase0d-reproduction-attempt.json`,
+`docs/measurements/phase0d-pre-reproduction-vm-stat.txt`.
+
+**Known debts (not fixed here).** `ruff check .` silently skips the `scripts/` directory's
+explicitly-allowlisted files (`measure_frontier_models.py`, `measure_hhem_isolated.py`,
+`measure_frontier_residency.py`, and others) because a directory-level `.gitignore` exclusion
+(`scripts/`) cannot be reversed by file-level `!` negation patterns for tools that walk the
+filesystem respecting gitignore, even though `git` itself tracks the files fine (discovered
+Phase 0C). `ruff check scripts/` directly finds 93 pre-existing errors in that directory, unrelated
+to any session's edits. Deferred to a future cleanup.
+
+**M1 architecture decision inputs.** HHEM: IN, with loading path recorded above. Lynx +
+Prometheus: NOT_VIABLE_LOCALLY on this machine as currently configured — M1 architecture must
+pivot (hosted frontier calls within Vertex budget, or a scoped single-model local frontier tier).
+Ollama semantic reliability: characterized, not stable — 6 observed 422s across 40 queries (2
+runs), two distinct failure modes (`truncated_json`, `hallucinated_citation`), neither of which
+is the original empty-answer mode. Phase 0D is the final investigation phase; M1 proceeds next.
+
+## 2026-10-02 — d5a-m0-phase0c: three bounded investigations on Phase 0B's open conclusions
+
+Phase 0C ran one additional experiment for each of three Phase 0B conclusions that needed it
+before being treated as real. M1 remained deferred pending this evidence (superseded by Phase 0D
+above, written after the fact: this entry was not appended before context was compacted mid-session).
+
+**HHEM with base-model tokenizer (Task 1).** Confirmed via `snapshot_download` inspection that the
+HHEM hub repo truly ships no tokenizer vocab assets (only `config.json`,
+`configuration_hhem_v2.py`, `model.safetensors`, `modeling_hhem_v2.py`). Loading the tokenizer
+from `microsoft/deberta-v3-base` instead (`1d3bf7c`) gets past Phase 0B's `vocab_file=None`
+failure, but the model load then fails differently: `T5ForTokenClassification.forward() got an
+unexpected keyword argument 'token_type_ids'`. Resolved properly in Phase 0D Task 2 — HHEM's
+foundation is flan-t5-base, not DeBERTa, so this pairing was never going to work. HHEM runtime
+compatibility: STILL BLOCKED (as of Phase 0C). Evidence:
+`docs/measurements/hhem-isolated-day5a-m0.json`, Phase 0B version preserved as
+`hhem-isolated-day5a-m0.phase0b.json`.
+
+**Environment delta investigation (Task 2).** `torch`, `transformers`, `accelerate`, and
+`bitsandbytes` dist-info directories in `.venv` all share the identical install timestamp
+(Sep 8, 18:29) — the venv was not touched between Phase 0's successful Sep 15 run and this
+session. bitsandbytes was 0.50.2 then and is 0.50.2 now. This falsifies Phase 0B's "bitsandbytes
+0.50.2 regression" hypothesis outright. Classification: **KNOWN-GOOD ENVIRONMENT STILL FAILS** —
+something other than a dependency version (confirmed in Phase 0D: available memory was ruled out
+too) caused the divergence. No code changed, no commit for this task. Evidence:
+`docs/measurements/env-phase0c-now.txt`.
+
+**Ollama empty-answer diagnosis (Task 3).** Added diagnostic logging at the schema-rail block
+site (`e9024e7`), gated by a `TODO(d5a-m1)` comment. The logging captured the wrong variable
+(`answer`, not the raw downstream body) — caught and fixed in Phase 0D Task 1.
+
+**Side finding.** Discovered the `ruff check .` / `scripts/` gitignore interaction (see Phase 0D
+known debts above).
+
 ## 2026-10-02 — d5a-m0-phase0b: measurement integrity + four independent gates
 
 Phase 0B fixed four instrumentation defects from Phase 0 and ran four independent empirical gates.
