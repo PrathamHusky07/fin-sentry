@@ -29,6 +29,7 @@ import sys
 # invocable without configuring PYTHONPATH. Keep all three copies in sync.
 _RAG_RESPONSES_TOPIC = "rag-responses"
 _JUDGE_VERDICTS_TOPIC = "judge-verdicts"
+_RAG_FRONTIER_VERDICTS_TOPIC = "rag-frontier-verdicts"
 
 _SQL_PATH = pathlib.Path(__file__).parent.parent / "infra" / "risingwave" / "init.sql"
 
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not args.dry_run:
-        _ensure_topics([_RAG_RESPONSES_TOPIC, _JUDGE_VERDICTS_TOPIC])
+        _ensure_topics([_RAG_RESPONSES_TOPIC, _JUDGE_VERDICTS_TOPIC, _RAG_FRONTIER_VERDICTS_TOPIC])
 
     sql = _SQL_PATH.read_text()
     statements = _split_statements(sql)

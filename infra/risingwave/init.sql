@@ -8,8 +8,9 @@
 -- (event-time watermarks do not advance without continuous input).
 --
 -- Topic layout:
---   rag-responses    -> RagResponseEvent   (schema_version 1.0)   -> source: rag_events
---   judge-verdicts   -> JudgeVerdictEvent  (schema_version 1.0)   -> source: judge_verdicts
+--   rag-responses         -> RagResponseEvent     (schema_version 1.0) -> source: rag_events
+--   judge-verdicts        -> JudgeVerdictEvent     (schema_version 1.0) -> source: judge_verdicts
+--   rag-frontier-verdicts -> FrontierVerdictEvent   (schema_version 1.0) -> source: rag_frontier_verdicts
 --
 -- RisingWave uses PostgreSQL wire protocol - syntax below is RisingWave SQL.
 
@@ -80,10 +81,31 @@ WITH (
 FORMAT PLAIN ENCODE JSON;
 
 
+CREATE SOURCE IF NOT EXISTS rag_frontier_verdicts (
+    schema_version                  VARCHAR,
+    app_trace_id                    VARCHAR,
+    verdict                         VARCHAR,
+    per_judge_results               JSONB,
+    score_delta                     DOUBLE PRECISION,
+    disagreement_classification     VARCHAR,
+    evaluation_ts                   TIMESTAMPTZ,
+    frontier_sampling_decision_key  VARCHAR
+)
+WITH (
+    connector        = 'kafka',
+    topic            = 'rag-frontier-verdicts',
+    properties.bootstrap.server = 'redpanda:9092',
+    scan.startup.mode = 'earliest'
+)
+FORMAT PLAIN ENCODE JSON;
+
+
 -- ---------------------------------------------------------------------------
 -- Materialized views — teardown (reverse dependency order, re-run safe)
 -- ---------------------------------------------------------------------------
 
+DROP MATERIALIZED VIEW IF EXISTS mv_frontier_disagreement_1m;
+DROP MATERIALIZED VIEW IF EXISTS mv_frontier_verdict_rate_1m;
 DROP MATERIALIZED VIEW IF EXISTS mv_ticker_quality_1h;
 DROP MATERIALIZED VIEW IF EXISTS mv_judge_cost_1m;
 DROP MATERIALIZED VIEW IF EXISTS mv_judge_usage_1m;
@@ -177,3 +199,25 @@ FROM rag_events AS r
 JOIN judge_verdicts AS v ON v.app_trace_id = r.app_trace_id
 WHERE r.status = 'success'
 GROUP BY date_trunc('hour', r.timestamp_utc), r.ticker;
+
+
+-- 7. Frontier verdict counts by type per 1-minute bucket.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_frontier_verdict_rate_1m AS
+SELECT
+    date_trunc('minute', evaluation_ts)                        AS window_start,
+    date_trunc('minute', evaluation_ts) + INTERVAL '1 minute'  AS window_end,
+    verdict,
+    COUNT(*) AS verdict_count
+FROM rag_frontier_verdicts
+GROUP BY date_trunc('minute', evaluation_ts), verdict;
+
+
+-- 8. Frontier disagreement classification counts per 1-minute bucket.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_frontier_disagreement_1m AS
+SELECT
+    date_trunc('minute', evaluation_ts)                        AS window_start,
+    date_trunc('minute', evaluation_ts) + INTERVAL '1 minute'  AS window_end,
+    disagreement_classification,
+    COUNT(*) AS disagreement_count
+FROM rag_frontier_verdicts
+GROUP BY date_trunc('minute', evaluation_ts), disagreement_classification;
