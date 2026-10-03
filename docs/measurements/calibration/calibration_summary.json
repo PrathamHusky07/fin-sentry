@@ -1,0 +1,44 @@
+{
+  "actual_cost_usd": 0.489298,
+  "calibration_split": {
+    "n_rows_scored": 105,
+    "positive_rate": 0.14285714285714285,
+    "pr_auc": 0.5564229284610887,
+    "roc_auc": 0.7811111111111111
+  },
+  "dataset": "Cleanlab/FinQA-hallucination-detection (via hallucination_bench, 1651 rows)",
+  "detector_score_mapping": "detector_score = 1 - faithfulness_score",
+  "generated_at": "2026-10-03T22:31:55.187484+00:00",
+  "held_out_split": {
+    "metrics_at_selected_threshold": {
+      "accuracy": 0.9555555555555556,
+      "confusion": {
+        "fn": 0,
+        "fp": 2,
+        "tn": 37,
+        "tp": 6
+      },
+      "f1": 0.8571428571428571,
+      "fnr": 0.0,
+      "fpr": 0.05128205128205132,
+      "kappa": 0.8314606741573036,
+      "precision": 0.75,
+      "recall": 1.0,
+      "specificity": 0.9487179487179487,
+      "threshold": 0.55
+    },
+    "n_rows_scored": 45,
+    "positive_rate": 0.13333333333333333,
+    "pr_auc": 0.531547619047619,
+    "roc_auc": 0.9743589743589743
+  },
+  "judge": "gemini-rubric (GeminiRubricAdapter, Vertex gemini-3.6-flash)",
+  "prompt_version": [
+    "frontier_rubric_v2_faithjudge"
+  ],
+  "scope_note": "This calibrates the Gemini rubric judge alone, on a 150-row stratified subset of the 1651-row benchmark. Full-benchmark scoring and multi-judge (ensemble) calibration are future work, not part of this result.",
+  "seed": "d5a-m4-finqa-split-v1",
+  "selected_threshold": 0.55,
+  "selection_objective": "recall-favoring: highest recall among thresholds with precision >= 0.2 (missing a hallucination is assumed costlier than one extra human review)",
+  "subset_size": 150
+}

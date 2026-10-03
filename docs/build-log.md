@@ -1,5 +1,118 @@
 # Build Log
 
+## 2026-10-03 — d5a-m4: Gemini judge calibration against hallucination_bench
+
+Day 5 Milestone 4, gated on the M3 checkpoint (PASS). Calibrates the live
+Gemini rubric judge alone, on a bounded subset, against the 1651-row
+labeled FinQA hallucination benchmark. Does not touch M3's ensemble
+contract, does not calibrate HHEM (disabled, untouched), does not run
+all 1651 rows through Gemini.
+
+### Split design
+
+`finsentry/calibration/split.py`: a deterministic, stratified
+calibration/held-out split, hashed on `(seed, row_id)` rather than
+`random.shuffle`, so re-running never reshuffles which rows are
+calibration-only vs held-out-only. Stratified per class independently
+(sort each class's ids by hash rank, cut at the calibration fraction)
+rather than one pooled hash-threshold, so both portions hold the source
+~14.4% positive rate exactly, not approximately. 70/30 split: 1156
+calibration rows, 495 held-out rows.
+
+Held-out matters here specifically because the benchmark is only 14.4%
+positive: with so few positive examples, a threshold chosen and reported
+on the same data would overfit to whichever few hallucinations happened
+to land favorably, and nobody reading the number could tell. Selecting
+on calibration and reporting only on held-out is the one thing that
+makes the reported precision/recall mean what it claims to mean.
+
+### Cost-bounded judge runs
+
+`scripts/calibrate_finqa_judge.py` samples a stratified subset (preserving
+~14.4% positive rate within the sample too) bounded by `--cap` (default
+150, matching the brief), split proportionally 105 calibration / 45
+held-out. Resumable: persists each scored row to
+`docs/measurements/calibration/finqa_judge_outputs.json` immediately and
+skips already-scored ids on a rerun, so a mid-run stop never wastes
+Vertex spend. Reuses `GeminiRubricAdapter` unmodified (the same adapter
+the frontier plane runs) against a `FrontierEvaluationInput` built
+directly from each benchmark row (`question`, `response` as `answer`,
+`context` as the sole retrieved chunk, no peers) -- M4 does not fork or
+modify the judge, it calibrates the one that already exists.
+
+Ran live: 150/150 rows scored (10 in an initial smoke run, 140 in the
+full run), zero budget-guard trips. Actual Vertex spend: **$0.489298**,
+comfortably inside the $300 credit ceiling -- the ceiling was never a
+real constraint at this subset size.
+
+### Detector-score mapping
+
+`detector_score = 1 - faithfulness_score`, stated explicitly because the
+rubric scores faithfulness (high = good) while the benchmark labels
+hallucination (high = bad) -- inverting once here, in one documented
+place, is safer than letting every downstream consumer silently assume
+which direction "high" points.
+
+### Why PR-AUC, not accuracy, is the headline
+
+At a 14.4% positive rate, a detector that never flags anything already
+scores ~85.6% accuracy while catching zero hallucinations. Accuracy is
+reported per sweep point for completeness and explicitly labeled
+non-headline; PR-AUC is the number that actually reflects performance on
+the minority class a hallucination detector exists to catch.
+
+### Threshold sweep and selection (calibration only)
+
+`scripts/finqa_threshold_sweep.py` sweeps `detector_score` thresholds in
+0.05 steps over the 105 scored calibration rows only. Calibration
+ROC-AUC 0.781, PR-AUC 0.556. Selected threshold by a stated
+recall-favoring objective (the cost of missing a real hallucination is
+assumed to exceed the cost of one extra human review): the highest-recall
+threshold that still clears a 0.2 precision floor. Chosen threshold:
+**0.55** -> calibration precision 0.750, recall 0.600, F1 0.667. The
+Gemini rubric prompt only ever returns 0.0/0.5/1.0, so `detector_score`
+is effectively three-valued (0.0, 0.5, 1.0); 0.55 is simply the lowest
+threshold that includes only the `faithfulness_score=0.0` (refuted)
+cluster while excluding the single `0.5` (abstain) row that happened to
+be a false positive at lower thresholds -- not a finely-tuned cutoff,
+a cluster boundary.
+
+### Held-out report (never touched during threshold selection)
+
+Applying 0.55 once to the 45 held-out rows: ROC-AUC 0.974, PR-AUC 0.532,
+precision 0.750, recall **1.000** (6/6 held-out hallucinations caught,
+0 false negatives), F1 0.857, Cohen's kappa 0.831 (judge decision vs
+gold label, not inter-annotator), confusion tp=6 fp=2 tn=37 fn=0.
+Six positive examples in held-out is a small number; the recall=1.0 here
+is an encouraging result on this subset, not a claim that the judge
+would catch literally every hallucination at scale.
+
+### Scope
+
+This calibrates the Gemini rubric judge alone, on 150 of 1651 rows (9%).
+Full-benchmark scoring, multi-judge/ensemble calibration, and any
+recalibration of the ensemble decision thresholds from M3 are explicitly
+future work, stated in `calibration_summary.json`'s `scope_note`.
+
+### Verification
+
+`finsentry/calibration/metrics.py` and `split.py` are pure functions,
+unit-tested with synthetic inputs only -- no live Gemini call anywhere in
+the test suite, consistent with "judges are not verification." 431
+passed (399 M3 baseline + 32 new), 5 deselected, `ruff check .` clean,
+`mypy finsentry/ --strict` clean across 65 source files.
+
+=== M4 REPORT ===
+Benchmark: 1651 rows, split cal=1156/holdout=495, positive rate 0.1442 both portions
+Judge runs: 150 Gemini calls, $0.489298 actual spend, resumable (verified: rerun after 10 calls skipped them and scored the remaining 140)
+Detector-score mapping: 1 - faithfulness_score
+Threshold sweep: 0.00-1.00 step 0.05, calibration PR-AUC 0.556, calibration ROC-AUC 0.781
+Selected threshold: 0.55 (recall-favoring: highest recall with precision >= 0.2 floor)
+Held-out final metrics: precision 0.750, recall 1.000, F1 0.857, PR-AUC 0.532, ROC-AUC 0.974, confusion tp=6 fp=2 tn=37 fn=0
+Tests: 431, ruff clean, mypy clean
+Commits: <see below>
+M3 + M4 COMPLETE.
+
 ## 2026-10-03 — d5a-m3: heterogeneous ensemble decision contract
 
 Day 5 Milestone 3. M1 and M2 stayed closed; the only M1/M2-era file this
