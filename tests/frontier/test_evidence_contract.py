@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from finsentry.frontier.adapters.gemini_rubric_adapter import GeminiRubricAdapter
 from finsentry.frontier.adapters.hhem_adapter import HHEMAdapter
-from finsentry.frontier.prompts.rubric_v1 import PROMPT_VERSION
+from finsentry.frontier.prompts.rubric_v2_faithjudge import PROMPT_VERSION
 from finsentry.frontier.types import Citation, FrontierEvaluationInput
 from finsentry.rails.output.cost_governance import CostBudget
 

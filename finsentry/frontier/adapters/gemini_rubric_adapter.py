@@ -12,6 +12,11 @@ dimension, with structured evidence capture in one call. See
 finsentry/frontier/prompts/rubric_v1.py for why this differs from HHEM's
 native NLI methodology.
 
+Prompt version: uses rubric_v2_faithjudge for every call (peers or no
+peers) — see finsentry/frontier/prompts/rubric_v2_faithjudge.py. rubric_v1
+stays in the repo frozen for historical reproducibility of verdicts
+emitted before Day 5 M2; this adapter no longer calls it.
+
 Budget: the caller owns the CostBudget instance (persists across events for
 the life of the frontier consumer process) and passes it in. This adapter
 does not create its own budget and does not reach into the Flash tier's
@@ -26,7 +31,7 @@ import math
 import time
 from typing import Any
 
-from finsentry.frontier.prompts.rubric_v1 import PROMPT_VERSION, build_rubric_prompt
+from finsentry.frontier.prompts.rubric_v2_faithjudge import PROMPT_VERSION, build_rubric_prompt
 from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, JudgeResult
 from finsentry.rails.output.cost_governance import CostBudget
 
@@ -46,17 +51,6 @@ def _strip_json_fences(text: str) -> str:
             lines = lines[:-1]
         text = "\n".join(lines).strip()
     return text
-
-
-def _format_context_chunks(evaluation_input: FrontierEvaluationInput) -> str:
-    """Render the authoritative evaluation context for the rubric prompt.
-
-    Always the full retrieved_context_chunks — never filtered down to the
-    cited subset. Citations are separate metadata the model may reference
-    to report supporting/contradicting chunks; they must never narrow what
-    gets scored (see the Day 5 M2 evidence-contract decision).
-    """
-    return "\n\n".join(evaluation_input.retrieved_context_chunks)
 
 
 class GeminiRubricAdapter:
@@ -143,10 +137,15 @@ class GeminiRubricAdapter:
                 error_detail="budget_exhausted",
             )
 
+        peers = (
+            evaluation_input.peer_retrieval.peers if evaluation_input.peer_retrieval else []
+        )
         prompt = build_rubric_prompt(
             question=evaluation_input.question,
             answer=evaluation_input.answer,
-            cited_chunks=_format_context_chunks(evaluation_input),
+            retrieved_context_chunks=evaluation_input.retrieved_context_chunks,
+            citations=evaluation_input.citations,
+            peers=peers,
         )
 
         start = time.monotonic()
@@ -238,6 +237,9 @@ class GeminiRubricAdapter:
                 "rubric_reasoning": parsed.get("rubric_reasoning"),
                 "cited_chunks_supporting": parsed.get("cited_chunks_supporting", []),
                 "cited_chunks_contradicting": parsed.get("cited_chunks_contradicting", []),
+                "peers_used": [
+                    {"example_id": p.example_id, "similarity": p.similarity} for p in peers
+                ],
             },
             latency_ms=latency_ms,
         )
