@@ -148,6 +148,38 @@ def _unavailable_verdict(app_trace_id: str) -> FrontierVerdictEvent:
     )
 
 
+async def _handle_event(
+    event: RagResponseEvent,
+    orchestrator: FrontierOrchestrator,
+    verdict_producer: FrontierVerdictProducer,
+) -> None:
+    """Sample, guard, evaluate, and emit for one RagResponseEvent.
+
+    The non-success guard mirrors FlashJudge's predicate (event.status ==
+    "success" and event.answer) — a blocked/error event has no answer or
+    citations to evaluate, and running it through a judge would both waste
+    budget and score empty input.
+    """
+    if not should_sample_for_frontier(event.app_trace_id):
+        return
+    if not (event.status == "success" and event.answer):
+        return
+    try:
+        verdict = await orchestrator.evaluate(event)
+    except Exception:
+        log.exception(
+            "FrontierOrchestrator.evaluate raised for app_trace_id=%s", event.app_trace_id
+        )
+        verdict = _unavailable_verdict(event.app_trace_id)
+    await verdict_producer.emit(verdict)
+    log.info(
+        "Frontier verdict emitted: app_trace_id=%s verdict=%s disagreement=%s",
+        event.app_trace_id,
+        verdict.verdict,
+        verdict.disagreement_classification,
+    )
+
+
 async def _run() -> None:
     logging.basicConfig(level=logging.INFO)
 
@@ -163,22 +195,7 @@ async def _run() -> None:
     await verdict_producer.start()
 
     async def _handle(event: RagResponseEvent) -> None:
-        if not should_sample_for_frontier(event.app_trace_id):
-            return
-        try:
-            verdict = await orchestrator.evaluate(event)
-        except Exception:
-            log.exception(
-                "FrontierOrchestrator.evaluate raised for app_trace_id=%s", event.app_trace_id
-            )
-            verdict = _unavailable_verdict(event.app_trace_id)
-        await verdict_producer.emit(verdict)
-        log.info(
-            "Frontier verdict emitted: app_trace_id=%s verdict=%s disagreement=%s",
-            event.app_trace_id,
-            verdict.verdict,
-            verdict.disagreement_classification,
-        )
+        await _handle_event(event, orchestrator, verdict_producer)
 
     consumer.set_handler(_handle)
 

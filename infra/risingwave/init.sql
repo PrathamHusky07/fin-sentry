@@ -1,8 +1,8 @@
 -- RisingWave streaming SQL init script.
 -- Run via scripts/init_risingwave.py (or psql directly against RisingWave port 4566).
 --
--- Sources: two Redpanda topics consumed as append-only sources.
--- Materialized views: six aggregations for the dashboard.
+-- Sources: three Redpanda topics consumed as append-only sources.
+-- Materialized views: eight aggregations for the dashboard.
 -- Aggregations use GROUP BY date_trunc(...) time buckets rather than event-time TUMBLE,
 -- so each event is visible immediately on sparse evaluation traffic
 -- (event-time watermarks do not advance without continuous input).

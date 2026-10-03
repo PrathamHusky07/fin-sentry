@@ -44,6 +44,25 @@ def test_successful_evaluation_returns_score_in_unit_interval() -> None:
     assert result.methodology == "nli_premise_hypothesis"
 
 
+def test_out_of_range_score_returns_model_error() -> None:
+    adapter = _adapter_with_mock_model([1.2])
+
+    result = asyncio.run(adapter.evaluate(_evaluation_input()))
+
+    assert result.status == "model_error"
+    assert result.faithfulness_score is None
+    assert "out_of_range" in (result.error_detail or "")
+
+
+def test_nan_score_returns_model_error() -> None:
+    adapter = _adapter_with_mock_model([float("nan")])
+
+    result = asyncio.run(adapter.evaluate(_evaluation_input()))
+
+    assert result.status == "model_error"
+    assert result.faithfulness_score is None
+
+
 def test_model_load_failure_returns_unavailable_not_raise() -> None:
     with patch(
         "transformers.AutoModelForSequenceClassification.from_pretrained",

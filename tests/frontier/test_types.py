@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from finsentry.frontier.types import (
@@ -113,6 +115,103 @@ def test_judge_health_accepts_valid_status() -> None:
         judge_id="hhem-2.1-open", status="healthy", last_success_ts=None, error_rate_1h=0.0
     )
     assert health.status == "healthy"
+
+
+def test_judge_result_rejects_score_above_one_on_success() -> None:
+    with pytest.raises(ValueError, match="faithfulness_score"):
+        JudgeResult(
+            judge_id="j",
+            judge_family="f",
+            methodology="m",
+            status="success",
+            faithfulness_score=1.1,
+        )
+
+
+def test_judge_result_rejects_score_below_zero_on_success() -> None:
+    with pytest.raises(ValueError, match="faithfulness_score"):
+        JudgeResult(
+            judge_id="j", judge_family="f", methodology="m", status="success",
+            faithfulness_score=-0.01,
+        )
+
+
+def test_judge_result_rejects_nan_score_on_success() -> None:
+    with pytest.raises(ValueError, match="faithfulness_score"):
+        JudgeResult(
+            judge_id="j", judge_family="f", methodology="m", status="success",
+            faithfulness_score=math.nan,
+        )
+
+
+def test_judge_result_rejects_infinite_score_on_success() -> None:
+    with pytest.raises(ValueError, match="faithfulness_score"):
+        JudgeResult(
+            judge_id="j", judge_family="f", methodology="m", status="success",
+            faithfulness_score=math.inf,
+        )
+
+
+def test_judge_result_rejects_missing_score_on_success() -> None:
+    with pytest.raises(ValueError, match="faithfulness_score"):
+        JudgeResult(judge_id="j", judge_family="f", methodology="m", status="success")
+
+
+def test_judge_result_rejects_score_present_on_non_success() -> None:
+    with pytest.raises(ValueError, match="faithfulness_score"):
+        JudgeResult(
+            judge_id="j", judge_family="f", methodology="m", status="timeout",
+            faithfulness_score=0.5,
+        )
+
+
+def test_judge_result_accepts_boundary_scores_zero_and_one() -> None:
+    low = JudgeResult(
+        judge_id="j", judge_family="f", methodology="m", status="success",
+        faithfulness_score=0.0,
+    )
+    high = JudgeResult(
+        judge_id="j", judge_family="f", methodology="m", status="success",
+        faithfulness_score=1.0,
+    )
+    assert low.faithfulness_score == 0.0
+    assert high.faithfulness_score == 1.0
+
+
+def test_judge_health_rejects_error_rate_above_one() -> None:
+    with pytest.raises(ValueError, match="error_rate_1h"):
+        JudgeHealth(judge_id="j", status="healthy", last_success_ts=None, error_rate_1h=1.5)
+
+
+def test_judge_health_rejects_negative_error_rate() -> None:
+    with pytest.raises(ValueError, match="error_rate_1h"):
+        JudgeHealth(judge_id="j", status="healthy", last_success_ts=None, error_rate_1h=-0.1)
+
+
+def test_frontier_verdict_event_rejects_score_delta_out_of_range() -> None:
+    with pytest.raises(ValueError, match="score_delta"):
+        FrontierVerdictEvent(
+            app_trace_id="trace-6",
+            verdict="frontier_pass",
+            per_judge_results=[],
+            score_delta=1.2,
+            disagreement_classification="agreement",
+            evaluation_ts="2026-10-02T00:00:00+00:00",
+            frontier_sampling_decision_key="trace-6",
+        )
+
+
+def test_frontier_verdict_event_accepts_none_score_delta() -> None:
+    event = FrontierVerdictEvent(
+        app_trace_id="trace-7",
+        verdict="frontier_unavailable",
+        per_judge_results=[],
+        score_delta=None,
+        disagreement_classification="insufficient_judges",
+        evaluation_ts="2026-10-02T00:00:00+00:00",
+        frontier_sampling_decision_key="trace-7",
+    )
+    assert event.score_delta is None
 
 
 def test_frontier_evaluation_input_carries_citations() -> None:

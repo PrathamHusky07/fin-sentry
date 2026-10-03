@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from typing import Any
 
@@ -103,6 +104,16 @@ class HHEMAdapter:
         try:
             score = await self._predict(premise, hypothesis)
             latency_ms = int((time.monotonic() - start) * 1000)
+            if not math.isfinite(score) or not (0.0 <= score <= 1.0):
+                self._record_outcome(succeeded=False)
+                return JudgeResult(
+                    judge_id=self.judge_id,
+                    judge_family=self.judge_family,
+                    methodology=self.methodology,
+                    status="model_error",
+                    error_detail=f"faithfulness_score_out_of_range: {score!r}",
+                    latency_ms=latency_ms,
+                )
             self._record_outcome(succeeded=True)
             return JudgeResult(
                 judge_id=self.judge_id,

@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from typing import Any
 
@@ -211,6 +212,16 @@ class GeminiRubricAdapter:
                 methodology=self.methodology,
                 status="model_error",
                 error_detail="missing_or_invalid_faithfulness_score",
+                latency_ms=latency_ms,
+            )
+
+        if not math.isfinite(score) or not (0.0 <= score <= 1.0):
+            return JudgeResult(
+                judge_id=self.judge_id,
+                judge_family=self.judge_family,
+                methodology=self.methodology,
+                status="model_error",
+                error_detail=f"faithfulness_score_out_of_range: {score!r}",
                 latency_ms=latency_ms,
             )
 

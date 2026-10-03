@@ -144,6 +144,61 @@ def test_prompt_version_mismatch_is_rejected() -> None:
     assert "prompt_version_mismatch" in (result.error_detail or "")
 
 
+def test_out_of_range_score_above_one_returns_model_error() -> None:
+    response = json.dumps(
+        {
+            "prompt_version": PROMPT_VERSION,
+            "faithfulness_score": 1.5,
+            "rubric_reasoning": "bad score",
+            "cited_chunks_supporting": [],
+            "cited_chunks_contradicting": [],
+        }
+    )
+    adapter = _adapter_with_mocked_client(_mock_response(response))
+
+    result = asyncio.run(adapter.evaluate(_evaluation_input()))
+
+    assert result.status == "model_error"
+    assert result.faithfulness_score is None
+    assert "out_of_range" in (result.error_detail or "")
+
+
+def test_out_of_range_score_below_zero_returns_model_error() -> None:
+    response = json.dumps(
+        {
+            "prompt_version": PROMPT_VERSION,
+            "faithfulness_score": -0.1,
+            "rubric_reasoning": "bad score",
+            "cited_chunks_supporting": [],
+            "cited_chunks_contradicting": [],
+        }
+    )
+    adapter = _adapter_with_mocked_client(_mock_response(response))
+
+    result = asyncio.run(adapter.evaluate(_evaluation_input()))
+
+    assert result.status == "model_error"
+    assert result.faithfulness_score is None
+
+
+def test_nan_score_returns_model_error() -> None:
+    response = json.dumps(
+        {
+            "prompt_version": PROMPT_VERSION,
+            "faithfulness_score": "NaN",
+            "rubric_reasoning": "bad score",
+            "cited_chunks_supporting": [],
+            "cited_chunks_contradicting": [],
+        }
+    )
+    adapter = _adapter_with_mocked_client(_mock_response(response))
+
+    result = asyncio.run(adapter.evaluate(_evaluation_input()))
+
+    assert result.status == "model_error"
+    assert result.faithfulness_score is None
+
+
 def test_client_not_configured_returns_unavailable() -> None:
     adapter = GeminiRubricAdapter(cost_budget=CostBudget(), mode="disabled")
 

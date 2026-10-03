@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+import pytest
+
 from finsentry.events.schema import RagResponseEvent
 from finsentry.frontier.orchestrator import FrontierOrchestrator
 from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, JudgeResult
@@ -165,6 +167,61 @@ def test_judge_raising_exception_is_captured_as_model_error_without_crashing() -
     assert results_by_id["judge-broken"].status == "model_error"
     assert "boom" in (results_by_id["judge-broken"].error_detail or "")
     assert results_by_id["judge-ok"].status == "success"
+
+
+def test_mean_score_exactly_at_fail_threshold_yields_frontier_fail() -> None:
+    orchestrator = FrontierOrchestrator(
+        judges=[_StubJudge("judge-a", score=0.30), _StubJudge("judge-b", score=0.30)]
+    )
+    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
+
+    assert verdict.disagreement_classification == "agreement"
+    assert verdict.verdict == "frontier_fail"
+
+
+def test_mean_score_just_above_fail_threshold_yields_frontier_uncertain() -> None:
+    orchestrator = FrontierOrchestrator(
+        judges=[_StubJudge("judge-a", score=0.31), _StubJudge("judge-b", score=0.31)]
+    )
+    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
+
+    assert verdict.disagreement_classification == "agreement"
+    assert verdict.verdict == "frontier_uncertain"
+
+
+def test_mean_score_exactly_at_pass_threshold_yields_frontier_pass() -> None:
+    orchestrator = FrontierOrchestrator(
+        judges=[_StubJudge("judge-a", score=0.70), _StubJudge("judge-b", score=0.70)]
+    )
+    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
+
+    assert verdict.disagreement_classification == "agreement"
+    assert verdict.verdict == "frontier_pass"
+
+
+def test_score_delta_exactly_at_agreement_boundary_is_mild_disagreement() -> None:
+    # delta == 0.15 is NOT < _AGREEMENT_MAX_DELTA (0.15), so it falls into
+    # mild_disagreement rather than agreement.
+    orchestrator = FrontierOrchestrator(
+        judges=[_StubJudge("judge-a", score=0.50), _StubJudge("judge-b", score=0.65)]
+    )
+    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
+
+    assert verdict.score_delta == pytest.approx(0.15)
+    assert verdict.disagreement_classification == "mild_disagreement"
+
+
+def test_score_delta_exactly_at_mild_disagreement_boundary_is_strong_disagreement() -> None:
+    # delta == 0.30 is NOT < _MILD_DISAGREEMENT_MAX_DELTA (0.3), so it falls
+    # into strong_disagreement, overriding the mean-score verdict entirely.
+    orchestrator = FrontierOrchestrator(
+        judges=[_StubJudge("judge-a", score=0.50), _StubJudge("judge-b", score=0.80)]
+    )
+    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
+
+    assert verdict.score_delta == pytest.approx(0.30)
+    assert verdict.disagreement_classification == "strong_disagreement"
+    assert verdict.verdict == "disagreement_review_needed"
 
 
 def test_verdict_event_is_always_emitted_even_with_zero_judges_registered() -> None:

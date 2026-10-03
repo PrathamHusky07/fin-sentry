@@ -36,7 +36,15 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_PER_JUDGE_TIMEOUT_S = 30.0
 
-# Placeholder thresholds — see module docstring. Day 6 concern to calibrate.
+# PROVISIONAL thresholds, status: uncalibrated placeholders (see module
+# docstring). Day 6's Cohen's kappa sweep against the golden set picks real
+# values. Exact rule in effect until then:
+#   mean_score >= _PASS_THRESHOLD (0.7)                -> frontier_pass
+#   mean_score <= _FAIL_THRESHOLD (0.3)                -> frontier_fail
+#   _FAIL_THRESHOLD < mean_score < _PASS_THRESHOLD     -> frontier_uncertain
+#   score_delta <  _AGREEMENT_MAX_DELTA (0.15)          -> agreement
+#   score_delta <  _MILD_DISAGREEMENT_MAX_DELTA (0.3)   -> mild_disagreement
+#   score_delta >= _MILD_DISAGREEMENT_MAX_DELTA (0.3)   -> strong_disagreement
 _PASS_THRESHOLD = 0.7
 _FAIL_THRESHOLD = 0.3
 
