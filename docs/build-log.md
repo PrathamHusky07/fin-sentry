@@ -1,5 +1,106 @@
 # Build Log
 
+## 2026-10-03 — d5a-m3: heterogeneous ensemble decision contract
+
+Day 5 Milestone 3. M1 and M2 stayed closed; the only M1/M2-era file this
+touched was `finsentry/consumer/frontier_consumer.py`'s
+`_unavailable_verdict()` fallback, and only because it constructed literal
+values the new vocabulary no longer accepts (see below).
+
+### The contradiction this fixes
+
+`types.py` said in two places "the verdict is not a weighted average,"
+while `orchestrator.py` computed `mean_score = sum(successful_scores) /
+len(successful_scores)` and decided pass/fail/uncertain off it. Invisible
+with HHEM disabled and only one live judge; wrong the moment a second
+judge comes online, because averaging a continuous NLI consistency score
+against a 0.0/0.5/1.0 absolute rubric score produces a number with no
+defensible meaning, even though both happen to range over [0, 1].
+
+### Decision vocabulary
+
+`JudgeResult.decision: Literal["supported", "refuted", "abstain",
+"unavailable"]`, validated in `__post_init__` exactly like
+`faithfulness_score`: required and non-`unavailable` when
+`status="success"`, forced to `unavailable` otherwise. Each adapter maps
+its own score with its own module-local `_SUPPORT_THRESHOLD` /
+`_REFUTE_THRESHOLD` constants (both currently 0.7/0.3, documented as
+provisional and Day-6-calibratable) -- deliberately two separate pairs of
+constants, not one shared pair, so a future recalibration of one judge's
+thresholds can never silently become a de facto shared cross-judge scale.
+
+### No-averaging ensemble rule
+
+`finsentry/frontier/ensemble.py`'s `decide_ensemble()` reduces over
+decisions, never scores. Priority order: all usable (supported/refuted)
+judges agree -> `agree_supported` / `agree_refuted`; usable judges split
+-> `ensemble_mixed` / `mixed_support_refute` (the route-to-human-review
+signal); abstain is a strict majority of all returned results ->
+`ensemble_abstain` / `abstain_dominated` (checked before the single-judge
+fallback, so one confident judge cannot override an ensemble most of
+whose judges wouldn't commit); exactly one usable judge -> that judge's
+own decision / `single_judge`; otherwise -> `ensemble_insufficient` /
+`all_unavailable`. `EnsembleOutcome` carries every per-judge result
+untouched (raw score, decision, status, latency, judge identity) plus an
+analysis-only `score_delta` (the spread between judges that produced a
+score) that the rule never consults -- verified directly by a test where
+two judges score within 0.02 of each other but disagree on decision, and
+the verdict still comes out `ensemble_mixed`.
+
+### Vocabulary rename and the init.sql alignment check
+
+`FrontierVerdict`/`DisagreementClassification` were renamed in place to
+`EnsembleVerdict`/`DisagreementTaxonomy` with entirely new value sets, and
+moved conceptually to be the shared contract between `FrontierVerdictEvent`
+and `EnsembleOutcome` -- both still live in `types.py` (not `ensemble.py`)
+specifically so `ensemble.py` can import them without a circular import.
+Field *names* and *types* on `FrontierVerdictEvent` did not change
+(`verdict: str`, `disagreement_classification: str`,
+`score_delta: float | None`). Checked `infra/risingwave/init.sql` directly:
+the `rag_frontier_verdicts` source declares both columns `VARCHAR` with no
+enum or check constraint, and both materialized views that read them
+(`mv_frontier_verdict_rate_1m`, `mv_frontier_disagreement_1m`) only
+`GROUP BY` the raw string -- neither branches on a specific value. The
+dashboard endpoint (`finsentry/dashboard/app.py`) does the same: it keys a
+dict by whatever string comes back from the row. No infra or dashboard
+changes were needed, and none were made.
+
+### Tests
+
+Rewrote `test_orchestrator.py`'s stub judge and every test to the new
+vocabulary, including a case that mean-score reduction would have gotten
+wrong (two scores that average into the old `frontier_uncertain` band but
+whose decisions both say refuted -- verdict follows the decisions).
+Added `test_ensemble.py` exercising `decide_ensemble()` directly across
+every branch, including the abstain-majority-overrides-a-lone-judge
+ordering and the close-scores-but-disagreeing-decisions score_delta case.
+Fixed the two stub judges in `tests/integration/test_frontier_consumer.py`
+and `tests/consumer/test_frontier_consumer.py`, which construct
+`JudgeResult` directly rather than through an adapter and so needed the
+same `decision` field change. 399 passed (382 baseline + 17 net new),
+5 deselected, `ruff check .` clean, `mypy finsentry/ --strict` clean
+across 62 source files.
+
+### Status
+
+HHEM stays disabled this session (unchanged M1 decision) -- live verdicts
+are still `single_judge` outcomes with one usable judge. That is expected
+and fine: M3's job was building a contract that is correct for N judges,
+not proving it live with a second one. The stubbed multi-judge tests in
+`test_orchestrator.py` and `test_ensemble.py` are what prove the
+agreement/mixed/abstain-dominated paths; nothing about the contract is
+unverified, it is simply not yet exercised by live traffic.
+
+=== M3 CHECKPOINT ===
+Mean-score reduction removed: yes -- orchestrator now calls decide_ensemble
+Per-judge decision vocabulary: supported/refuted/abstain/unavailable -- validated in JudgeResult.__post_init__
+Ensemble rule preserves per-judge evidence: yes -- test_per_judge_evidence_is_preserved_untouched
+Disagreement taxonomy: categorical, not delta -- test_score_delta_is_analysis_only_not_the_verdict_basis
+init.sql field alignment after any rename: unchanged -- verified (VARCHAR, no enum constraint, no value-specific branching in source or MVs)
+Tests: 399, ruff clean, mypy clean
+Commits: c44f9a6, cbdf023
+Status: M3 PASS -- proceed to M4
+
 ## 2026-10-03 — d5a-m2-gate: FinQA hallucination benchmark data readiness
 
 Narrow gate ahead of M3/M4, not M2 reopened. `hallucination_bench` had
