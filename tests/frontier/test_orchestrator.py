@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
-import pytest
-
 from finsentry.events.schema import RagResponseEvent
 from finsentry.frontier.orchestrator import FrontierOrchestrator
 from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, JudgeResult
@@ -12,12 +10,19 @@ from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, Judge
 
 class _StubJudge:
     """A FrontierJudge double: returns a canned JudgeResult, sleeps to
-    simulate latency, or raises, depending on construction args."""
+    simulate latency, or raises, depending on construction args.
+
+    decision defaults to None, meaning "derive it from score the way a
+    real adapter would" (>=0.7 supported, <=0.3 refuted, else abstain) --
+    tests that only care about the decision can pass it directly instead
+    of reverse-engineering a score for it.
+    """
 
     def __init__(
         self,
         judge_id: str,
         score: float | None = None,
+        decision: str | None = None,
         status: str = "success",
         sleep_s: float = 0.0,
         raise_exc: Exception | None = None,
@@ -29,6 +34,18 @@ class _StubJudge:
         self._status = status
         self._sleep_s = sleep_s
         self._raise_exc = raise_exc
+        if decision is not None:
+            self._decision = decision
+        elif status != "success":
+            self._decision = "unavailable"
+        elif score is None:
+            self._decision = "unavailable"
+        elif score >= 0.7:
+            self._decision = "supported"
+        elif score <= 0.3:
+            self._decision = "refuted"
+        else:
+            self._decision = "abstain"
 
     async def evaluate(self, evaluation_input: FrontierEvaluationInput) -> JudgeResult:
         if self._sleep_s:
@@ -40,6 +57,7 @@ class _StubJudge:
             judge_family=self.judge_family,
             methodology=self.methodology,
             status=self._status,  # type: ignore[arg-type]
+            decision=self._decision,  # type: ignore[arg-type]
             faithfulness_score=self._score,
         )
 
@@ -66,7 +84,7 @@ def _rag_event(app_trace_id: str = "trace-1") -> RagResponseEvent:
     )
 
 
-def test_two_judges_agree_close_scores_yields_frontier_pass() -> None:
+def test_two_judges_both_supported_yields_ensemble_supported() -> None:
     orchestrator = FrontierOrchestrator(
         judges=[
             _StubJudge("judge-a", score=0.92),
@@ -75,13 +93,26 @@ def test_two_judges_agree_close_scores_yields_frontier_pass() -> None:
     )
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.verdict == "frontier_pass"
-    assert verdict.disagreement_classification == "agreement"
+    assert verdict.verdict == "ensemble_supported"
+    assert verdict.disagreement_classification == "agree_supported"
     assert verdict.score_delta is not None
-    assert verdict.score_delta < 0.15
+    assert len(verdict.per_judge_results) == 2
 
 
-def test_two_judges_far_apart_yields_disagreement_review_needed() -> None:
+def test_two_judges_both_refuted_yields_ensemble_refuted() -> None:
+    orchestrator = FrontierOrchestrator(
+        judges=[
+            _StubJudge("judge-a", score=0.1),
+            _StubJudge("judge-b", score=0.2),
+        ]
+    )
+    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
+
+    assert verdict.verdict == "ensemble_refuted"
+    assert verdict.disagreement_classification == "agree_refuted"
+
+
+def test_one_supported_one_refuted_yields_ensemble_mixed() -> None:
     orchestrator = FrontierOrchestrator(
         judges=[
             _StubJudge("judge-a", score=0.95),
@@ -90,26 +121,28 @@ def test_two_judges_far_apart_yields_disagreement_review_needed() -> None:
     )
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.verdict == "disagreement_review_needed"
-    assert verdict.disagreement_classification == "strong_disagreement"
+    assert verdict.verdict == "ensemble_mixed"
+    assert verdict.disagreement_classification == "mixed_support_refute"
+    # score_delta stays an analysis-only field, not the basis of the verdict --
+    # this disagreement is detected from decision, not from how big the gap is.
     assert verdict.score_delta is not None
     assert verdict.score_delta >= 0.3
 
 
-def test_two_judges_mediocre_scores_yields_frontier_uncertain() -> None:
+def test_both_judges_abstain_yields_ensemble_abstain() -> None:
     orchestrator = FrontierOrchestrator(
         judges=[
-            _StubJudge("judge-a", score=0.55),
-            _StubJudge("judge-b", score=0.5),
+            _StubJudge("judge-a", score=0.5),
+            _StubJudge("judge-b", score=0.55),
         ]
     )
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.verdict == "frontier_uncertain"
-    assert verdict.disagreement_classification == "agreement"
+    assert verdict.verdict == "ensemble_abstain"
+    assert verdict.disagreement_classification == "abstain_dominated"
 
 
-def test_one_judge_unavailable_yields_frontier_degraded() -> None:
+def test_one_judge_unavailable_yields_single_judge_path() -> None:
     orchestrator = FrontierOrchestrator(
         judges=[
             _StubJudge("judge-a", score=0.9, status="success"),
@@ -118,13 +151,13 @@ def test_one_judge_unavailable_yields_frontier_degraded() -> None:
     )
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.verdict == "frontier_degraded"
-    assert verdict.disagreement_classification == "insufficient_judges"
+    assert verdict.verdict == "ensemble_supported"
+    assert verdict.disagreement_classification == "single_judge"
     assert verdict.score_delta is None
     assert {r.judge_id for r in verdict.per_judge_results} == {"judge-a", "judge-b"}
 
 
-def test_all_judges_unavailable_yields_frontier_unavailable_and_emits_event() -> None:
+def test_all_judges_unavailable_yields_ensemble_insufficient() -> None:
     orchestrator = FrontierOrchestrator(
         judges=[
             _StubJudge("judge-a", status="unavailable"),
@@ -133,12 +166,12 @@ def test_all_judges_unavailable_yields_frontier_unavailable_and_emits_event() ->
     )
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.verdict == "frontier_unavailable"
-    assert verdict.disagreement_classification == "insufficient_judges"
+    assert verdict.verdict == "ensemble_insufficient"
+    assert verdict.disagreement_classification == "all_unavailable"
     assert len(verdict.per_judge_results) == 2
 
 
-def test_judge_timeout_is_captured_and_surviving_judge_still_scores() -> None:
+def test_judge_timeout_plus_a_success_yields_single_judge_path() -> None:
     orchestrator = FrontierOrchestrator(
         judges=[
             _StubJudge("judge-slow", sleep_s=1.0),
@@ -150,8 +183,10 @@ def test_judge_timeout_is_captured_and_surviving_judge_still_scores() -> None:
 
     results_by_id = {r.judge_id: r for r in verdict.per_judge_results}
     assert results_by_id["judge-slow"].status == "timeout"
+    assert results_by_id["judge-slow"].decision == "unavailable"
     assert results_by_id["judge-fast"].status == "success"
-    assert verdict.verdict == "frontier_degraded"
+    assert verdict.verdict == "ensemble_supported"
+    assert verdict.disagreement_classification == "single_judge"
 
 
 def test_judge_raising_exception_is_captured_as_model_error_without_crashing() -> None:
@@ -165,69 +200,50 @@ def test_judge_raising_exception_is_captured_as_model_error_without_crashing() -
 
     results_by_id = {r.judge_id: r for r in verdict.per_judge_results}
     assert results_by_id["judge-broken"].status == "model_error"
+    assert results_by_id["judge-broken"].decision == "unavailable"
     assert "boom" in (results_by_id["judge-broken"].error_detail or "")
     assert results_by_id["judge-ok"].status == "success"
+    assert verdict.verdict == "ensemble_supported"
+    assert verdict.disagreement_classification == "single_judge"
 
 
-def test_mean_score_exactly_at_fail_threshold_yields_frontier_fail() -> None:
+def test_verdict_is_never_a_function_of_the_mean_score() -> None:
+    """Two judges whose mean score (0.5) would have passed the old
+    frontier_uncertain band, but whose actual decisions agree on refuted --
+    the ensemble must follow the decisions, not the arithmetic mean."""
     orchestrator = FrontierOrchestrator(
-        judges=[_StubJudge("judge-a", score=0.30), _StubJudge("judge-b", score=0.30)]
+        judges=[
+            _StubJudge("judge-a", score=0.3, decision="refuted"),
+            _StubJudge("judge-b", score=0.7, decision="refuted"),
+        ]
     )
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.disagreement_classification == "agreement"
-    assert verdict.verdict == "frontier_fail"
+    assert verdict.verdict == "ensemble_refuted"
+    assert verdict.disagreement_classification == "agree_refuted"
 
 
-def test_mean_score_just_above_fail_threshold_yields_frontier_uncertain() -> None:
+def test_per_judge_evidence_is_preserved_in_the_emitted_verdict() -> None:
     orchestrator = FrontierOrchestrator(
-        judges=[_StubJudge("judge-a", score=0.31), _StubJudge("judge-b", score=0.31)]
+        judges=[
+            _StubJudge("judge-a", score=0.92),
+            _StubJudge("judge-b", score=0.1),
+        ]
     )
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.disagreement_classification == "agreement"
-    assert verdict.verdict == "frontier_uncertain"
-
-
-def test_mean_score_exactly_at_pass_threshold_yields_frontier_pass() -> None:
-    orchestrator = FrontierOrchestrator(
-        judges=[_StubJudge("judge-a", score=0.70), _StubJudge("judge-b", score=0.70)]
-    )
-    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
-
-    assert verdict.disagreement_classification == "agreement"
-    assert verdict.verdict == "frontier_pass"
-
-
-def test_score_delta_exactly_at_agreement_boundary_is_mild_disagreement() -> None:
-    # delta == 0.15 is NOT < _AGREEMENT_MAX_DELTA (0.15), so it falls into
-    # mild_disagreement rather than agreement.
-    orchestrator = FrontierOrchestrator(
-        judges=[_StubJudge("judge-a", score=0.50), _StubJudge("judge-b", score=0.65)]
-    )
-    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
-
-    assert verdict.score_delta == pytest.approx(0.15)
-    assert verdict.disagreement_classification == "mild_disagreement"
-
-
-def test_score_delta_exactly_at_mild_disagreement_boundary_is_strong_disagreement() -> None:
-    # delta == 0.30 is NOT < _MILD_DISAGREEMENT_MAX_DELTA (0.3), so it falls
-    # into strong_disagreement, overriding the mean-score verdict entirely.
-    orchestrator = FrontierOrchestrator(
-        judges=[_StubJudge("judge-a", score=0.50), _StubJudge("judge-b", score=0.80)]
-    )
-    verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
-
-    assert verdict.score_delta == pytest.approx(0.30)
-    assert verdict.disagreement_classification == "strong_disagreement"
-    assert verdict.verdict == "disagreement_review_needed"
+    results_by_id = {r.judge_id: r for r in verdict.per_judge_results}
+    assert results_by_id["judge-a"].faithfulness_score == 0.92
+    assert results_by_id["judge-a"].decision == "supported"
+    assert results_by_id["judge-b"].faithfulness_score == 0.1
+    assert results_by_id["judge-b"].decision == "refuted"
 
 
 def test_verdict_event_is_always_emitted_even_with_zero_judges_registered() -> None:
     orchestrator = FrontierOrchestrator(judges=[])
     verdict = asyncio.run(orchestrator.evaluate(_rag_event()))
 
-    assert verdict.verdict == "frontier_unavailable"
+    assert verdict.verdict == "ensemble_insufficient"
+    assert verdict.disagreement_classification == "all_unavailable"
     assert verdict.per_judge_results == []
     assert verdict.app_trace_id == "trace-1"

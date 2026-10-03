@@ -13,12 +13,15 @@ from finsentry.frontier.types import (
 )
 
 
-def _sample_judge_result(judge_id: str = "hhem-2.1-open", score: float = 0.9) -> JudgeResult:
+def _sample_judge_result(
+    judge_id: str = "hhem-2.1-open", score: float = 0.9, decision: str = "supported"
+) -> JudgeResult:
     return JudgeResult(
         judge_id=judge_id,
         judge_family="hhem",
         methodology="nli_premise_hypothesis",
         status="success",
+        decision=decision,  # type: ignore[arg-type]
         faithfulness_score=score,
         evidence={"raw_score": score},
         latency_ms=120,
@@ -28,10 +31,10 @@ def _sample_judge_result(judge_id: str = "hhem-2.1-open", score: float = 0.9) ->
 def _sample_verdict_event() -> FrontierVerdictEvent:
     return FrontierVerdictEvent(
         app_trace_id="trace-1",
-        verdict="frontier_pass",
+        verdict="ensemble_supported",
         per_judge_results=[_sample_judge_result()],
         score_delta=None,
-        disagreement_classification="insufficient_judges",
+        disagreement_classification="single_judge",
         evaluation_ts="2026-10-02T00:00:00+00:00",
         frontier_sampling_decision_key="trace-1",
     )
@@ -48,13 +51,13 @@ def test_frontier_verdict_event_round_trips_through_kafka_json() -> None:
 def test_frontier_verdict_event_round_trip_preserves_multiple_judge_results() -> None:
     original = FrontierVerdictEvent(
         app_trace_id="trace-2",
-        verdict="disagreement_review_needed",
+        verdict="ensemble_mixed",
         per_judge_results=[
-            _sample_judge_result("hhem-2.1-open", 0.9),
-            _sample_judge_result("gemini-rubric", 0.4),
+            _sample_judge_result("hhem-2.1-open", 0.9, "supported"),
+            _sample_judge_result("gemini-rubric", 0.1, "refuted"),
         ],
-        score_delta=0.5,
-        disagreement_classification="strong_disagreement",
+        score_delta=0.8,
+        disagreement_classification="mixed_support_refute",
         evaluation_ts="2026-10-02T00:01:00+00:00",
         frontier_sampling_decision_key="trace-2",
     )
@@ -71,7 +74,7 @@ def test_frontier_verdict_event_rejects_invalid_verdict_literal() -> None:
             verdict="not_a_real_verdict",  # type: ignore[arg-type]
             per_judge_results=[],
             score_delta=None,
-            disagreement_classification="insufficient_judges",
+            disagreement_classification="all_unavailable",
             evaluation_ts="2026-10-02T00:00:00+00:00",
             frontier_sampling_decision_key="trace-3",
         )
@@ -81,7 +84,7 @@ def test_frontier_verdict_event_rejects_invalid_disagreement_classification() ->
     with pytest.raises(ValueError, match="disagreement_classification"):
         FrontierVerdictEvent(
             app_trace_id="trace-4",
-            verdict="frontier_pass",
+            verdict="ensemble_supported",
             per_judge_results=[],
             score_delta=None,
             disagreement_classification="total_chaos",  # type: ignore[arg-type]
@@ -98,6 +101,58 @@ def test_judge_result_rejects_invalid_status_literal() -> None:
             methodology="nli_premise_hypothesis",
             status="not_a_real_status",  # type: ignore[arg-type]
         )
+
+
+def test_judge_result_rejects_invalid_decision_literal() -> None:
+    with pytest.raises(ValueError, match="decision"):
+        JudgeResult(
+            judge_id="j",
+            judge_family="f",
+            methodology="m",
+            status="timeout",
+            decision="maybe",  # type: ignore[arg-type]
+        )
+
+
+def test_judge_result_rejects_unavailable_decision_on_success() -> None:
+    with pytest.raises(ValueError, match="decision"):
+        JudgeResult(
+            judge_id="j",
+            judge_family="f",
+            methodology="m",
+            status="success",
+            decision="unavailable",
+            faithfulness_score=0.9,
+        )
+
+
+def test_judge_result_rejects_non_unavailable_decision_on_non_success() -> None:
+    with pytest.raises(ValueError, match="decision"):
+        JudgeResult(
+            judge_id="j",
+            judge_family="f",
+            methodology="m",
+            status="timeout",
+            decision="supported",
+        )
+
+
+def test_judge_result_default_decision_is_unavailable_on_non_success() -> None:
+    result = JudgeResult(judge_id="j", judge_family="f", methodology="m", status="unavailable")
+    assert result.decision == "unavailable"
+
+
+def test_judge_result_accepts_each_valid_decision_on_success() -> None:
+    for decision in ("supported", "refuted", "abstain"):
+        result = JudgeResult(
+            judge_id="j",
+            judge_family="f",
+            methodology="m",
+            status="success",
+            decision=decision,  # type: ignore[arg-type]
+            faithfulness_score=0.5,
+        )
+        assert result.decision == decision
 
 
 def test_judge_health_rejects_invalid_status_literal() -> None:
@@ -124,6 +179,7 @@ def test_judge_result_rejects_score_above_one_on_success() -> None:
             judge_family="f",
             methodology="m",
             status="success",
+            decision="supported",
             faithfulness_score=1.1,
         )
 
@@ -132,7 +188,7 @@ def test_judge_result_rejects_score_below_zero_on_success() -> None:
     with pytest.raises(ValueError, match="faithfulness_score"):
         JudgeResult(
             judge_id="j", judge_family="f", methodology="m", status="success",
-            faithfulness_score=-0.01,
+            decision="refuted", faithfulness_score=-0.01,
         )
 
 
@@ -140,7 +196,7 @@ def test_judge_result_rejects_nan_score_on_success() -> None:
     with pytest.raises(ValueError, match="faithfulness_score"):
         JudgeResult(
             judge_id="j", judge_family="f", methodology="m", status="success",
-            faithfulness_score=math.nan,
+            decision="abstain", faithfulness_score=math.nan,
         )
 
 
@@ -148,13 +204,16 @@ def test_judge_result_rejects_infinite_score_on_success() -> None:
     with pytest.raises(ValueError, match="faithfulness_score"):
         JudgeResult(
             judge_id="j", judge_family="f", methodology="m", status="success",
-            faithfulness_score=math.inf,
+            decision="supported", faithfulness_score=math.inf,
         )
 
 
 def test_judge_result_rejects_missing_score_on_success() -> None:
     with pytest.raises(ValueError, match="faithfulness_score"):
-        JudgeResult(judge_id="j", judge_family="f", methodology="m", status="success")
+        JudgeResult(
+            judge_id="j", judge_family="f", methodology="m", status="success",
+            decision="supported",
+        )
 
 
 def test_judge_result_rejects_score_present_on_non_success() -> None:
@@ -168,11 +227,11 @@ def test_judge_result_rejects_score_present_on_non_success() -> None:
 def test_judge_result_accepts_boundary_scores_zero_and_one() -> None:
     low = JudgeResult(
         judge_id="j", judge_family="f", methodology="m", status="success",
-        faithfulness_score=0.0,
+        decision="refuted", faithfulness_score=0.0,
     )
     high = JudgeResult(
         judge_id="j", judge_family="f", methodology="m", status="success",
-        faithfulness_score=1.0,
+        decision="supported", faithfulness_score=1.0,
     )
     assert low.faithfulness_score == 0.0
     assert high.faithfulness_score == 1.0
@@ -192,10 +251,10 @@ def test_frontier_verdict_event_rejects_score_delta_out_of_range() -> None:
     with pytest.raises(ValueError, match="score_delta"):
         FrontierVerdictEvent(
             app_trace_id="trace-6",
-            verdict="frontier_pass",
+            verdict="ensemble_supported",
             per_judge_results=[],
             score_delta=1.2,
-            disagreement_classification="agreement",
+            disagreement_classification="agree_supported",
             evaluation_ts="2026-10-02T00:00:00+00:00",
             frontier_sampling_decision_key="trace-6",
         )
@@ -204,10 +263,10 @@ def test_frontier_verdict_event_rejects_score_delta_out_of_range() -> None:
 def test_frontier_verdict_event_accepts_none_score_delta() -> None:
     event = FrontierVerdictEvent(
         app_trace_id="trace-7",
-        verdict="frontier_unavailable",
+        verdict="ensemble_insufficient",
         per_judge_results=[],
         score_delta=None,
-        disagreement_classification="insufficient_judges",
+        disagreement_classification="all_unavailable",
         evaluation_ts="2026-10-02T00:00:00+00:00",
         frontier_sampling_decision_key="trace-7",
     )

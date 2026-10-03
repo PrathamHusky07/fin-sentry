@@ -25,6 +25,7 @@ class _CountingJudge:
             judge_family=self.judge_family,
             methodology=self.methodology,
             status="success",
+            decision="supported",
             faithfulness_score=0.9,
         )
 
@@ -52,6 +53,7 @@ class _RecordingJudge:
             judge_family=self.judge_family,
             methodology=self.methodology,
             status="success",
+            decision="supported",
             faithfulness_score=0.9,
         )
 
@@ -148,7 +150,7 @@ async def test_success_event_with_answer_produces_one_verdict() -> None:
 
     assert judge.call_count == 1
     assert len(producer.emitted) == 1
-    assert producer.emitted[0].verdict == "frontier_degraded"
+    assert producer.emitted[0].verdict == "ensemble_supported"
 
 
 async def test_disabled_peer_retrieval_still_yields_a_valid_verdict() -> None:
@@ -162,7 +164,7 @@ async def test_disabled_peer_retrieval_still_yields_a_valid_verdict() -> None:
     await _handle_event(_event("success"), orchestrator, producer, peer_retriever=None)
 
     assert len(producer.emitted) == 1
-    assert producer.emitted[0].verdict == "frontier_degraded"
+    assert producer.emitted[0].verdict == "ensemble_supported"
     assert len(judge.received_inputs) == 1
     assert judge.received_inputs[0].peer_retrieval is None
 

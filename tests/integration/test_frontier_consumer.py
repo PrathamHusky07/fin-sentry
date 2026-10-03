@@ -48,11 +48,11 @@ _VERDICT_TOPIC = "rag-frontier-verdicts"
 class _StubJudge:
     """Deterministic judge double — no real Gemini/HHEM calls in this test.
 
-    Two instances with close scores are registered together so the
-    orchestrator sees >=2 successes (frontier_pass / agreement), matching
-    the "both judges succeed, scores close" case in
+    Two instances both scoring >=0.7 (supported) are registered together so
+    the orchestrator sees two agreeing usable decisions (ensemble_supported /
+    agree_supported), matching the "both judges agree" case in
     tests/frontier/test_orchestrator.py rather than the one-judge
-    frontier_degraded path.
+    single_judge path.
     """
 
     def __init__(self, judge_id: str, score: float) -> None:
@@ -67,6 +67,7 @@ class _StubJudge:
             judge_family=self.judge_family,
             methodology=self.methodology,
             status="success",
+            decision="supported" if self._score >= 0.7 else "refuted",
             faithfulness_score=self._score,
         )
 
@@ -207,7 +208,7 @@ async def test_sampled_event_produces_frontier_verdict() -> None:
         task.cancel()
 
     assert payload is not None
-    assert payload["verdict"] == "frontier_pass"
+    assert payload["verdict"] == "ensemble_supported"
 
 
 @pytest.mark.asyncio
@@ -249,4 +250,4 @@ async def test_orchestrator_failure_still_publishes_unavailable_verdict() -> Non
         task.cancel()
 
     assert payload is not None
-    assert payload["verdict"] == "frontier_unavailable"
+    assert payload["verdict"] == "ensemble_insufficient"
