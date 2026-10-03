@@ -16,6 +16,8 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, get_args
 
+from finsentry.frontier.faithjudge.types import PeerRetrievalResult
+
 JudgeStatus = Literal["success", "timeout", "model_error", "unavailable"]
 _JUDGE_STATUS_VALUES = set(get_args(JudgeStatus))
 
@@ -72,6 +74,9 @@ class FrontierEvaluationInput:
     citations: list[Citation]
     retrieved_context_chunks: list[str]
     original_rag_event_ts: str
+    # Peer-example retrieval (FaithJudge, Day 5 M2). None when disabled or
+    # not yet assembled — judges that don't use peers ignore this field.
+    peer_retrieval: PeerRetrievalResult | None = None
 
 
 @dataclass

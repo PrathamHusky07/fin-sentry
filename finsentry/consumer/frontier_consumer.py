@@ -25,6 +25,11 @@ Environment variables:
     GOOGLE_CLOUD_PROJECT
     GOOGLE_CLOUD_LOCATION        (default: global)
     GEMINI_API_KEY
+    FAITHJUDGE_PEER_RETRIEVAL_ENABLED (default: true — Day 5A M2 FaithJudge
+                                        peer-example retrieval; requires
+                                        DATABASE_URL, degrades to zero-shot
+                                        when unset or disabled)
+    DATABASE_URL
 
 HHEM default-disabled rationale: trust_remote_code=True loading fails in the
 main venv's transformers 5.16.1 with an internal API incompatibility
@@ -51,6 +56,8 @@ from finsentry.events.schema import RagResponseEvent
 from finsentry.events.topics import RAG_FRONTIER_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
 from finsentry.frontier.adapters.gemini_rubric_adapter import GeminiRubricAdapter
 from finsentry.frontier.adapters.hhem_adapter import HHEMAdapter
+from finsentry.frontier.faithjudge.retriever import FinanceBenchPeerRetriever
+from finsentry.frontier.faithjudge.types import PeerRetriever
 from finsentry.frontier.orchestrator import FrontierOrchestrator
 from finsentry.frontier.protocol import FrontierJudge
 from finsentry.frontier.sampling import should_sample_for_frontier
@@ -136,6 +143,24 @@ def _build_judges() -> list[FrontierJudge]:
     return judges
 
 
+def _build_peer_retriever() -> PeerRetriever | None:
+    """Build the FaithJudge peer retriever, or None for a clean zero-shot degrade.
+
+    Disabled by an explicit env flag or a missing DATABASE_URL — either way
+    the consumer keeps running with peer_retrieval=None on every evaluation
+    input, which GeminiRubricAdapter's v2_faithjudge prompt renders as an
+    empty PEER EXAMPLES section (zero-shot).
+    """
+    if os.getenv("FAITHJUDGE_PEER_RETRIEVAL_ENABLED", "true").lower() != "true":
+        log.info("FAITHJUDGE_PEER_RETRIEVAL_ENABLED is false — peer retrieval disabled")
+        return None
+    database_url = os.getenv("DATABASE_URL", "")
+    if not database_url:
+        log.info("DATABASE_URL not set — FaithJudge peer retrieval disabled")
+        return None
+    return FinanceBenchPeerRetriever(db_url=database_url)
+
+
 def _unavailable_verdict(app_trace_id: str) -> FrontierVerdictEvent:
     return FrontierVerdictEvent(
         app_trace_id=app_trace_id,
@@ -152,20 +177,30 @@ async def _handle_event(
     event: RagResponseEvent,
     orchestrator: FrontierOrchestrator,
     verdict_producer: FrontierVerdictProducer,
+    peer_retriever: PeerRetriever | None = None,
 ) -> None:
-    """Sample, guard, evaluate, and emit for one RagResponseEvent.
+    """Sample, guard, retrieve peers, evaluate, and emit for one RagResponseEvent.
 
     The non-success guard mirrors FlashJudge's predicate (event.status ==
     "success" and event.answer) — a blocked/error event has no answer or
     citations to evaluate, and running it through a judge would both waste
     budget and score empty input.
+
+    peer_retriever is None when peer retrieval is disabled or unconfigured
+    (see _build_peer_retriever) — evaluation then proceeds zero-shot, same
+    as if retrieval had simply found no useful peers.
     """
     if not should_sample_for_frontier(event.app_trace_id):
         return
     if not (event.status == "success" and event.answer):
         return
+
+    peer_retrieval = None
+    if peer_retriever is not None:
+        peer_retrieval = await peer_retriever.retrieve(event.query)
+
     try:
-        verdict = await orchestrator.evaluate(event)
+        verdict = await orchestrator.evaluate(event, peer_retrieval=peer_retrieval)
     except Exception:
         log.exception(
             "FrontierOrchestrator.evaluate raised for app_trace_id=%s", event.app_trace_id
@@ -191,11 +226,12 @@ async def _run() -> None:
     orchestrator = FrontierOrchestrator(judges=_build_judges())
     verdict_producer = FrontierVerdictProducer(bootstrap_servers=bootstrap, topic=verdict_topic)
     consumer = RagEventConsumer(bootstrap_servers=bootstrap, topic=topic, group_id=group)
+    peer_retriever = _build_peer_retriever()
 
     await verdict_producer.start()
 
     async def _handle(event: RagResponseEvent) -> None:
-        await _handle_event(event, orchestrator, verdict_producer)
+        await _handle_event(event, orchestrator, verdict_producer, peer_retriever)
 
     consumer.set_handler(_handle)
 

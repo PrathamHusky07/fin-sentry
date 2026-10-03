@@ -22,6 +22,7 @@ import time
 from datetime import UTC, datetime
 
 from finsentry.events.schema import RagResponseEvent
+from finsentry.frontier.faithjudge.types import PeerRetrievalResult
 from finsentry.frontier.protocol import FrontierJudge
 from finsentry.frontier.types import (
     Citation,
@@ -52,7 +53,9 @@ _AGREEMENT_MAX_DELTA = 0.15
 _MILD_DISAGREEMENT_MAX_DELTA = 0.3
 
 
-def _build_evaluation_input(event: RagResponseEvent) -> FrontierEvaluationInput:
+def _build_evaluation_input(
+    event: RagResponseEvent, peer_retrieval: PeerRetrievalResult | None
+) -> FrontierEvaluationInput:
     chunk_text_by_id = dict(
         zip(event.retrieved_chunk_ids, event.retrieved_chunks_text, strict=False)
     )
@@ -71,6 +74,7 @@ def _build_evaluation_input(event: RagResponseEvent) -> FrontierEvaluationInput:
         citations=citations,
         retrieved_context_chunks=event.retrieved_chunks_text,
         original_rag_event_ts=event.timestamp_utc,
+        peer_retrieval=peer_retrieval,
     )
 
 
@@ -147,8 +151,19 @@ class FrontierOrchestrator:
             return "frontier_fail"
         return "frontier_uncertain"
 
-    async def evaluate(self, rag_event: RagResponseEvent) -> FrontierVerdictEvent:
-        evaluation_input = _build_evaluation_input(rag_event)
+    async def evaluate(
+        self,
+        rag_event: RagResponseEvent,
+        peer_retrieval: PeerRetrievalResult | None = None,
+    ) -> FrontierVerdictEvent:
+        """Evaluate one sampled RagResponseEvent.
+
+        peer_retrieval is pre-fetched by the caller (the frontier consumer)
+        and threaded onto the FrontierEvaluationInput unchanged — this
+        orchestrator never calls a PeerRetriever itself and has no
+        knowledge of golden_set, embeddings, or contamination control.
+        """
+        evaluation_input = _build_evaluation_input(rag_event, peer_retrieval)
 
         start = time.monotonic()
         judge_results: list[JudgeResult] = []
