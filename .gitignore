@@ -19,6 +19,7 @@ scripts/
 !scripts/measure_frontier_models.py
 !scripts/measure_hhem_isolated.py
 !scripts/measure_frontier_residency.py
+!scripts/embed_golden_set.py
 # Unit tests for scripts are under tests/, not scripts/
 !tests/scripts/
 

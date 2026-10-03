@@ -6,7 +6,15 @@ import pytest
 from finsentry.ingestion.financebench import ingest
 from tests.conftest import TEST_DATABASE_URL
 
-_EXPECTED_COLUMNS = {"id", "question", "expected_answer", "doc_id", "source", "created_at"}
+_EXPECTED_COLUMNS = {
+    "id",
+    "question",
+    "expected_answer",
+    "doc_id",
+    "source",
+    "created_at",
+    "embedding",
+}
 
 
 @pytest.fixture(scope="module", autouse=True)
