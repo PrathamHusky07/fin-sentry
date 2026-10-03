@@ -1,0 +1,71 @@
+{
+  "run_ts": "2026-10-03T19:56:30Z",
+  "method": "Real POST /v1/rag/query against the live gateway (GEMINI_MODE=vertex, KAFKA_MODE=kafka, real Vertex AI calls against the Google Cloud Free Trial project), with Docker infra (Postgres/Redpanda/RisingWave), gateway, Flash consumer, and a freshly-restarted frontier consumer all running live. The frontier consumer running at session start predated every Phase 1-5 change and was killed and restarted on the M2 code before this smoke test. FRONTIER_HHEM_ENABLED unset (defaults false, per the M1 decision); FAITHJUDGE_PEER_RETRIEVAL_ENABLED unset (defaults true). golden_set has 150/150 rows embedded (migration 004 + scripts/embed_golden_set.py, this session).",
+  "app_trace_id_is_server_generated": "retrieval_trace_id is returned directly in the gateway's JSON response for every 200, so sampling decisions were observed rather than engineered -- queries were fired in a loop until should_sample_for_frontier(trace_id) returned true for a given run, same approach as the M1 smoke test.",
+  "scenario_1_success_zero_peers": {
+    "query": "What was Apple total net sales in fiscal year 2024?",
+    "ticker": "AAPL",
+    "attempts_to_sample": 14,
+    "note": "An initial attempt used a complex comparative question copied near-verbatim from golden_set (\"In 2022 Q2, which of JPM's business segments had the highest net income?\") to also exercise peer retrieval, but the local Ollama downstream (llama3.1:8b) could not reliably produce schema-valid JSON for it across 30 attempts -- consistent with Phase 0D's already-characterized Ollama semantic reliability (malformed_json / hallucinated_citation modes), not an M2 defect. Reverted to the simple single-fact AAPL query already proven reliable in the M1 smoke test.",
+    "app_trace_id": "ee900eca-81e5-4f51-bbc1-33f61d1e9610",
+    "gateway_event_ts": "2026-10-03T19:51:10.088023+00:00",
+    "frontier_verdict_ts": "2026-10-03T19:51:14.715772+00:00",
+    "end_to_end_latency_s": 4.627749,
+    "verdict": "frontier_degraded",
+    "disagreement_classification": "insufficient_judges",
+    "judge_result": {
+      "judge_id": "gemini-rubric",
+      "status": "success",
+      "faithfulness_score": 1.0,
+      "latency_ms": 3143,
+      "evidence": {
+        "rubric_reasoning": "The answer accurately states Apple's total net sales for fiscal year 2024 as $391,035 million, which is directly supported by the retrieved context.",
+        "peers_used": []
+      }
+    },
+    "peer_retrieval_outcome": "Zero peers retrieved -- a legitimate first-class result, not an error. Offline verification (direct cosine query against golden_set with the same bge-small-en-v1.5 embedding) confirmed the nearest golden_set neighbor to this question scores only 0.648 similarity, below the 0.75 similarity_threshold, so the empty peers list is the correct behavior, not a retrieval failure."
+  },
+  "scenario_2_success_with_peers": {
+    "query": "What is Amazon's FY2024 net income attributable to shareholders (in USD millions)?",
+    "ticker": "AMZN",
+    "note": "Deliberately paraphrased from golden_set's financebench_id_08286 (\"...what is Amazon's FY2019 net income attributable to shareholders...\") to clear the 0.75 similarity_threshold without being a near-duplicate (which would instead hit leakage_ceiling) -- offline check showed 0.9207 similarity, inside the accepted peer band.",
+    "attempts_to_sample": 12,
+    "app_trace_id": "96bca4b5-f707-4a93-b421-2674032849b5",
+    "gateway_event_ts": "2026-10-03T19:55:59.372665+00:00",
+    "frontier_verdict_ts": "2026-10-03T19:56:06.614359+00:00",
+    "end_to_end_latency_s": 7.241694,
+    "verdict": "frontier_degraded",
+    "disagreement_classification": "insufficient_judges",
+    "judge_result": {
+      "judge_id": "gemini-rubric",
+      "status": "success",
+      "faithfulness_score": 0.0,
+      "latency_ms": 6243,
+      "evidence": {
+        "rubric_reasoning": "The retrieved context explicitly contains Amazon's FY2024 net income ($59,248 million) across multiple tables. The answer incorrectly claims that this information is not available in the provided documents.",
+        "peers_used": [
+          {"example_id": "financebench_id_08286", "similarity": 0.9207571924861067}
+        ]
+      }
+    },
+    "peer_retrieval_outcome": "One peer retrieved and used with real similarity 0.9207, matching the offline cosine check exactly. The gateway's downstream (llama3.1:8b via Ollama) answered this particular draw with 'data not readily available' despite the context containing the figure -- real Gemini faithfulness scoring correctly caught this as score=0.0 with peer-aware evidence attached, demonstrating the retriever, the v2_faithjudge prompt, and the rubric scoring all working together end-to-end against real golden data."
+  },
+  "scenario_3_non_success_guard": {
+    "query": "What was ZZZZ Corp's net income in fiscal 2024?",
+    "ticker": "ZZZZ",
+    "note": "Nonexistent ticker -- the retrieval rail finds zero chunks, the gateway returns status='blocked' (block_reason=no_trustworthy_sources) with HTTP 200 and an empty-citations answer. Fired until a blocked event's trace id sampled (10% rate).",
+    "attempts_to_sample": 13,
+    "app_trace_id": "8e788dc0-70c1-4907-83f2-257f9e278469",
+    "gateway_event_ts": "2026-10-03T19:51:16.323523+00:00",
+    "rag_event_status": "blocked",
+    "verdict_found_in_rag_frontier_verdicts_topic": false,
+    "result": "Phase 1A's guard fired live: the sampled blocked event produced no FrontierVerdictEvent on rag-frontier-verdicts (confirmed by consuming the full topic from offset 0 and finding no entry for this app_trace_id) and the frontier consumer log shows no Gemini call for it. Before this session's fix, a sampled blocked event would have reached the orchestrator with an empty answer and triggered a real (wasted) Vertex call."
+  },
+  "pipeline_stages_verified": {
+    "frontier_consumer_restarted_on_m2_code": "killed the stale process (started before this session's changes) and restarted; confirmed via log showing the FaithJudge embedder load and FRONTIER_HHEM_ENABLED=false line",
+    "golden_set_embeddings_used_live": "peers_used similarity for scenario 2 (0.9207571924861067) matches the offline direct-SQL cosine check to 13 significant figures, confirming the live retriever hit the same embedded golden_set table this session backfilled",
+    "verdict_on_kafka_topic": "confirmed via rpk topic consume rag-frontier-verdicts -o start",
+    "rag_response_events_correlated": "confirmed via rpk topic consume rag-responses -o start, matching app_trace_id across both topics for all three scenarios"
+  },
+  "hhem_status_this_run": "disabled (unchanged M1 decision) -- all verdicts are Gemini-only / frontier_degraded via insufficient_judges. This run does not and cannot demonstrate live two-judge disagreement; that remains proven only by the stubbed-judge tests (tests/frontier/test_orchestrator.py, tests/integration/test_frontier_consumer.py). What this run proves is the FaithJudge peer-retrieval subsystem working end-to-end against real golden data and a real Gemini call: real embeddings, real cosine search, real contamination-band filtering, real peer-aware rubric scoring, and the non-success guard holding under live sampling."
+}

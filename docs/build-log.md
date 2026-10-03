@@ -1,5 +1,205 @@
 # Build Log
 
+## 2026-10-03 — d5a-m2: FaithJudge peer-example retrieval
+
+Day 5 Milestone 2. M1 was accepted on its empirical evidence and not reopened
+wholesale. This session built the FaithJudge peer-example retrieval
+subsystem plus a bounded set of M1 corrections that touched the same code
+paths. Model: Sonnet 5, per the default policy; no architecture-planning or
+calibration-math step needed Opus this session.
+
+### Phase 0 findings
+
+`pytest -m "not slow" -x -q` returned 336 passed, 5 deselected, not the
+brief's expected 333. This matches the M1 build log's own documented final
+count exactly (336 passed, 5 deselected: 2 pre-existing slow plus 3
+integration/slow) and is not a regression; the brief's 333 figure appears to
+undercount by the 2 pre-existing slow tests. `ruff check .` and
+`mypy finsentry/ --strict` were both clean at baseline.
+
+`golden_set` had migrations 001-003 applied (confirmed unembedded schema)
+but held 0 rows: FinanceBench had never been ingested in this environment.
+Ran the existing `finsentry/ingestion/financebench.py` script as a bounded
+prerequisite (no code change) before any migration work, landing 150/150
+rows keyed by `financebench_id`.
+
+Confirmed the two reuse patterns M2 depends on: `003_corpus.sql`'s
+`embedding vector(384)` plus `USING hnsw (embedding vector_cosine_ops)`
+idiom, and the gateway's embed-then-cosine pattern (`SentenceTransformer
+("BAAI/bge-small-en-v1.5").encode([text], show_progress_bar=False)` and
+`1 - (embedding <=> %s::vector) AS similarity_score`). Found the Flash
+tier's non-success predicate in `flash_judge.py` (`event.status == "success"
+and event.answer`), not in `consumer/main.py` itself as the brief assumed.
+
+Flagged, not fixed: a pre-existing stray-space bug in `gateway/main.py`'s
+no-ticker branch SQL (`filing_ date::text`). Out of scope for M2, left
+alone per the surgical-changes rule.
+
+### M1 corrections folded in (`4400511`)
+
+Non-success guard: `frontier_consumer.py`'s handler ran every sampled event
+through the orchestrator regardless of status, so a blocked or error event
+with an empty answer would still trigger a real Vertex call. Extracted the
+handler body to a module-level `_handle_event` (needed for direct unit
+testing, since it was previously a closure inside `_run()`) and added the
+guard mirroring Flash's predicate.
+
+Score invariants: `JudgeResult.faithfulness_score` is now required, finite,
+and in `[0.0, 1.0]` when `status="success"`, and forbidden otherwise;
+`JudgeHealth.error_rate_1h` and `FrontierVerdictEvent.score_delta` are
+constrained to the same interval. Both adapters range-check the parsed
+score before constructing a `success` result, surfacing an out-of-range
+model score as `model_error` instead of letting the dataclass raise past
+the adapter boundary.
+
+Threshold documentation: no threshold values changed. Added an explicit
+inline comment in `orchestrator.py` spelling out the exact provisional rule
+and exact-boundary tests (0.30/0.31/0.70 mean-score edges, 0.15/0.30
+disagreement-classification edges).
+
+SQL comments: `infra/risingwave/init.sql`'s header said "two topics" and
+"six aggregations"; it is three sources and eight materialized views
+(frontier verdicts were added in M1 but the comment was never updated).
+
+### Evidence contract (`331d603`)
+
+Found a real bug while unifying the scored population: `GeminiRubricAdapter
+._format_cited_chunks` silently scored against only the cited-chunk subset
+whenever citations were present, falling back to the full retrieved
+context only when there were none. HHEM already scored the full context
+unconditionally. Removed the citation-filtering branch
+(`_format_cited_chunks` -> `_format_context_chunks`) so both judges always
+score `FrontierEvaluationInput.retrieved_context_chunks` regardless of
+citations. Citations remain available as separate metadata; they no longer
+narrow what gets scored. Verified with a test asserting both a mocked HHEM
+and a mocked Gemini receive the identical evaluation context string for
+the same input.
+
+### Golden embeddings (`1461062`)
+
+Migration 004 adds `golden_set.embedding vector(384)` plus the same HNSW
+cosine index idiom as `003_corpus.sql`. `scripts/embed_golden_set.py`
+instantiates its own `bge-small-en-v1.5` (standalone process, deliberately
+not importing the gateway's `_embed_model` global) and is idempotent,
+skipping rows that already have an embedding. Ran live: 150/150 embedded
+on first run, confirmed 0/150 re-embedded on a second run.
+
+### FaithJudge peer retriever (`f39a67b`)
+
+`finsentry/frontier/faithjudge/`: a dataset-agnostic `PeerExample` /
+`PeerRetriever` protocol, with `FinanceBenchPeerRetriever` as the only
+implementation M2 builds. The orchestrator never calls a retriever itself;
+the frontier consumer fetches peers and threads the result onto
+`FrontierEvaluationInput.peer_retrieval` before calling
+`orchestrator.evaluate()`.
+
+Contamination control is two-layered on purpose. Exact-id exclusion
+(`exclude_example_id`) handles the case where the item under evaluation is
+itself a golden-set row, which Day 6 calibration will do constantly. A
+similarity-ceiling exclusion (`leakage_ceiling`) also drops any candidate
+whose similarity to the current question exceeds the ceiling,
+regardless of id, because a paraphrased near-duplicate has no matching id
+but can still leak the ground-truth answer into the prompt. This is
+documented in the retriever's docstring as a control, not a proof that all
+semantic leakage is impossible.
+
+`similarity_threshold=0.75` and `leakage_ceiling=0.95` are provisional
+configuration defaults, not a calibration result. Before picking them, ran
+an exploratory check of the embedded golden set's own pairwise cosine
+similarities (150 FinanceBench questions): median 0.57, 95th percentile
+0.72, max 0.969. 0.75 keeps peers topically close rather than merely
+"another finance question"; 0.95 sits just under the observed max so only
+true near-duplicates are excluded. Day 6 is explicitly out of scope for
+recalibrating these.
+
+### v2 FaithJudge prompt (`6494c30`)
+
+`rubric_v2_faithjudge.py` (`PROMPT_VERSION="frontier_rubric_v2_faithjudge"`)
+is used for every M2 Gemini call, with peers or zero-shot alike, so there
+is no separate zero-shot variant to keep in sync. Six strongly delimited
+sections (`EVALUATOR INSTRUCTIONS`, `CURRENT QUESTION`, `CURRENT ANSWER`,
+`CURRENT RETRIEVED CONTEXT`, `CURRENT CITATIONS`, `PEER EXAMPLES`), with
+the instructions explicitly marking everything past the first section as
+untrusted data and telling the model to ignore instruction-shaped text
+found there. `rubric_v1.py` is untouched; the adapter no longer imports it,
+and it stays in the repo so a verdict emitted before M2 can still be
+understood by reading the module that produced it.
+
+`GeminiRubricAdapter` now builds the prompt from the full evaluation
+context instead of one pre-joined string, and records `peers_used`
+(id plus similarity) in `JudgeResult.evidence` on success.
+
+### Verification
+
+382 passed (336 baseline plus 46 new), 5 deselected, `ruff check .` clean,
+`mypy finsentry/ --strict` clean across 61 source files.
+
+### Live smoke (not mocks)
+
+The frontier consumer running at session start predated every change in
+this entry; killed it and restarted on the M2 code before testing anything
+live. Fired real queries at the live gateway (`GEMINI_MODE=vertex`,
+`KAFKA_MODE=kafka`) until trace ids sampled into the frontier tier,
+confirmed via `rpk topic consume` against both `rag-responses` and
+`rag-frontier-verdicts`.
+
+Three scenarios, evidence in
+`docs/measurements/faithjudge-e2e-smoke-d5a-m2.json`:
+
+1. AAPL net-sales question, zero peers retrieved (offline check confirmed
+   the nearest golden_set neighbor scores 0.648, below threshold). Real
+   Gemini call, `faithfulness_score=1.0`, verdict `frontier_degraded`,
+   end-to-end latency 4.63s.
+2. An AMZN net-income question deliberately paraphrased from a golden_set
+   question to land inside the peer band (0.9207 similarity, confirmed to
+   match the offline cosine check to 13 significant figures). One peer
+   retrieved and used; the downstream model answered "data not available"
+   despite the context containing the figure, and the real Gemini call
+   correctly scored it `faithfulness_score=0.0` with peer-aware evidence
+   attached. End-to-end latency 7.24s.
+3. A nonexistent-ticker query (`no_trustworthy_sources`, `status=blocked`)
+   fired until a blocked event's trace id sampled. Confirmed via a full
+   topic dump that no `FrontierVerdictEvent` was ever produced for it: the
+   non-success guard held under live sampling, not just in the unit tests.
+
+An initial attempt at scenario 1 used a complex comparative question
+copied near-verbatim from golden_set to also exercise peer retrieval in
+one shot; the local Ollama downstream (llama3.1:8b) could not reliably
+produce schema-valid JSON for it across 30 attempts. This is Phase 0D's
+already-characterized Ollama reliability issue, not an M2 defect, and
+cost the switch to two simpler, separately-crafted queries.
+
+HHEM stayed disabled this session (unchanged M1 decision), so both
+success verdicts are Gemini-only / `frontier_degraded` via
+`insufficient_judges`. This run does not and cannot demonstrate live
+two-judge disagreement. What it proves is the peer-retrieval subsystem
+working end-to-end against real embedded golden data and a real Gemini
+call.
+
+Unrelated to this session's changes: the `finsentry-risingwave` container
+had crashed roughly ninety minutes before the live smoke (a worker-registration
+expiry in its logs, cause not investigated further), which would have
+silently emptied its catalog for the remainder of the session. Restarted
+it and re-ran `scripts/init_risingwave.py` to recreate the three sources
+and eight materialized views; the dashboard then correctly reported three
+real `frontier_degraded` verdicts in its 15-minute window. Worth a
+stability look in a future reliability pass, not an M2 blocker.
+
+### Deferred, with reasons
+
+- Kafka emission semantics, idempotency/`source_event_id`,
+  `FrontierVerdictProducer`, and HHEM were explicitly out of scope per the
+  M2 brief. The frontier stream is non-gating calibration/metrics, so
+  exactly-once delivery is a reliability-pass concern (Day 6/7), not an M2
+  blocker.
+- Day 6's Cohen's kappa threshold sweep and any recalibration of
+  `similarity_threshold` / `leakage_ceiling` stay Day 6 work.
+- FinQA peer retrieval: the `PeerRetriever` protocol is dataset-agnostic by
+  design specifically so this can plug in later; only the FinanceBench
+  implementation was built this session, per the brief.
+
+M2 complete. Day 5 continues to M3.
+
 ## 2026-10-02 — d5a-m1: frontier evaluation plane infrastructure
 
 Day 5 Milestone 1. Phase 0D closed the foundation diagnostics; this session
