@@ -32,7 +32,12 @@ import time
 from typing import Any
 
 from finsentry.frontier.prompts.rubric_v2_faithjudge import PROMPT_VERSION, build_rubric_prompt
-from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, JudgeResult
+from finsentry.frontier.types import (
+    FrontierEvaluationInput,
+    JudgeDecision,
+    JudgeHealth,
+    JudgeResult,
+)
 from finsentry.rails.output.cost_governance import CostBudget
 
 log = logging.getLogger(__name__)
@@ -41,6 +46,25 @@ _DEFAULT_TIMEOUT_S = 30.0
 _LIVENESS_PROMPT = (
     'Respond with ONLY this exact JSON object, no other text: {"status": "ok"}'
 )
+
+# Adapter-local decision thresholds. Provisional, Day-6-calibratable, and
+# deliberately NOT shared with any other judge's thresholds (see
+# finsentry/frontier/ensemble.py's module docstring) -- a cross-judge
+# shared numeric threshold would be the mean-score averaging mistake in a
+# different shape. Chosen to match this adapter's own absolute rubric
+# scale (0.0/0.5/1.0): a full-support score decides "supported", a
+# full-refutation score decides "refuted", a partial-support score
+# abstains rather than being forced one way.
+_SUPPORT_THRESHOLD = 0.7
+_REFUTE_THRESHOLD = 0.3
+
+
+def _decide(score: float) -> JudgeDecision:
+    if score >= _SUPPORT_THRESHOLD:
+        return "supported"
+    if score <= _REFUTE_THRESHOLD:
+        return "refuted"
+    return "abstain"
 
 
 def _strip_json_fences(text: str) -> str:
@@ -232,6 +256,7 @@ class GeminiRubricAdapter:
             judge_family=self.judge_family,
             methodology=self.methodology,
             status="success",
+            decision=_decide(score),
             faithfulness_score=score,
             evidence={
                 "rubric_reasoning": parsed.get("rubric_reasoning"),

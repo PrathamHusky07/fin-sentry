@@ -3,16 +3,17 @@ FrontierOrchestrator: runs every registered FrontierJudge against one sampled
 RagResponseEvent and reduces their JudgeResults into a single
 FrontierVerdictEvent.
 
-The verdict is not a weighted average. Disagreement between judges is
-computed and surfaced explicitly (score_delta, disagreement_classification)
-so a hiring-manager-readable trace shows WHY a verdict landed where it did,
-not just a blended number that hides two judges pointing in opposite
-directions.
-
-Pass/fail/uncertain score thresholds below are architectural placeholders,
-not calibrated values — Day 6's Cohen's kappa sweep against the human-labeled
-golden set is where real thresholds get chosen. M1's job is a working
-decision rule, not a tuned one.
+The verdict is never a weighted average. Day 5 M3 replaced the orchestrator's
+own mean-score reduction with finsentry/frontier/ensemble.py's
+decide_ensemble(): a reduction over each judge's categorical decision
+(supported/refuted/abstain/unavailable), computed independently by each
+adapter from its own provisional thresholds. Averaging HHEM's NLI score
+against Gemini's absolute rubric score would blend two numbers that are not
+on a shared scale just because both happen to range over [0, 1] -- see
+ensemble.py's module docstring for the full argument. The orchestrator's
+only job here is running judges concurrently with per-judge timeouts and
+handing their results to decide_ensemble(); it has no decision logic of
+its own.
 """
 from __future__ import annotations
 
@@ -22,13 +23,12 @@ import time
 from datetime import UTC, datetime
 
 from finsentry.events.schema import RagResponseEvent
+from finsentry.frontier.ensemble import decide_ensemble
 from finsentry.frontier.faithjudge.types import PeerRetrievalResult
 from finsentry.frontier.protocol import FrontierJudge
 from finsentry.frontier.types import (
     Citation,
-    DisagreementClassification,
     FrontierEvaluationInput,
-    FrontierVerdict,
     FrontierVerdictEvent,
     JudgeResult,
 )
@@ -36,21 +36,6 @@ from finsentry.frontier.types import (
 log = logging.getLogger(__name__)
 
 _DEFAULT_PER_JUDGE_TIMEOUT_S = 30.0
-
-# PROVISIONAL thresholds, status: uncalibrated placeholders (see module
-# docstring). Day 6's Cohen's kappa sweep against the golden set picks real
-# values. Exact rule in effect until then:
-#   mean_score >= _PASS_THRESHOLD (0.7)                -> frontier_pass
-#   mean_score <= _FAIL_THRESHOLD (0.3)                -> frontier_fail
-#   _FAIL_THRESHOLD < mean_score < _PASS_THRESHOLD     -> frontier_uncertain
-#   score_delta <  _AGREEMENT_MAX_DELTA (0.15)          -> agreement
-#   score_delta <  _MILD_DISAGREEMENT_MAX_DELTA (0.3)   -> mild_disagreement
-#   score_delta >= _MILD_DISAGREEMENT_MAX_DELTA (0.3)   -> strong_disagreement
-_PASS_THRESHOLD = 0.7
-_FAIL_THRESHOLD = 0.3
-
-_AGREEMENT_MAX_DELTA = 0.15
-_MILD_DISAGREEMENT_MAX_DELTA = 0.3
 
 
 def _build_evaluation_input(
@@ -122,35 +107,6 @@ class FrontierOrchestrator:
                 error_detail=str(exc)[:500],
             )
 
-    @staticmethod
-    def _classify_disagreement(
-        successful_scores: list[float],
-    ) -> tuple[DisagreementClassification, float | None]:
-        if len(successful_scores) < 2:
-            return "insufficient_judges", None
-        score_delta = max(successful_scores) - min(successful_scores)
-        if score_delta < _AGREEMENT_MAX_DELTA:
-            return "agreement", score_delta
-        if score_delta < _MILD_DISAGREEMENT_MAX_DELTA:
-            return "mild_disagreement", score_delta
-        return "strong_disagreement", score_delta
-
-    @staticmethod
-    def _decide_verdict(
-        disagreement: DisagreementClassification,
-        successful_scores: list[float],
-    ) -> FrontierVerdict:
-        if disagreement == "insufficient_judges":
-            return "frontier_degraded" if successful_scores else "frontier_unavailable"
-        if disagreement == "strong_disagreement":
-            return "disagreement_review_needed"
-        mean_score = sum(successful_scores) / len(successful_scores)
-        if mean_score >= _PASS_THRESHOLD:
-            return "frontier_pass"
-        if mean_score <= _FAIL_THRESHOLD:
-            return "frontier_fail"
-        return "frontier_uncertain"
-
     async def evaluate(
         self,
         rag_event: RagResponseEvent,
@@ -182,21 +138,14 @@ class FrontierOrchestrator:
             len(self._judges),
         )
 
-        successful_scores = [
-            r.faithfulness_score
-            for r in judge_results
-            if r.status == "success" and r.faithfulness_score is not None
-        ]
-
-        disagreement, score_delta = self._classify_disagreement(successful_scores)
-        verdict = self._decide_verdict(disagreement, successful_scores)
+        outcome = decide_ensemble(judge_results)
 
         return FrontierVerdictEvent(
             app_trace_id=rag_event.app_trace_id,
-            verdict=verdict,
-            per_judge_results=judge_results,
-            score_delta=score_delta,
-            disagreement_classification=disagreement,
+            verdict=outcome.verdict,
+            per_judge_results=outcome.per_judge_results,
+            score_delta=outcome.score_delta,
+            disagreement_classification=outcome.disagreement_taxonomy,
             evaluation_ts=datetime.now(UTC).isoformat(),
             frontier_sampling_decision_key=rag_event.app_trace_id,
         )

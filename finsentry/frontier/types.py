@@ -21,26 +21,38 @@ from finsentry.frontier.faithjudge.types import PeerRetrievalResult
 JudgeStatus = Literal["success", "timeout", "model_error", "unavailable"]
 _JUDGE_STATUS_VALUES = set(get_args(JudgeStatus))
 
+JudgeDecision = Literal["supported", "refuted", "abstain", "unavailable"]
+_JUDGE_DECISION_VALUES = set(get_args(JudgeDecision))
+
 JudgeHealthStatus = Literal["healthy", "degraded", "unavailable"]
 _JUDGE_HEALTH_STATUS_VALUES = set(get_args(JudgeHealthStatus))
 
-FrontierVerdict = Literal[
-    "frontier_pass",
-    "frontier_fail",
-    "frontier_uncertain",
-    "disagreement_review_needed",
-    "frontier_degraded",
-    "frontier_unavailable",
+# Day 5 M3: the heterogeneous-judge ensemble decision contract
+# (finsentry/frontier/ensemble.py). Owned here, not in ensemble.py, so
+# ensemble.py can import these from types.py without a circular import —
+# FrontierVerdictEvent and EnsembleOutcome share one vocabulary, not two
+# independently-maintained copies of it.
+EnsembleVerdict = Literal[
+    "ensemble_supported",
+    "ensemble_refuted",
+    "ensemble_mixed",
+    "ensemble_abstain",
+    "ensemble_insufficient",
 ]
-_FRONTIER_VERDICT_VALUES = set(get_args(FrontierVerdict))
+_ENSEMBLE_VERDICT_VALUES = set(get_args(EnsembleVerdict))
 
-DisagreementClassification = Literal[
-    "agreement", "mild_disagreement", "strong_disagreement", "insufficient_judges"
+DisagreementTaxonomy = Literal[
+    "agree_supported",
+    "agree_refuted",
+    "mixed_support_refute",
+    "abstain_dominated",
+    "single_judge",
+    "all_unavailable",
 ]
-_DISAGREEMENT_CLASSIFICATION_VALUES = set(get_args(DisagreementClassification))
+_DISAGREEMENT_TAXONOMY_VALUES = set(get_args(DisagreementTaxonomy))
 
 
-def _require_unit_interval(field_name: str, value: float) -> None:
+def require_unit_interval(field_name: str, value: float) -> None:
     """Reject None/NaN/+-inf/out-of-range scores at the domain boundary.
 
     A plain dataclass does not enforce this at the type level, so every score
@@ -86,12 +98,21 @@ class JudgeResult:
     judge_id/judge_family/methodology identify which judge produced this —
     the orchestrator never collapses judges into an average, so identity
     travels with every score.
+
+    decision is derived evidence, never a replacement for faithfulness_score:
+    each adapter maps its own raw score to supported/refuted/abstain using
+    its own provisional, adapter-local thresholds (see the adapter modules),
+    and the ensemble decision contract (finsentry/frontier/ensemble.py)
+    reduces over these categorical decisions, not over the scores. A
+    non-success status always carries decision="unavailable" — there is no
+    other sensible value when a judge produced no score at all.
     """
 
     judge_id: str
     judge_family: str
     methodology: str
     status: JudgeStatus
+    decision: JudgeDecision = "unavailable"
     faithfulness_score: float | None = None
     evidence: dict[str, Any] | None = None
     error_detail: str | None = None
@@ -100,14 +121,27 @@ class JudgeResult:
     def __post_init__(self) -> None:
         if self.status not in _JUDGE_STATUS_VALUES:
             raise ValueError(f"JudgeResult.status={self.status!r} not in {_JUDGE_STATUS_VALUES}")
+        if self.decision not in _JUDGE_DECISION_VALUES:
+            raise ValueError(
+                f"JudgeResult.decision={self.decision!r} not in {_JUDGE_DECISION_VALUES}"
+            )
         if self.status == "success":
             if self.faithfulness_score is None:
                 raise ValueError("JudgeResult.faithfulness_score is required when status=success")
-            _require_unit_interval("JudgeResult.faithfulness_score", self.faithfulness_score)
-        elif self.faithfulness_score is not None:
-            raise ValueError(
-                f"JudgeResult.faithfulness_score must be None when status={self.status!r}"
-            )
+            require_unit_interval("JudgeResult.faithfulness_score", self.faithfulness_score)
+            if self.decision == "unavailable":
+                raise ValueError(
+                    "JudgeResult.decision must be supported/refuted/abstain when status=success"
+                )
+        else:
+            if self.faithfulness_score is not None:
+                raise ValueError(
+                    f"JudgeResult.faithfulness_score must be None when status={self.status!r}"
+                )
+            if self.decision != "unavailable":
+                raise ValueError(
+                    f"JudgeResult.decision must be unavailable when status={self.status!r}"
+                )
 
 
 @dataclass
@@ -122,40 +156,50 @@ class JudgeHealth:
             raise ValueError(
                 f"JudgeHealth.status={self.status!r} not in {_JUDGE_HEALTH_STATUS_VALUES}"
             )
-        _require_unit_interval("JudgeHealth.error_rate_1h", self.error_rate_1h)
+        require_unit_interval("JudgeHealth.error_rate_1h", self.error_rate_1h)
 
 
 @dataclass
 class FrontierVerdictEvent:
     """Emitted to the rag-frontier-verdicts topic. One per sampled RAG event.
 
-    The verdict is not a weighted average of per-judge scores — it is a
-    classification of the per_judge_results list, with disagreement surfaced
-    explicitly via disagreement_classification and score_delta rather than
-    averaged away.
+    verdict and disagreement_classification come directly from
+    decide_ensemble() (finsentry/frontier/ensemble.py): a reduction over
+    each judge's categorical decision, never a weighted average of
+    heterogeneous judges' raw scores. score_delta is preserved as an
+    analysis-only field (the spread between judges that produced a score)
+    and is explicitly not the basis for verdict or disagreement_classification.
+
+    Field names and types are unchanged from M1/M2 (verdict: str,
+    disagreement_classification: str, score_delta: float | None) even
+    though M3 replaced their allowed value sets — infra/risingwave/init.sql's
+    source and materialized views read these as untyped VARCHAR with no
+    enum constraint and never branch on a specific value, so the M3
+    vocabulary change required no infra changes. Verified by reading both
+    the source definition and every MV that references these columns.
     """
 
     app_trace_id: str
-    verdict: FrontierVerdict
+    verdict: EnsembleVerdict
     per_judge_results: list[JudgeResult]
     score_delta: float | None
-    disagreement_classification: DisagreementClassification
+    disagreement_classification: DisagreementTaxonomy
     evaluation_ts: str
     frontier_sampling_decision_key: str
     schema_version: str = "1.0"
 
     def __post_init__(self) -> None:
-        if self.verdict not in _FRONTIER_VERDICT_VALUES:
+        if self.verdict not in _ENSEMBLE_VERDICT_VALUES:
             raise ValueError(
-                f"FrontierVerdictEvent.verdict={self.verdict!r} not in {_FRONTIER_VERDICT_VALUES}"
+                f"FrontierVerdictEvent.verdict={self.verdict!r} not in {_ENSEMBLE_VERDICT_VALUES}"
             )
-        if self.disagreement_classification not in _DISAGREEMENT_CLASSIFICATION_VALUES:
+        if self.disagreement_classification not in _DISAGREEMENT_TAXONOMY_VALUES:
             raise ValueError(
                 "FrontierVerdictEvent.disagreement_classification="
-                f"{self.disagreement_classification!r} not in {_DISAGREEMENT_CLASSIFICATION_VALUES}"
+                f"{self.disagreement_classification!r} not in {_DISAGREEMENT_TAXONOMY_VALUES}"
             )
         if self.score_delta is not None:
-            _require_unit_interval("FrontierVerdictEvent.score_delta", self.score_delta)
+            require_unit_interval("FrontierVerdictEvent.score_delta", self.score_delta)
 
     def to_kafka_json(self) -> bytes:
         return json.dumps(asdict(self)).encode("utf-8")

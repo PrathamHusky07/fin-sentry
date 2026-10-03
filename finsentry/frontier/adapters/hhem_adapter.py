@@ -21,7 +21,12 @@ import math
 import time
 from typing import Any
 
-from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, JudgeResult
+from finsentry.frontier.types import (
+    FrontierEvaluationInput,
+    JudgeDecision,
+    JudgeHealth,
+    JudgeResult,
+)
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +37,24 @@ _LIVENESS_PAIR = (
     "The capital of France is Paris.",
     "Paris is the capital of France.",
 )
+
+# Adapter-local decision thresholds, independent of GeminiRubricAdapter's
+# (see finsentry/frontier/ensemble.py's module docstring on why no
+# cross-judge shared threshold exists). HHEM's native NLI score is a
+# continuous consistency probability, not an absolute rubric category, so
+# these are provisional placeholders pending Day 6 calibration against the
+# golden set -- the same numeric values as the Gemini adapter's thresholds
+# here is coincidence, not a shared constant.
+_SUPPORT_THRESHOLD = 0.7
+_REFUTE_THRESHOLD = 0.3
+
+
+def _decide(score: float) -> JudgeDecision:
+    if score >= _SUPPORT_THRESHOLD:
+        return "supported"
+    if score <= _REFUTE_THRESHOLD:
+        return "refuted"
+    return "abstain"
 
 
 class HHEMAdapter:
@@ -120,6 +143,7 @@ class HHEMAdapter:
                 judge_family=self.judge_family,
                 methodology=self.methodology,
                 status="success",
+                decision=_decide(score),
                 faithfulness_score=score,
                 evidence={"raw_score": score},
                 latency_ms=latency_ms,

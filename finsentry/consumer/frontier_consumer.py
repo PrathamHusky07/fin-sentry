@@ -164,10 +164,10 @@ def _build_peer_retriever() -> PeerRetriever | None:
 def _unavailable_verdict(app_trace_id: str) -> FrontierVerdictEvent:
     return FrontierVerdictEvent(
         app_trace_id=app_trace_id,
-        verdict="frontier_unavailable",
+        verdict="ensemble_insufficient",
         per_judge_results=[],
         score_delta=None,
-        disagreement_classification="insufficient_judges",
+        disagreement_classification="all_unavailable",
         evaluation_ts=datetime.now(UTC).isoformat(),
         frontier_sampling_decision_key=app_trace_id,
     )
