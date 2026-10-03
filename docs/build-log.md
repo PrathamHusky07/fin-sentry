@@ -1,5 +1,108 @@
 # Build Log
 
+## 2026-10-03 — d5a-m4 Phase 1+2: evaluation correction and larger-sample characterization
+
+Closes M4. Two parts: Phase 1 corrected the evaluation methodology offline
+against the existing 150 scored rows (no Gemini calls); Phase 2 scored
+350 more rows (500 total) to tighten the same judge's operating-point
+estimates. The rubric, prompt, production threshold, and adapter policy
+were not touched in either phase -- nothing in `finsentry/` reads
+`calibration_summary.json` or `threshold_sweep.json`, so this measures
+the judge without wiring a decision into it. Wiring a threshold into the
+adapter stays a Day 6 decision.
+
+### Average Precision replaces trapezoidal PR-AUC as the headline metric
+
+The previous PR-AUC (0.556 on the original 105-row calibration split)
+drew a straight line between tied `detector_score` operating points.
+That is optimistic here specifically because the rubric only ever
+returns faithfulness in {0.0, 0.5, 1.0}: most rows tie on the same
+score, and interpolating across a tie credits the judge with precision
+values it never produced at any real threshold. `average_precision`
+(`finsentry/calibration/metrics.py`), added this session, folds every
+tied score into one step instead -- on the same 105 rows it gives
+0.5071, matching an independent `sklearn.metrics.average_precision_score`
+cross-check run during development (not pinned into any test).
+Trapezoidal PR-AUC is kept only as a labeled secondary diagnostic.
+`select_recall_favoring_threshold`'s no-eligible-point fallback also had
+a doc/code mismatch (docstring claimed best-F1, code did recall-first on
+all points) -- fixed, with a test that constructs data where literally
+no threshold clears the precision floor, instead of the old test whose
+floor one point actually cleared.
+
+### The three-valued-score finding, now confirmed at 3x the sample
+
+`faithfulness_score`'s API type is a continuous float in [0, 1]. Across
+all 500 scored rows it still only ever took three values: 0.0, 0.5, 1.0
+(score distribution: calibration {0.0: 36, 0.5: 8, 1.0: 306}, held-out
+{0.0: 23, 0.5: 2, 1.0: 125}). Every one of the 21 swept thresholds
+collapses to one of at most three distinct prediction regimes. This is
+the headline insight of M4, not a caveat: threshold tuning on this
+judge has a hard ceiling on expressive power until its score resolution
+increases, and no amount of additional sampling changes that -- more
+data tightens the confidence interval on each of the three regimes, it
+does not create a fourth one.
+
+### Calibration vs. held-out recall, with Wilson CIs
+
+At 500 rows, the larger abstain bucket (8 rows in calibration, vs. 1 at
+150 rows) changed which regime the recall-favoring selector picks: the
+selected threshold moved from 0.55 to 0.05, because catching the abstain
+bucket's positives now increases recall more than the previous 150-row
+sample suggested (the single old abstain row happened to be a false
+positive). Selected threshold 0.05: calibration precision 0.659
+[0.511, 0.781] (n=44), recall 0.580 [0.442, 0.706] (n=50); held-out
+(threshold applied once) precision 0.640 [0.445, 0.798] (n=25), recall
+0.727 [0.518, 0.868] (n=22), confusion tp=16 fp=9 tn=119 fn=6. Held-out
+positive count rose from 6 (at 150 rows) to 22 (at 500 rows) -- the
+actual point of the larger sample: a 6-positive recall estimate has an
+enormous Wilson CI, a 22-positive one is meaningfully tighter, even
+though the held-out point estimate for recall is now lower (0.727 vs.
+the earlier 1.000) because the earlier number was never more than six
+coin flips. Both overlap inside each other's CI; neither sample size
+supports treating a specific recall point estimate as a production
+number. This is a tighter estimate of the same judge on more data, not
+evidence the judge got better or worse.
+
+### Cost
+
+Phase 1: $0 (no Gemini calls, pure recomputation from the existing 150
+rows). Phase 2: 350 new calls, 7 hit transient Vertex errors (six `429
+RESOURCE_EXHAUSTED`, one 30s timeout) and were retried once via the
+script's existing idempotent resume (deleting only those 7 error
+placeholders, which were never part of the original 150, then
+re-running) -- all 7 succeeded on retry. Recorded estimated Vertex cost
+this session (from usage metadata, not confirmed against the Google
+Cloud billing API): $1.159654. Cumulative M4 total: $1.648952, against
+the ~$290 free-trial credit.
+
+### Scope note on `finqa_threshold_sweep.py`
+
+Adding full-benchmark/full-split provenance counts (1651 total rows,
+1156/495 calibration/holdout) required one read-only Postgres read of
+`hallucination_bench` from inside the sweep script, which previously
+claimed to never touch the benchmark table. Docstring updated to
+describe this honestly. No Gemini call was added; the read is purely
+descriptive and does not affect any computed metric.
+
+### Verification
+
+437 passed (431 M3+M4-phase0 baseline + 6 new: 4 `average_precision`
+tests worked out by hand in comments, 2 Wilson interval tests), `ruff
+check .` clean, `mypy finsentry/ --strict` clean across 65 source files.
+
+=== M4 FINAL REPORT ===
+Total scored: 500 (prev 150 preserved as superset, verified byte-identical)
+Held-out positives: 22 (was 6)
+Average Precision: cal 0.4751 / holdout 0.5459
+ROC-AUC: cal 0.7683 / holdout 0.8342
+Held-out @ threshold=0.05: precision 0.640 [0.445, 0.798], recall 0.727
+  [0.518, 0.868], f1 0.681, confusion tp=16 fp=9 tn=119 fn=6
+Score distribution: {0.0: 59, 0.5: 10, 1.0: 431} -- still 3-valued
+Production threshold/adapter: NOT changed (deferred to Day 6)
+Tests: 437, ruff clean, mypy clean
+M4 CLOSED.
+
 ## 2026-10-03 — d5a-m4: Gemini judge calibration against hallucination_bench
 
 Day 5 Milestone 4, gated on the M3 checkpoint (PASS). Calibrates the live

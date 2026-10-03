@@ -1,48 +1,75 @@
 {
   "calibration_split": {
-    "average_precision": 0.5071428571428571,
-    "n_rows_scored": 105,
+    "average_precision": 0.4751010101010101,
+    "metrics_at_selected_threshold": {
+      "accuracy": 0.8971428571428571,
+      "confusion": {
+        "fn": 21,
+        "fp": 15,
+        "tn": 285,
+        "tp": 29
+      },
+      "f1": 0.6170212765957446,
+      "fnr": 0.42000000000000004,
+      "fpr": 0.050000000000000044,
+      "kappa": 0.5578947368421052,
+      "precision": 0.6590909090909091,
+      "recall": 0.58,
+      "specificity": 0.95,
+      "threshold": 0.05
+    },
+    "n_rows_scored": 350,
     "positive_rate": 0.14285714285714285,
-    "pr_auc": 0.5564229284610887,
-    "roc_auc": 0.7811111111111111
+    "pr_auc": 0.5479602986801441,
+    "precision_wilson_ci": {
+      "high": 0.7812436737136005,
+      "low": 0.511388679719395,
+      "n": 44
+    },
+    "recall_wilson_ci": {
+      "high": 0.7062520276543306,
+      "low": 0.4423319668777783,
+      "n": 50
+    },
+    "roc_auc": 0.7683333333333333
   },
   "cost_note": "Recorded estimated Vertex cost from usage metadata (prompt/candidates/thoughts token counts times the Vertex AI Standard-tier pricing constants in cost_governance.py), not actual billing spend confirmed against the Google Cloud billing API.",
   "dataset": "Cleanlab/FinQA-hallucination-detection (via hallucination_bench, 1651 rows)",
   "detector_score_mapping": "detector_score = 1 - faithfulness_score",
-  "generated_at": "2026-10-03T23:24:40.843766+00:00",
+  "generated_at": "2026-10-03T23:57:13.511127+00:00",
   "held_out_split": {
-    "average_precision": 0.75,
+    "average_precision": 0.5459288537549407,
     "metrics_at_selected_threshold": {
-      "accuracy": 0.9555555555555556,
+      "accuracy": 0.9,
       "confusion": {
-        "fn": 0,
-        "fp": 2,
-        "tn": 37,
-        "tp": 6
+        "fn": 6,
+        "fp": 9,
+        "tn": 119,
+        "tp": 16
       },
-      "f1": 0.8571428571428571,
-      "fnr": 0.0,
-      "fpr": 0.05128205128205132,
-      "kappa": 0.8314606741573036,
-      "precision": 0.75,
-      "recall": 1.0,
-      "specificity": 0.9487179487179487,
-      "threshold": 0.55
+      "f1": 0.6808510638297872,
+      "fnr": 0.2727272727272727,
+      "fpr": 0.0703125,
+      "kappa": 0.6218487394957983,
+      "precision": 0.64,
+      "recall": 0.7272727272727273,
+      "specificity": 0.9296875,
+      "threshold": 0.05
     },
-    "n_rows_scored": 45,
-    "positive_rate": 0.13333333333333333,
-    "pr_auc": 0.531547619047619,
+    "n_rows_scored": 150,
+    "positive_rate": 0.14666666666666667,
+    "pr_auc": 0.472774579247699,
     "precision_wilson_ci": {
-      "high": 0.9285223111419724,
-      "low": 0.40926987910258916,
-      "n": 8
+      "high": 0.7975234356826436,
+      "low": 0.44518154601046633,
+      "n": 25
     },
     "recall_wilson_ci": {
-      "high": 1.0,
-      "low": 0.6096569663469354,
-      "n": 6
+      "high": 0.8684941798418556,
+      "low": 0.5184787630099803,
+      "n": 22
     },
-    "roc_auc": 0.9743589743589743
+    "roc_auc": 0.8341619318181818
   },
   "judge": "gemini-rubric (GeminiRubricAdapter, Vertex gemini-3.6-flash)",
   "metric_definitions": {
@@ -73,42 +100,43 @@
       "positives": 71
     },
     "scored_calibration": {
-      "n": 105,
-      "negatives": 90,
+      "n": 350,
+      "negatives": 300,
       "positive_rate": 0.14285714285714285,
-      "positives": 15
+      "positives": 50
     },
     "scored_holdout": {
-      "n": 45,
-      "negatives": 39,
-      "positive_rate": 0.13333333333333333,
-      "positives": 6
+      "n": 150,
+      "negatives": 128,
+      "positive_rate": 0.14666666666666667,
+      "positives": 22
     },
     "split_calibration_fraction": 0.7,
     "split_seed": "d5a-m4-finqa-split-v1",
     "stratification_note": "Each split and the Gemini-call subsample preserve class prevalence as closely as integer sample sizes allow (each class is split/sampled independently, then rounded) -- not an exact match to the source positive rate."
   },
-  "recorded_estimated_cost_usd": 0.489298,
-  "regime_collapse_note": "faithfulness_score's API type is a continuous float in [0, 1], but across all 150 scored rows the rubric prompt empirically produced only 3 distinct values: ['0.0', '0.5', '1.0']. Since detector_score is a deterministic function of faithfulness_score, the 21 swept thresholds (0.0-1.0, step 0.05) collapse to at most 3 distinct prediction regimes -- every threshold strictly between two consecutive observed values produces an identical confusion matrix to its neighbors. Threshold tuning has limited expressive power until the judge's score resolution increases beyond this many values.",
-  "scope_note": "This calibrates the Gemini rubric judge alone, on a 150-row stratified subset of the 1651-row benchmark. Full-benchmark scoring and multi-judge (ensemble) calibration are future work, not part of this result.",
+  "recorded_estimated_cost_usd": 1.648952,
+  "regime_collapse_note": "faithfulness_score's API type is a continuous float in [0, 1], but across all 500 scored rows the rubric prompt empirically produced only 3 distinct values: ['0.0', '0.5', '1.0']. Since detector_score is a deterministic function of faithfulness_score, the 21 swept thresholds (0.0-1.0, step 0.05) collapse to at most 3 distinct prediction regimes -- every threshold strictly between two consecutive observed values produces an identical confusion matrix to its neighbors. Threshold tuning has limited expressive power until the judge's score resolution increases beyond this many values.",
+  "scope_note": "This calibrates the Gemini rubric judge alone, on a 500-row stratified subset of the 1651-row benchmark. Full-benchmark scoring and multi-judge (ensemble) calibration are future work, not part of this result.",
   "score_distribution": {
     "calibration": {
-      "0.0": 12,
-      "0.5": 1,
-      "1.0": 92
+      "0.0": 36,
+      "0.5": 8,
+      "1.0": 306
     },
     "combined": {
-      "0.0": 20,
-      "0.5": 1,
-      "1.0": 129
+      "0.0": 59,
+      "0.5": 10,
+      "1.0": 431
     },
     "holdout": {
-      "0.0": 8,
-      "1.0": 37
+      "0.0": 23,
+      "0.5": 2,
+      "1.0": 125
     }
   },
   "seed": "d5a-m4-finqa-split-v1",
-  "selected_threshold": 0.55,
+  "selected_threshold": 0.05,
   "selection_objective": "Restrict to thresholds with precision >= 0.2; among those pick highest recall, ties broken by highest F1 then lowest threshold. If none clear the floor, fall back to the single best-F1 point across all thresholds (ties broken by lowest threshold). Recall-favoring because missing a hallucination is assumed costlier than one extra human review.",
-  "subset_size": 150
+  "subset_size": 500
 }

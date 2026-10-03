@@ -91,6 +91,18 @@ def _class_counts(records: list[dict[str, Any]], label_key: str) -> dict[str, ob
     }
 
 
+def _precision_recall_wilson_cis(
+    point: ThresholdSweepPoint,
+) -> tuple[tuple[float, float], int, tuple[float, float], int]:
+    """Wilson CIs for precision and recall at one sweep point. Returns
+    (precision_ci, precision_n, recall_ci, recall_n)."""
+    precision_n = point.confusion.tp + point.confusion.fp
+    precision_ci = wilson_interval(point.confusion.tp, precision_n)
+    recall_n = point.confusion.tp + point.confusion.fn
+    recall_ci = wilson_interval(point.confusion.tp, recall_n)
+    return precision_ci, precision_n, recall_ci, recall_n
+
+
 def _score_distribution(records: list[dict[str, Any]]) -> dict[str, int]:
     counts = Counter(r["faithfulness_score"] for r in records)
     return {str(score): count for score, count in sorted(counts.items())}
@@ -168,6 +180,9 @@ def main() -> None:
     cal_pr_auc = pr_auc(cal_gold, cal_scores)
 
     chosen = select_recall_favoring_threshold(sweep_points, min_precision=MIN_PRECISION_FLOOR)
+    cal_precision_ci, cal_precision_n, cal_recall_ci, cal_recall_n = (
+        _precision_recall_wilson_cis(chosen)
+    )
 
     cal_score_dist = _score_distribution(cal)
     holdout_score_dist = _score_distribution(holdout)
@@ -196,7 +211,15 @@ def main() -> None:
     print(
         f"Selected threshold: {chosen.threshold} "
         f"(recall-favoring, min_precision floor={MIN_PRECISION_FLOOR}) "
-        f"-> precision={chosen.precision:.4f} recall={chosen.recall:.4f} f1={chosen.f1:.4f}"
+        f"-> precision={chosen.precision:.4f} "
+        f"[{cal_precision_ci[0]:.4f}, {cal_precision_ci[1]:.4f}] n={cal_precision_n}  "
+        f"recall={chosen.recall:.4f} "
+        f"[{cal_recall_ci[0]:.4f}, {cal_recall_ci[1]:.4f}] n={cal_recall_n}  "
+        f"f1={chosen.f1:.4f} kappa={chosen.kappa:.4f}"
+    )
+    print(
+        f"Calibration confusion: tp={chosen.confusion.tp} fp={chosen.confusion.fp} "
+        f"tn={chosen.confusion.tn} fn={chosen.confusion.fn}"
     )
 
     sweep_output = {
@@ -238,10 +261,7 @@ def main() -> None:
     holdout_ap = average_precision(holdout_gold, holdout_scores)
     holdout_pr_auc = pr_auc(holdout_gold, holdout_scores)
 
-    precision_n = holdout_point.confusion.tp + holdout_point.confusion.fp
-    precision_ci = wilson_interval(holdout_point.confusion.tp, precision_n)
-    recall_n = holdout_point.confusion.tp + holdout_point.confusion.fn
-    recall_ci = wilson_interval(holdout_point.confusion.tp, recall_n)
+    precision_ci, precision_n, recall_ci, recall_n = _precision_recall_wilson_cis(holdout_point)
 
     holdout_positive_rate = sum(holdout_gold) / len(holdout_gold)
     print(f"\nHeld-out rows scored: {len(holdout)} (positive rate {holdout_positive_rate:.4f})")
@@ -290,6 +310,17 @@ def main() -> None:
             "roc_auc": cal_roc_auc,
             "average_precision": cal_ap,
             "pr_auc": cal_pr_auc,
+            "metrics_at_selected_threshold": _sweep_point_to_dict(chosen),
+            "precision_wilson_ci": {
+                "low": cal_precision_ci[0],
+                "high": cal_precision_ci[1],
+                "n": cal_precision_n,
+            },
+            "recall_wilson_ci": {
+                "low": cal_recall_ci[0],
+                "high": cal_recall_ci[1],
+                "n": cal_recall_n,
+            },
         },
         "held_out_split": {
             "n_rows_scored": len(holdout),
