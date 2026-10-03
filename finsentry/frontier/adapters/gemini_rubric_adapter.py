@@ -48,11 +48,14 @@ def _strip_json_fences(text: str) -> str:
     return text
 
 
-def _format_cited_chunks(evaluation_input: FrontierEvaluationInput) -> str:
-    if evaluation_input.citations:
-        return "\n\n".join(
-            f"[{c.chunk_id}] {c.quote}\n{c.retrieved_text}" for c in evaluation_input.citations
-        )
+def _format_context_chunks(evaluation_input: FrontierEvaluationInput) -> str:
+    """Render the authoritative evaluation context for the rubric prompt.
+
+    Always the full retrieved_context_chunks — never filtered down to the
+    cited subset. Citations are separate metadata the model may reference
+    to report supporting/contradicting chunks; they must never narrow what
+    gets scored (see the Day 5 M2 evidence-contract decision).
+    """
     return "\n\n".join(evaluation_input.retrieved_context_chunks)
 
 
@@ -143,7 +146,7 @@ class GeminiRubricAdapter:
         prompt = build_rubric_prompt(
             question=evaluation_input.question,
             answer=evaluation_input.answer,
-            cited_chunks=_format_cited_chunks(evaluation_input),
+            cited_chunks=_format_context_chunks(evaluation_input),
         )
 
         start = time.monotonic()
