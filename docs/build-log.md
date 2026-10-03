@@ -1,5 +1,49 @@
 # Build Log
 
+## 2026-10-03 — d5a-m2-gate: FinQA hallucination benchmark data readiness
+
+Narrow gate ahead of M3/M4, not M2 reopened. `hallucination_bench` had
+migration 002 applied (correct schema) but held 0 rows: nothing in the
+codebase besides the ingestion script's own `__main__` guard ever calls
+`finqa_hallucination.ingest()`, so it had simply never been run against
+this DB, the same root cause as `golden_set` before the M2 session.
+
+Ran the existing, unmodified entrypoint
+(`python -m finsentry.ingestion.finqa_hallucination`), no code, migration,
+or schema changes. Landed 1651 rows, matching `EXPECTED_RECORD_COUNT`
+exactly (1657 source rows from `Cleanlab/FinQA-hallucination-detection`
+minus 6 content-hash duplicate pairs).
+
+Verified against the real table, not assumed: 1651 distinct ids with zero
+duplicates, zero NULLs or empty strings across `question`/`context`/
+`response`/`is_hallucination`. Class balance is
+`is_hallucination=true: 238, false: 1413` (roughly 1:5.9, about 14.4%
+positive) -- this is the real distribution M4's metric design has to
+work with, not an assumption.
+
+Spot-checked the `is_correct == 0 -> is_hallucination` inversion
+(`finqa_hallucination.py` line 34) against 3 full rows, one from each
+side plus an extra negative, by manually checking whether the response
+is actually supported by the context table:
+- A tobacco-litigation case-count question: context table sums to 85
+  across four case types; response is "85"; labeled `false`. Consistent.
+- A packaging segment-income-as-percent-of-net-sales question: context
+  gives $1685.0M / $16285.1M = 10.35%; response is "10.35%"; labeled
+  `false`. Consistent.
+- An acquisition question asking for a "percentage of costs" that has no
+  corresponding "costs" line in the context table at all (only assets,
+  goodwill, and total purchase consideration); the response states a
+  specific percentage anyway; labeled `true`. Consistent -- a confident
+  number answering a concept absent from the source is exactly what the
+  label should catch.
+
+No inversion-backwards failure found. `pytest -k finqa` (3 tests) and the
+full `pytest -m "not slow" -x -q` baseline (382 passed, 5 deselected) both
+clean; `ruff check .` and `mypy finsentry/ --strict` clean.
+
+Status: READY FOR M4. This commit is data-ingestion plus this log entry
+only -- no application code changed.
+
 ## 2026-10-03 — d5a-m2: FaithJudge peer-example retrieval
 
 Day 5 Milestone 2. M1 was accepted on its empirical evidence and not reopened
