@@ -199,7 +199,10 @@ async def _run(cap: int, calibration_fraction: float, seed: str) -> None:
     report = cost_budget.report()
     print(f"\nScored this run: {scored_this_run}")
     print(f"Total scored so far: {len(outputs)}")
-    print(f"Actual Vertex spend this run: ${report['run_total_usd']:.6f}")
+    print(
+        "Recorded estimated Vertex cost this run (from usage metadata): "
+        f"${report['run_total_usd']:.6f}"
+    )
     print(f"Output: {OUTPUT_PATH}")
 
 

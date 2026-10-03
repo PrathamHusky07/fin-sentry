@@ -12,6 +12,7 @@ from first principles rather than adding an undeclared direct dependency.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -105,6 +106,12 @@ def pr_auc(gold: list[bool], scores: list[float]) -> float | None:
     """Area under the precision-recall curve via trapezoidal integration
     over recall, walking distinct score thresholds from high to low.
     Returns None when there are no positives (precision/recall undefined).
+
+    Secondary diagnostic only. `average_precision` above is the headline
+    PR metric: it does not interpolate across tied scores, which this
+    function does, and tied scores are the common case for this judge
+    (see `average_precision`'s docstring). Kept for comparison, not
+    reporting authority.
     """
     total_positive = sum(1 for g in gold if g)
     if total_positive == 0:
@@ -128,6 +135,80 @@ def pr_auc(gold: list[bool], scores: list[float]) -> float | None:
     for (r0, p0), (r1, p1) in zip(points, points[1:]):
         area += (r1 - r0) * (p0 + p1) / 2.0
     return area
+
+
+def average_precision(gold: list[bool], scores: list[float]) -> float | None:
+    """Average Precision: the step-function area under the precision-recall
+    curve, computed at each distinct score value rather than interpolated
+    between them. Returns None when there are no positives (undefined).
+
+    This is the headline PR metric for this judge, not `pr_auc` below.
+    `pr_auc` draws a straight line (trapezoid) between consecutive
+    (recall, precision) points, which is a fine approximation when scores
+    are continuous and finely spaced -- but this judge's rubric only ever
+    emits faithfulness in {0.0, 0.5, 1.0}, so detector_score is quantized
+    to three values and many rows tie on the same score. Trapezoidal
+    interpolation across a tie is optimistic: it credits the detector for
+    precision values it never actually produced at any real threshold,
+    because it averages the precision just before a block of ties with
+    the precision just after it, rather than reporting the precision that
+    block of ties actually achieves. AP avoids this by processing every
+    row that shares a score as a single step: all of them are folded into
+    the confusion counts together before precision is read off, so the
+    reported value is always a precision the detector actually attains at
+    some real threshold.
+    """
+    total_positive = sum(1 for g in gold if g)
+    if total_positive == 0:
+        return None
+
+    pairs = sorted(zip(scores, gold, strict=True), key=lambda pair: pair[0], reverse=True)
+
+    ap = 0.0
+    tp = 0
+    fp = 0
+    prev_recall = 0.0
+    i = 0
+    n = len(pairs)
+    while i < n:
+        current_score = pairs[i][0]
+        j = i
+        while j < n and pairs[j][0] == current_score:
+            if pairs[j][1]:
+                tp += 1
+            else:
+                fp += 1
+            j += 1
+        recall = tp / total_positive
+        precision = tp / (tp + fp)
+        ap += precision * (recall - prev_recall)
+        prev_recall = recall
+        i = j
+    return ap
+
+
+def wilson_interval(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score confidence interval for a binomial proportion
+    (successes / n), e.g. precision or recall at a fixed threshold.
+    Preferred over the normal (Wald) interval here because n is small
+    (tens of held-out rows, sometimes single-digit positive counts) and
+    Wald intervals are known to misbehave -- including going outside
+    [0, 1] -- at small n or proportions near 0 or 1.
+
+    n=0 is degenerate (no trials to bound a proportion from): defined
+    here as the maximally uninformative interval (0.0, 1.0) rather than
+    dividing by zero, since zero observations rule nothing out.
+    """
+    if n == 0:
+        return (0.0, 1.0)
+    phat = successes / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = phat + z2 / (2 * n)
+    margin = z * math.sqrt(phat * (1 - phat) / n + z2 / (4 * n * n))
+    low = (center - margin) / denom
+    high = (center + margin) / denom
+    return (max(0.0, low), min(1.0, high))
 
 
 @dataclass
@@ -175,17 +256,27 @@ def sweep_thresholds(
 def select_recall_favoring_threshold(
     points: list[ThresholdSweepPoint], min_precision: float = 0.2
 ) -> ThresholdSweepPoint:
-    """Pick the highest-recall operating point that still clears a floor
-    precision, reflecting the asymmetric cost of missing a hallucination
-    (a false negative reaches the user; a false positive only costs a
-    human review). Ties broken by higher F1.
+    """Pick an operating point reflecting the asymmetric cost of missing a
+    hallucination (a false negative reaches the user; a false positive
+    only costs a human review).
 
     min_precision is a policy floor, not a tuned value: below it the
     detector would flag too many faithful responses to be usable even
-    though recall-favoring is the stated objective. If nothing clears the
-    floor, falls back to the single best-F1 point so a threshold is still
-    selected rather than raising.
+    though recall-favoring is the stated objective.
+
+    Selection policy, applied in order:
+      1. Restrict to points with precision >= min_precision.
+      2. Among those, pick the highest recall. Ties broken by highest F1,
+         then by lowest threshold -- so a tie always resolves to the same
+         point, not whichever happened to sort first.
+      3. If no point clears the floor, fall back to the single best-F1
+         point across ALL points (ties broken by lowest threshold)
+         instead of raising, so a threshold is always selected. This is a
+         different ranking from step 2: it optimizes F1 first because
+         there is no eligible precision floor left to anchor a
+         recall-first choice to.
     """
     eligible = [p for p in points if p.precision >= min_precision]
-    candidates = eligible if eligible else points
-    return max(candidates, key=lambda p: (p.recall, p.f1))
+    if eligible:
+        return min(eligible, key=lambda p: (-p.recall, -p.f1, p.threshold))
+    return min(points, key=lambda p: (-p.f1, p.threshold))

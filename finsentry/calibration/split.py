@@ -4,8 +4,9 @@ Deterministic, stratified calibration/held-out split for benchmark rows.
 Hash-based on (id, seed) rather than random.shuffle: the same seed always
 produces the same split, so a resumed or re-run calibration session never
 reshuffles which rows are calibration-only vs held-out-only. Stratified
-per class (not a single pooled hash-threshold) so both splits keep the
-source dataset's positive rate exactly, not just approximately.
+per class (not a single pooled hash-threshold) so both splits preserve
+the source dataset's class prevalence as closely as integer sample sizes
+allow, not just approximately matched by chance.
 """
 from __future__ import annotations
 
@@ -34,7 +35,11 @@ def stratified_split(
     calibration_fraction: float = DEFAULT_CALIBRATION_FRACTION,
 ) -> SplitAssignment:
     """Split each label group independently so both splits preserve the
-    source positive rate exactly, not approximately.
+    source class prevalence as closely as integer sample sizes allow --
+    each group's calibration count is `round(len(group) * fraction)`,
+    computed independently per class, so the resulting calibration/holdout
+    positive rates can differ slightly from the source rate due to
+    independent rounding, not because stratification is approximate.
 
     ids_by_label: {True: [...hallucination ids...], False: [...faithful ids...]}
     """

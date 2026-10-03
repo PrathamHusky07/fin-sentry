@@ -4,6 +4,7 @@ import math
 
 from finsentry.calibration.metrics import (
     accuracy,
+    average_precision,
     cohens_kappa,
     confusion_matrix,
     pr_auc,
@@ -12,6 +13,7 @@ from finsentry.calibration.metrics import (
     select_recall_favoring_threshold,
     specificity_fpr_fnr,
     sweep_thresholds,
+    wilson_interval,
 )
 
 
@@ -171,10 +173,79 @@ def test_select_recall_favoring_threshold_picks_highest_recall_above_floor() -> 
 
 
 def test_select_recall_favoring_threshold_falls_back_when_nothing_clears_floor() -> None:
-    gold = [True, False, False, False, False]
-    scores = [0.6, 0.5, 0.4, 0.3, 0.2]
-    points = sweep_thresholds(gold, scores, [0.0, 0.55, 1.0])
-    chosen = select_recall_favoring_threshold(points, min_precision=0.99)
-    # Nothing reaches 0.99 precision; must still return some point rather
-    # than raising, falling back to best F1.
-    assert chosen is not None
+    # 2 positives (0.9, 0.6), 8 negatives (0.7 and seven at 0.1).
+    gold = [True, True, False, False, False, False, False, False, False, False]
+    scores = [0.9, 0.6, 0.7, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    points = sweep_thresholds(gold, scores, [0.0, 0.65])
+    # threshold=0.0: predicts everyone positive -> tp=2, fp=8,
+    #   precision=0.2, recall=1.0, f1=2*0.2*1/1.2=1/3.
+    # threshold=0.65: predicts {0.9, 0.7} positive -> tp=1, fp=1,
+    #   precision=0.5, recall=0.5, f1=0.5.
+    # min_precision=0.6 clears neither point (0.2 and 0.5 both < 0.6), so
+    # this genuinely exercises the no-eligible-point fallback -- unlike a
+    # floor that some point still clears. The fallback must pick by
+    # highest F1 (threshold=0.65, f1=0.5), NOT by highest recall
+    # (threshold=0.0, recall=1.0, which has the lower f1=1/3): a
+    # recall-first fallback would pick the wrong point here.
+    chosen = select_recall_favoring_threshold(points, min_precision=0.6)
+    assert chosen.threshold == 0.65
+    assert chosen.f1 == 0.5
+    assert chosen.recall == 0.5
+    assert chosen.precision == 0.5
+
+
+def test_average_precision_perfect_separation_is_one() -> None:
+    gold = [True, True, False, False]
+    scores = [0.9, 0.8, 0.2, 0.1]
+    assert math.isclose(average_precision(gold, scores), 1.0)
+
+
+def test_average_precision_none_when_no_positives() -> None:
+    assert average_precision([False, False], [0.9, 0.1]) is None
+
+
+def test_average_precision_tied_scores_computed_by_hand() -> None:
+    # gold=[True, True, False], scores=[1.0, 0.5, 0.5]. 2 positives total.
+    # Distinct score 1.0: one row (True) -> tp=1, fp=0.
+    #   recall=1/2=0.5, precision=1/1=1.0.
+    #   contribution = 1.0 * (0.5 - 0.0) = 0.5
+    # Distinct score 0.5 (tied group, both rows folded in together):
+    #   -> tp=2, fp=1. recall=2/2=1.0, precision=2/3.
+    #   contribution = (2/3) * (1.0 - 0.5) = 1/3
+    # AP = 0.5 + 1/3 = 5/6
+    gold = [True, True, False]
+    scores = [1.0, 0.5, 0.5]
+    assert math.isclose(average_precision(gold, scores), 5 / 6)
+
+
+def test_average_precision_is_not_optimistic_about_ties_like_trapezoidal_pr_auc() -> None:
+    # Same tied case as above: trapezoidal pr_auc draws a straight line
+    # between the (recall=0.5, precision=1.0) point and the
+    # (recall=1.0, precision=2/3) point, crediting an average precision
+    # of (1.0 + 2/3)/2 = 5/6 over that segment -- which happens to equal
+    # AP here by coincidence of this particular example having only two
+    # distinct thresholds. Use a second tied group to show the general
+    # case: AP must never exceed pr_auc on the same (gold, scores), since
+    # trapezoidal interpolation across ties can only be optimistic or
+    # equal, never pessimistic.
+    gold = [True, True, True, False, False, False]
+    scores = [1.0, 0.5, 0.5, 0.5, 0.5, 0.0]
+    ap = average_precision(gold, scores)
+    trap = pr_auc(gold, scores)
+    assert ap is not None and trap is not None
+    assert ap <= trap + 1e-12
+
+
+def test_wilson_interval_hand_computed_successes_equal_n() -> None:
+    # successes=1, n=1, z=1.96 (z^2=3.8416, chosen for clean arithmetic).
+    # phat=1.0, denom=1+3.8416/1=4.8416, center=1+3.8416/2=2.9208,
+    # margin=1.96*sqrt(1*0/1 + 3.8416/4)=1.96*sqrt(0.9604)=1.96*0.98=1.9208
+    # low=(2.9208-1.9208)/4.8416=1.0/4.8416=0.206542...
+    # high=(2.9208+1.9208)/4.8416=4.8416/4.8416=1.0
+    low, high = wilson_interval(successes=1, n=1, z=1.96)
+    assert math.isclose(low, 1.0 / 4.8416, rel_tol=1e-9)
+    assert math.isclose(high, 1.0, rel_tol=1e-9)
+
+
+def test_wilson_interval_degenerate_n_zero_does_not_divide_by_zero() -> None:
+    assert wilson_interval(successes=0, n=0) == (0.0, 1.0)

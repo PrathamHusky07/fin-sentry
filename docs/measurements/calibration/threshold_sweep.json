@@ -1,11 +1,23 @@
 {
-  "accuracy_note": "accuracy is shown per point below for completeness only -- at a ~14% positive rate, always predicting faithful (never flagging a hallucination) already scores ~86% accuracy, so accuracy is not a headline metric here. PR-AUC is.",
+  "accuracy_note": "accuracy is shown per point below for completeness only -- at a ~14% positive rate, always predicting faithful (never flagging a hallucination) already scores ~86% accuracy, so accuracy is not a headline metric here. Average Precision is.",
+  "average_precision": 0.5071428571428571,
+  "metric_definitions": {
+    "note": "average_precision is the headline PR metric: it folds tied detector scores into a single step rather than interpolating across them, so it never reports a precision the judge did not actually produce at a real threshold. pr_auc (trapezoidal) is kept only as a secondary diagnostic -- on a quantized score distribution like this judge's {0.0, 0.5, 1.0}, it is optimistic because it draws straight lines between tied operating points.",
+    "primary_pr_metric": "average_precision",
+    "secondary_pr_metric": "pr_auc (trapezoidal)"
+  },
   "n_rows": 105,
   "positive_rate": 0.14285714285714285,
   "pr_auc": 0.5564229284610887,
+  "regime_collapse_note": "faithfulness_score's API type is a continuous float in [0, 1], but across all 150 scored rows the rubric prompt empirically produced only 3 distinct values: ['0.0', '0.5', '1.0']. Since detector_score is a deterministic function of faithfulness_score, the 21 swept thresholds (0.0-1.0, step 0.05) collapse to at most 3 distinct prediction regimes -- every threshold strictly between two consecutive observed values produces an identical confusion matrix to its neighbors. Threshold tuning has limited expressive power until the judge's score resolution increases beyond this many values.",
   "roc_auc": 0.7811111111111111,
+  "score_distribution": {
+    "0.0": 12,
+    "0.5": 1,
+    "1.0": 92
+  },
   "selected_threshold": 0.55,
-  "selection_objective": "recall-favoring: highest recall among thresholds with precision >= 0.2 (missing a hallucination is assumed costlier than one extra human review)",
+  "selection_objective": "Restrict to thresholds with precision >= 0.2; among those pick highest recall, ties broken by highest F1 then lowest threshold. If none clear the floor, fall back to the single best-F1 point across all thresholds (ties broken by lowest threshold). Recall-favoring because missing a hallucination is assumed costlier than one extra human review.",
   "split": "calibration",
   "sweep": [
     {

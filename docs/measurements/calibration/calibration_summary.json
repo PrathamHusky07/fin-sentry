@@ -1,15 +1,17 @@
 {
-  "actual_cost_usd": 0.489298,
   "calibration_split": {
+    "average_precision": 0.5071428571428571,
     "n_rows_scored": 105,
     "positive_rate": 0.14285714285714285,
     "pr_auc": 0.5564229284610887,
     "roc_auc": 0.7811111111111111
   },
+  "cost_note": "Recorded estimated Vertex cost from usage metadata (prompt/candidates/thoughts token counts times the Vertex AI Standard-tier pricing constants in cost_governance.py), not actual billing spend confirmed against the Google Cloud billing API.",
   "dataset": "Cleanlab/FinQA-hallucination-detection (via hallucination_bench, 1651 rows)",
   "detector_score_mapping": "detector_score = 1 - faithfulness_score",
-  "generated_at": "2026-10-03T22:31:55.187484+00:00",
+  "generated_at": "2026-10-03T23:24:40.843766+00:00",
   "held_out_split": {
+    "average_precision": 0.75,
     "metrics_at_selected_threshold": {
       "accuracy": 0.9555555555555556,
       "confusion": {
@@ -30,15 +32,83 @@
     "n_rows_scored": 45,
     "positive_rate": 0.13333333333333333,
     "pr_auc": 0.531547619047619,
+    "precision_wilson_ci": {
+      "high": 0.9285223111419724,
+      "low": 0.40926987910258916,
+      "n": 8
+    },
+    "recall_wilson_ci": {
+      "high": 1.0,
+      "low": 0.6096569663469354,
+      "n": 6
+    },
     "roc_auc": 0.9743589743589743
   },
   "judge": "gemini-rubric (GeminiRubricAdapter, Vertex gemini-3.6-flash)",
+  "metric_definitions": {
+    "note": "average_precision is the headline PR metric: it folds tied detector scores into a single step rather than interpolating across them, so it never reports a precision the judge did not actually produce at a real threshold. pr_auc (trapezoidal) is kept only as a secondary diagnostic -- on a quantized score distribution like this judge's {0.0, 0.5, 1.0}, it is optimistic because it draws straight lines between tied operating points.",
+    "primary_pr_metric": "average_precision",
+    "secondary_pr_metric": "pr_auc (trapezoidal)"
+  },
   "prompt_version": [
     "frontier_rubric_v2_faithjudge"
   ],
+  "provenance": {
+    "full_benchmark": {
+      "n": 1651,
+      "negatives": 1413,
+      "positive_rate": 0.1441550575408843,
+      "positives": 238
+    },
+    "full_calibration_split": {
+      "n": 1156,
+      "negatives": 989,
+      "positive_rate": 0.1444636678200692,
+      "positives": 167
+    },
+    "full_holdout_split": {
+      "n": 495,
+      "negatives": 424,
+      "positive_rate": 0.14343434343434344,
+      "positives": 71
+    },
+    "scored_calibration": {
+      "n": 105,
+      "negatives": 90,
+      "positive_rate": 0.14285714285714285,
+      "positives": 15
+    },
+    "scored_holdout": {
+      "n": 45,
+      "negatives": 39,
+      "positive_rate": 0.13333333333333333,
+      "positives": 6
+    },
+    "split_calibration_fraction": 0.7,
+    "split_seed": "d5a-m4-finqa-split-v1",
+    "stratification_note": "Each split and the Gemini-call subsample preserve class prevalence as closely as integer sample sizes allow (each class is split/sampled independently, then rounded) -- not an exact match to the source positive rate."
+  },
+  "recorded_estimated_cost_usd": 0.489298,
+  "regime_collapse_note": "faithfulness_score's API type is a continuous float in [0, 1], but across all 150 scored rows the rubric prompt empirically produced only 3 distinct values: ['0.0', '0.5', '1.0']. Since detector_score is a deterministic function of faithfulness_score, the 21 swept thresholds (0.0-1.0, step 0.05) collapse to at most 3 distinct prediction regimes -- every threshold strictly between two consecutive observed values produces an identical confusion matrix to its neighbors. Threshold tuning has limited expressive power until the judge's score resolution increases beyond this many values.",
   "scope_note": "This calibrates the Gemini rubric judge alone, on a 150-row stratified subset of the 1651-row benchmark. Full-benchmark scoring and multi-judge (ensemble) calibration are future work, not part of this result.",
+  "score_distribution": {
+    "calibration": {
+      "0.0": 12,
+      "0.5": 1,
+      "1.0": 92
+    },
+    "combined": {
+      "0.0": 20,
+      "0.5": 1,
+      "1.0": 129
+    },
+    "holdout": {
+      "0.0": 8,
+      "1.0": 37
+    }
+  },
   "seed": "d5a-m4-finqa-split-v1",
   "selected_threshold": 0.55,
-  "selection_objective": "recall-favoring: highest recall among thresholds with precision >= 0.2 (missing a hallucination is assumed costlier than one extra human review)",
+  "selection_objective": "Restrict to thresholds with precision >= 0.2; among those pick highest recall, ties broken by highest F1 then lowest threshold. If none clear the floor, fall back to the single best-F1 point across all thresholds (ties broken by lowest threshold). Recall-favoring because missing a hallucination is assumed costlier than one extra human review.",
   "subset_size": 150
 }
