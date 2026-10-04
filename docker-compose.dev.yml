@@ -61,6 +61,85 @@ services:
       retries: 10
       start_period: 30s
 
+  # ---------------------------------------------------------------------
+  # Day 8: horizontal-scale demo. dashboard/metrics stays a single internal
+  # service (Option C: it is the only thing that owns RisingWave); three
+  # explicit gateway replicas behind nginx prove the gateway's own stateless
+  # horizontal scalability and failover, which is the thing Day 8 claims.
+  # ---------------------------------------------------------------------
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: finsentry/dashboard/Dockerfile
+    container_name: finsentry-dashboard
+    environment:
+      RISINGWAVE_HOST: risingwave
+      KAFKA_MODE: disabled
+    depends_on:
+      risingwave:
+        condition: service_healthy
+    expose:
+      - "8081"
+
+  gateway-1: &gateway
+    build:
+      context: .
+      dockerfile: finsentry/gateway/Dockerfile
+    image: fin-sentry-gateway:latest
+    container_name: finsentry-gateway-1
+    environment: &gateway-env
+      GATEWAY_INSTANCE_ID: gateway-1
+      METRICS_SERVICE_URL: http://dashboard:8081
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/finsentry
+      # Ollama runs on the host, not in this compose network.
+      DOWNSTREAM_URL: http://host.docker.internal:11434
+      DOWNSTREAM_MODEL: llama3.1:8b
+      # Disabled for this demo, deliberately: real Gemini/Kafka calls would
+      # either cost money or write synthetic failover-test traffic into the
+      # same persisted event history Day 6/7's real calibration data lives
+      # in. The nginx/SSE/failover proof doesn't need either.
+      GEMINI_MODE: disabled
+      KAFKA_MODE: disabled
+      OTEL_EXPORTER: none
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      dashboard:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  gateway-2:
+    <<: *gateway
+    container_name: finsentry-gateway-2
+    environment:
+      <<: *gateway-env
+      GATEWAY_INSTANCE_ID: gateway-2
+
+  gateway-3:
+    <<: *gateway
+    container_name: finsentry-gateway-3
+    environment:
+      <<: *gateway-env
+      GATEWAY_INSTANCE_ID: gateway-3
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: finsentry-nginx
+    volumes:
+      - ./infra/nginx/gateway.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8088:80"
+    depends_on:
+      - gateway-1
+      - gateway-2
+      - gateway-3
+
 volumes:
   postgres_data:
   redpanda_data:

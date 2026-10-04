@@ -49,6 +49,11 @@ log = logging.getLogger(__name__)
 
 _DOWNSTREAM_URL: str = os.getenv("DOWNSTREAM_URL", "")
 _DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+# Day 8 Gate D: a minimal, non-business identifier for which replica served
+# a request -- evidence for the nginx failover demo, not a product feature.
+# Set explicitly per replica in docker-compose.dev.yml; falls back to a
+# random suffix for any ad hoc single-process run (dev, tests).
+_GATEWAY_INSTANCE_ID: str = os.getenv("GATEWAY_INSTANCE_ID") or f"gateway-{uuid.uuid4().hex[:8]}"
 # Model routing identifier for the OpenAI-compatible downstream RAG server.
 # For Ollama, this is the tag from `ollama list`. Do NOT confuse with GEMINI_MODEL.
 # Empty default is intentional: a missing env var logs a WARNING at startup rather
@@ -240,7 +245,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "gateway_instance_id": _GATEWAY_INSTANCE_ID}
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +295,10 @@ async def ops_stream() -> Response:
             # of a live stream. This header is nginx-specific and ignored by
             # anything else that proxies this route.
             "X-Accel-Buffering": "no",
+            # Day 8 Gate D failover evidence: which replica served this
+            # connection, so a reconnect landing on a different replica is
+            # provable, not asserted.
+            "X-Gateway-Instance-Id": _GATEWAY_INSTANCE_ID,
         },
     )
 

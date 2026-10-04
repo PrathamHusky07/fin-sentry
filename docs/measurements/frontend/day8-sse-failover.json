@@ -1,0 +1,71 @@
+{
+  "topology": {
+    "note": "docker compose ps after bringing up dashboard + 3 gateway replicas + nginx",
+    "containers": [
+      {"name": "finsentry-dashboard", "image": "fin-sentry-dashboard", "ports": "8081/tcp (internal only)"},
+      {"name": "finsentry-gateway-1", "image": "fin-sentry-gateway:latest", "ports": "8000/tcp (internal only)"},
+      {"name": "finsentry-gateway-2", "image": "fin-sentry-gateway:latest", "ports": "8000/tcp (internal only)"},
+      {"name": "finsentry-gateway-3", "image": "fin-sentry-gateway:latest", "ports": "8000/tcp (internal only)"},
+      {"name": "finsentry-nginx", "image": "nginx:1.27-alpine", "ports": "0.0.0.0:8088->80/tcp"},
+      {"name": "finsentry-postgres", "image": "pgvector/pgvector:0.8.6-pg16", "status": "pre-existing, healthy"},
+      {"name": "finsentry-redpanda", "image": "redpandadata/redpanda:v26.2.2", "status": "pre-existing, healthy"},
+      {"name": "finsentry-risingwave", "image": "risingwavelabs/risingwave:v3.0.3", "status": "pre-existing, healthy"}
+    ],
+    "distinct_gateway_containers_confirmed": ["finsentry-gateway-1", "finsentry-gateway-2", "finsentry-gateway-3"]
+  },
+  "nginx_round_robin_proof": {
+    "method": "12 sequential GET http://localhost:8088/health calls",
+    "health_round_robin_instance_ids": [
+      "gateway-2", "gateway-3", "gateway-1",
+      "gateway-2", "gateway-3", "gateway-1",
+      "gateway-2", "gateway-3", "gateway-1",
+      "gateway-2", "gateway-3", "gateway-1"
+    ],
+    "distinct_instances_seen": ["gateway-1", "gateway-2", "gateway-3"]
+  },
+  "sse_through_nginx_proof": {
+    "method": "curl -sN -D - http://localhost:8088/ops/stream",
+    "response_headers_confirmed": {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      "x-gateway-instance-id": "gateway-1"
+    },
+    "note": "real event: snapshot frames with real RisingWave data and honest stale=true flags arrived every ~3s, unbuffered by nginx (proxy_buffering off took effect -- frames did not batch)"
+  },
+  "failover_demonstration": {
+    "serving_instance_before_kill": "gateway-2",
+    "frame_count_received_before_kill": 2,
+    "killed_container": "finsentry-gateway-2",
+    "kill_method": "docker kill finsentry-gateway-2",
+    "original_connection_exit_code": 0,
+    "seconds_from_kill_to_original_connection_close": 0.87,
+    "honest_claim": "the long-lived SSE TCP connection to gateway-2 necessarily dropped when that container was killed -- this is expected, not a bug, and is NOT claimed as a dropped-connection-free failover",
+    "reconnect": {
+      "seconds_to_reconnect_and_first_frame": 2.18,
+      "serving_instance_after_reconnect": "gateway-3",
+      "reconnected_to_different_replica": true,
+      "frame_count_received_after_reconnect": 2,
+      "note": "the reconnect (simulating EventSource's own browser-native auto-reconnect) landed on gateway-3, not gateway-1 or the dead gateway-2 -- nginx's passive upstream health check correctly routed around the killed replica, and the new connection resumed real snapshots immediately, not a cached/fabricated one"
+    },
+    "request_path_availability_during_and_after_kill": {
+      "health_endpoint": {
+        "method": "GET http://localhost:8088/health immediately after the kill",
+        "result": "200 OK",
+        "served_by": "gateway-1"
+      },
+      "real_rag_query": {
+        "method": "POST http://localhost:8088/v1/rag/query (real embedding, real pgvector retrieval, real Ollama llama3.1:8b generation, real output rails) after gateway-2 was restarted",
+        "ticker": "AAPL",
+        "query": "What was Apple's revenue?",
+        "result": "200 OK, answer=\"Apple's 2024 total net sales were $391.035 billion.\", confidence=high, 1 citation to a real retrieved 10-K chunk",
+        "note": "GEMINI_MODE and KAFKA_MODE are disabled for this demo topology -- zero Gemini calls, and this demo traffic is not written into the real rag_events/judge_verdicts pipeline Day 6/7's calibration data lives in"
+      }
+    },
+    "no_fabricated_state_during_the_gap": "the gap between the dropped connection and the resumed one shows no snapshot at all client-side (an honest disconnect), never a frozen or synthetic value standing in for the missing live connection"
+  },
+  "topology_after_restoring_gateway-2": {
+    "all_three_replicas_running_again": true,
+    "note": "gateway-2 was restarted via `docker compose up -d gateway-2` after the failover proof, to leave the full 3-replica topology intact"
+  },
+  "deliberate_spof": "the dashboard/metrics service is a single container, not replicated, in this phase -- it is Option C's one internal dependency. A dashboard failure would stop new snapshots from reaching any gateway replica's poller, which would then emit unavailable snapshots (see finsentry/gateway/metrics_poller.py's unavailable_snapshot) rather than fabricate data; the dashboard itself is not fronted by nginx and not demonstrated as highly available in Day 8."
+}
