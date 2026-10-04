@@ -301,7 +301,7 @@ def _fetch_chunks_sync(
         params: tuple[Any, ...] = (vec, ticker, vec, top_k)
     else:
         sql = """
-            SELECT id, ticker, filing_type, filing_ date::text, chunk_text, source_url,
+            SELECT id, ticker, filing_type, filing_date::text, chunk_text, source_url,
                    1 - (embedding <=> %s::vector) AS similarity_score
             FROM corpus
             ORDER BY embedding <=> %s::vector
