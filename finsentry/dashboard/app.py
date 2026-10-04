@@ -1,14 +1,19 @@
 """
 Minimal evaluation dashboard.
 
-FastAPI app on port 8081. Queries the five RisingWave materialized views
+FastAPI app on port 8081. Queries the eight RisingWave materialized views
 and renders a single-page HTML report. Designed for the interview demo:
 it shows current-window quality metrics without requiring a frontend build.
+
+Day 8: also serves /metrics/snapshot, the typed MetricsSnapshot contract the
+gateway's SSE poller consumes (finsentry/events/metrics_snapshot.py) -- this
+process keeps sole ownership of RisingWavePool; the gateway never imports it.
 
 Routes:
     GET /                  -> HTML dashboard (latest window snapshot + backlog)
     GET /metrics           -> JSON payload (same data, machine-readable)
     GET /metrics/frontier  -> JSON frontier-tier verdict/disagreement counts (last 15m)
+    GET /metrics/snapshot  -> typed MetricsSnapshot (internal contract for the gateway)
     GET /health            -> {"status": "ok"}
     GET /backlog           -> JSON consumer lag report
 
@@ -35,6 +40,16 @@ from finsentry.consumer.lag_monitor import (
     ConsumerLagMonitor,
     ConsumerLagReport,
     lag_monitor_from_env,
+)
+from finsentry.events.metrics_snapshot import (
+    FaithfulnessMetrics,
+    FrontierMetrics,
+    JudgeCostMetrics,
+    MetricsSnapshot,
+    RelevanceMetrics,
+    ThroughputMetrics,
+    TokenUsageMetrics,
+    is_stale,
 )
 from finsentry.risingwave.dao import RisingWavePool
 
@@ -192,6 +207,126 @@ async def _fetch_frontier_metrics() -> dict[str, Any]:
     }
 
 
+async def _fetch_frontier_latest_window_end() -> datetime.datetime | None:
+    """The one anchor timestamp mv_frontier_verdict_rate_1m's SUM-over-15-minutes
+    query never needed before: without it, the frontier section of a
+    MetricsSnapshot has no window_end to judge freshness against. Not a new
+    metric -- the same lookback, one extra MAX() column."""
+    row = await _fetch_one(
+        f"""
+        SELECT MAX(window_end) AS latest_window_end
+        FROM mv_frontier_verdict_rate_1m
+        WHERE window_start >= NOW() - INTERVAL '{_FRONTIER_WINDOW_MINUTES} minutes'
+        """
+    )
+    return row["latest_window_end"] if row else None
+
+
+def _throughput_section(
+    raw: dict[str, Any] | None, now: datetime.datetime
+) -> ThroughputMetrics | None:
+    if raw is None:
+        return None
+    return ThroughputMetrics(
+        total_requests=raw["total_requests"],
+        success_count=raw["success_count"],
+        blocked_count=raw["blocked_count"],
+        error_count=raw["error_count"],
+        avg_latency_ms=raw["avg_latency_ms"],
+        p95_latency_ms=raw["p95_latency_ms"],
+        window_start=raw["window_start"],
+        window_end=raw["window_end"],
+        stale=is_stale(raw["window_end"], now=now),
+    )
+
+
+def _faithfulness_section(
+    raw: dict[str, Any] | None, now: datetime.datetime
+) -> FaithfulnessMetrics | None:
+    if raw is None:
+        return None
+    return FaithfulnessMetrics(
+        verdicts_count=raw["verdicts_count"],
+        avg_faithfulness=raw["avg_faithfulness"],
+        complete_count=raw["complete_count"],
+        skipped_count=raw["skipped_count"],
+        window_start=raw["window_start"],
+        window_end=raw["window_end"],
+        stale=is_stale(raw["window_end"], now=now),
+    )
+
+
+def _relevance_section(
+    raw: dict[str, Any] | None, now: datetime.datetime
+) -> RelevanceMetrics | None:
+    if raw is None:
+        return None
+    return RelevanceMetrics(
+        verdicts_count=raw["verdicts_count"],
+        avg_answer_relevance=raw["avg_answer_relevance"],
+        avg_context_relevance=raw["avg_context_relevance"],
+        window_start=raw["window_start"],
+        window_end=raw["window_end"],
+        stale=is_stale(raw["window_end"], now=now),
+    )
+
+
+def _tokens_section(raw: dict[str, Any] | None, now: datetime.datetime) -> TokenUsageMetrics | None:
+    if raw is None:
+        return None
+    return TokenUsageMetrics(
+        input_tokens_total=raw["input_tokens_total"],
+        output_tokens_total=raw["output_tokens_total"],
+        thoughts_tokens_total=raw["thoughts_tokens_total"],
+        gemini_calls_total=raw["gemini_calls_total"],
+        cost_total_usd=raw["cost_total_usd"],
+        window_start=raw["window_start"],
+        window_end=raw["window_end"],
+        stale=is_stale(raw["window_end"], now=now),
+    )
+
+
+def _cost_section(raw: dict[str, Any] | None, now: datetime.datetime) -> JudgeCostMetrics | None:
+    if raw is None:
+        return None
+    return JudgeCostMetrics(
+        cost_total_usd=raw["cost_total_usd"],
+        window_start=raw["window_start"],
+        window_end=raw["window_end"],
+        stale=is_stale(raw["window_end"], now=now),
+    )
+
+
+def _frontier_section(
+    raw: dict[str, Any], latest_window_end: datetime.datetime | None, now: datetime.datetime
+) -> FrontierMetrics:
+    return FrontierMetrics(
+        window_minutes=raw["window_minutes"],
+        verdict_counts=raw["verdict_counts"],
+        disagreement_counts=raw["disagreement_counts"],
+        latest_window_end=latest_window_end,
+        stale=is_stale(latest_window_end, now=now),
+    )
+
+
+async def _build_snapshot() -> MetricsSnapshot:
+    now = datetime.datetime.now(datetime.UTC)
+    metrics = await _fetch_metrics()
+    frontier = await _fetch_frontier_metrics()
+    frontier_latest_window_end = await _fetch_frontier_latest_window_end()
+
+    return MetricsSnapshot(
+        generated_at=now,
+        risingwave_connected=metrics["risingwave_connected"],
+        throughput=_throughput_section(metrics["throughput"], now),
+        faithfulness=_faithfulness_section(metrics["faithfulness"], now),
+        relevance=_relevance_section(metrics["relevance"], now),
+        tokens=_tokens_section(metrics["tokens"], now),
+        cost=_cost_section(metrics["cost"], now),
+        frontier=_frontier_section(frontier, frontier_latest_window_end, now),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -237,6 +372,13 @@ async def metrics() -> JSONResponse:
 async def frontier_metrics() -> JSONResponse:
     data = await _fetch_frontier_metrics()
     return JSONResponse(content=_to_jsonable(data))
+
+
+@app.get("/metrics/snapshot", response_model=MetricsSnapshot)
+async def metrics_snapshot() -> MetricsSnapshot:
+    """Internal contract for the gateway's SSE poller (Option C) -- not a
+    public-facing route. See finsentry/events/metrics_snapshot.py."""
+    return await _build_snapshot()
 
 
 @app.get("/", response_class=HTMLResponse)
