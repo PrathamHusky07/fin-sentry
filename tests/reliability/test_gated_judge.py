@@ -151,3 +151,44 @@ async def test_closed_loop_with_a_second_live_judge_produces_single_judge() -> N
 
     assert outcome.verdict == "ensemble_refuted"
     assert outcome.disagreement_taxonomy == "single_judge"
+
+
+async def test_readmission_after_sustained_recovery_calls_underlying_judge_again() -> None:
+    """Phase 1-3's recovery test proved the controller's mode returns to
+    normal; this proves the consequence that actually matters operationally
+    -- DriftGatedJudge.evaluate() calls the wrapped (expensive) judge again
+    once re-admitted, not just that the controller's internal mode flag
+    flipped. Call count must increment only during the normal/recovered
+    phases, never during the drifted phase."""
+    stub = _StubJudge("gemini-rubric")
+    controller = DriftController(_CFG)
+    gated = DriftGatedJudge(stub, controller)
+
+    # normal: underlying evaluate() IS called.
+    result = await gated.evaluate(_eval_input())
+    assert stub.evaluate_call_count == 1
+    assert result.status == "success"
+
+    # Drive to drifted (K=2 consecutive breaches, per _CFG).
+    bad = LabeledResult("supported", True, observed_at=_T0)
+    for _ in range(2):
+        controller.record_result(bad)
+    assert controller.current_mode == "frontier_only"
+
+    # drifted: underlying evaluate() is NOT called (synthesized unavailable),
+    # repeated calls confirm the call count never advances while bypassed.
+    for _ in range(3):
+        result = await gated.evaluate(_eval_input())
+        assert result.status == "unavailable"
+    assert stub.evaluate_call_count == 1
+
+    # Drive sustained recovery (M=3 consecutive recovery-grade windows, per _CFG).
+    good = LabeledResult("refuted", True, observed_at=_T0)
+    for _ in range(3):
+        controller.record_result(good)
+    assert controller.current_mode == "normal"
+
+    # re-admitted: underlying evaluate() IS called again.
+    result = await gated.evaluate(_eval_input())
+    assert stub.evaluate_call_count == 2
+    assert result.status == "success"
