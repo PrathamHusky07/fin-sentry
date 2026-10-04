@@ -1,5 +1,105 @@
 # Build Log
 
+## 2026-10-03 — d6 Phase 1-4: judge accuracy-drift closed loop (complete)
+
+Implements the Phase 0 design (previous entry) in `finsentry/reliability/`:
+`health.py` (pure windowed-kappa classification), `controller.py`
+(rolling window + entry/recovery hysteresis), `gated_judge.py`
+(admission-control wrapper). 19 new tests, all synthetic, zero live
+Gemini calls. `decide_ensemble`, the orchestrator, every adapter, and
+the frozen M4 artifacts were read but not modified -- the only
+interface this needed that M3 didn't already expose was none: `JudgeResult`,
+`FrontierJudge`, and `decide_ensemble`'s unavailable-handling branches
+were already sufficient.
+
+### Why kappa, not the detector threshold
+
+Day 6 monitors `JudgeResult.decision` (the adapter's own
+support>=0.7/refute<=0.3 thresholded call) against `is_hallucination`,
+explicitly not M4's swept `detector_score` threshold (0.05/0.55) --
+those thresholds select an operating point for a one-time calibration
+report; this kappa tracks whether the *already-deployed* decision rule
+is still agreeing with ground truth over time. Recomputing this exact
+quantity on the frozen M4 data (abstain excluded, unlike M4's own
+confusion matrices) gave calibration=0.576, holdout=0.659,
+combined=0.605 (n=490 committed) -- the healthy baseline, and
+meaningfully different from M4's own reported kappas at 0.05 (0.558
+cal/0.622 holdout) because M4's predicate includes abstain rows as
+thresholded, Day 6's excludes them entirely. Both are legitimate, they
+are not the same statistic.
+
+### The three-valued-score finding, now load-bearing for a second decision
+
+M4's build log called the judge's three-valued score distribution
+"the headline insight, not a caveat." Day 6 is the first place that
+finding directly shapes an operational threshold: a bootstrap (2000
+resamples, seeded) of this exact kappa statistic at window=150 against
+the pooled 490 committed pairs gave stdev=0.100, p05=0.427, p25=0.538 --
+the entry (0.43) and recovery (0.54) thresholds are read almost
+directly off that distribution's 5th and 25th percentiles, not chosen
+independently of it.
+
+### Hysteresis as the direct consequence of the stated cost asymmetry
+
+K=3 (entry) < M=5 (recovery), and the recovery bar (0.54) is itself
+higher than the entry bar (0.43) -- both forms of "stricter" are real,
+verified by a test that stalls recovery on a kappa=0.4 window (clearly
+better than the drift-causing 0.0, but below the 0.54 margin) and shows
+it does not advance the recovery streak. The asymmetry: once bypassed,
+continuing to bypass a fine judge only costs conservatism (tolerated);
+re-admitting a still-broken judge costs bad verdicts reaching decisions
+(not tolerated) -- so entering the safe state is cheap and fast, leaving
+it is expensive and slow.
+
+### The keystone: M3's unavailable semantics, used operationally
+
+`DriftGatedJudge.evaluate()` returns `JudgeResult(status="unavailable")`
+when its controller's mode is `frontier_only`, never calling the
+wrapped judge. Two tests feed that result straight into the real
+`decide_ensemble()`: with HHEM disabled (today's actual default), the
+unmodified `all_unavailable`/`ensemble_insufficient` branch fires; with
+a second live judge present, the unmodified `single_judge` branch
+fires. No new branch, no new vocabulary, nothing in `ensemble.py`
+changed at all -- M3's three-month-old contract absorbs a problem it
+was never written with in mind, because "a judge can be unavailable"
+was already a first-class case, not an edge case.
+
+### Deliberately not done, and why
+
+Not wired into `finsentry/consumer/frontier_consumer.py`. There is no
+live periodic canary scorer yet that calls
+`DriftController.record_result()` with real `hallucination_bench`
+replays -- building that scheduler is Day 7+ infra work, out of scope
+for "pure, deterministic, offline." Wrapping `GeminiRubricAdapter` in `DriftGatedJudge` inside
+`_build_judges()` today, with no feed, would leave the controller's
+window permanently empty and `current_mode` permanently `"normal"` --
+dead code dressed as an integration. The mechanism is complete and
+proven; deployment is a separate, later decision.
+
+Also not done, per the no-go list: no rubric/v3 work, no change to any
+production decision threshold or adapter policy, no new infrastructure,
+no dashboard, no HHEM revival, no reopening of M1-M4 beyond reading
+`cohens_kappa`/`confusion_matrix`/`JudgeResult`/`FrontierJudge`/
+`decide_ensemble` as already-published interfaces.
+
+### Verification
+
+456 passed (437 M4-baseline + 19 new), `ruff check .` clean, `mypy
+finsentry/ --strict` clean across 69 source files.
+
+=== DAY 6 REPORT ===
+Monitored quantity: windowed Cohen's kappa (judge decision vs is_hallucination), window=150, min-N=30
+Drift threshold: 0.43 -- derived from a bootstrap (p05) of the frozen M4 500-row dataset's decision-based kappa, NOT the detector threshold
+Hysteresis: entry=3 consecutive, recovery=5 consecutive at a stricter 0.54 margin, recovery stricter: yes
+Fallback: drift -> frontier_only -> drifted judge admitted as unavailable -> M3 single_judge/ensemble_insufficient (no new ensemble logic)
+Closed loop proven: healthy->drifted->fallback->recovery->normal via synthetic tests: yes
+Noisy-single-window does NOT flap: yes (test)
+Production thresholds/adapters changed: NO
+Rubric v3 experiment: NOT started (deferred to Day 10)
+Tests: 456, ruff clean, mypy clean
+Commits: c6350e6 (Phase 0 design), 6b12540 (Phase 1-3 implementation), <this entry>
+Status: DAY 6 COMPLETE
+
 ## 2026-10-03 — d6 Phase 0: judge-health drift-monitoring design (pre-code checkpoint)
 
 Day 6. Baseline confirmed before any design or code: 437 passed, 5
