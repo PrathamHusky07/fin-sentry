@@ -60,3 +60,10 @@ async def test_search_prompt_injections_offline_returns_empty(monkeypatch: Any) 
     assert result.direct == []
     assert result.direct_count_by_rail == {}
     assert result.risingwave_connected is False
+
+
+async def test_search_prompt_injections_rejects_out_of_bounds_limit() -> None:
+    with pytest.raises(ValueError, match="limit must be"):
+        await search_prompt_injections(limit=0)
+    with pytest.raises(ValueError, match="limit must be"):
+        await search_prompt_injections(limit=501)

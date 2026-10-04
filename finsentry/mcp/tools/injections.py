@@ -18,11 +18,12 @@ never written to a Kafka event or a RisingWave-queryable column. There is
 nothing to query, so indirect clustering is not built here -- `indirect` is
 always None with a reason, not a fabricated cluster.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from finsentry.mcp._util import iso
+from finsentry.mcp._util import iso, validate_limit
 from finsentry.mcp.state import dao
 
 _DIRECT_INJECTION_RAILS = ["check prompt injection"]
@@ -62,6 +63,7 @@ async def search_prompt_injections(
     input_rail_status='blocked' and block_rail is the "check prompt
     injection" Colang flow. indirect is always None here -- see module
     docstring."""
+    validate_limit(limit)
     # LIMIT must be a const expression in RisingWave's streaming query
     # planner -- see finsentry/mcp/tools/traces.py for the same fix.
     rows = await dao.fetch_all(

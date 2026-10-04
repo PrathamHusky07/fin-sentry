@@ -13,6 +13,7 @@ synthetic hysteresis tests -- it is not wired into a continuously running
 scheduler. This tool reports whatever was last written to disk, with an
 explicit as-of timestamp, and must never be read as "live monitoring."
 """
+
 from __future__ import annotations
 
 import json
@@ -129,9 +130,8 @@ def _report_note(last_reading: LastHealthReading | None, transitions: list[Any])
     if not transitions:
         return (
             "reporting last-persisted state as of state_as_of; this is not a "
-            "continuously running monitor. No transition-audit history exists "
-            "yet -- the judge has not crossed any hysteresis threshold since "
-            "the audit wrapper was last used"
+            "continuously running monitor. No transition-audit history is "
+            "available in the persisted artifact"
         )
     return (
         "reporting last-persisted state as of state_as_of; this is not a "

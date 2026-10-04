@@ -66,6 +66,39 @@ async def test_get_drift_report_reads_real_artifacts(tmp_path: Path, monkeypatch
     assert result.policy.healthy_baseline_kappa == live_config.healthy_baseline_kappa
 
 
+async def test_get_drift_report_empty_transitions_note_does_not_overclaim(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """An empty transition-audit log proves only that the persisted artifact
+    has no history in it -- not that the judge has never crossed a
+    hysteresis threshold (it may have, before the audit wrapper was ever
+    used, or the file may simply not have been written yet)."""
+    smoke_path = tmp_path / "canary-live-smoke-d6p2.json"
+    smoke_path.write_text(
+        json.dumps(
+            {
+                "health_record": {
+                    "state": "healthy",
+                    "kappa": 0.6,
+                    "window_n": 30,
+                    "committed_n": 30,
+                    "n_abstain": 0,
+                    "n_unavailable": 0,
+                },
+                "observations": [{"id": "a", "observed_at": "2026-10-04T17:00:00+00:00"}],
+            }
+        )
+    )
+    monkeypatch.setattr(drift, "_LIVE_SMOKE_PATH", smoke_path)
+    monkeypatch.setattr(drift, "_TRANSITIONS_PATH", tmp_path / "does-not-exist.json")
+
+    result = await drift.get_drift_report()
+
+    assert result.transition_history == []
+    assert "transition-audit history is available in the persisted artifact" in result.note
+    assert "has not crossed" not in result.note
+
+
 async def test_get_drift_report_handles_missing_artifacts_gracefully(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

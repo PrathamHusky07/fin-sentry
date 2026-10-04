@@ -39,14 +39,32 @@ class RisingWavePool:
     """Owns one async connection pool. A pool that failed to open (or was
     never opened) puts this object in offline mode: fetch_one/fetch_all
     return None/[] instead of raising, matching the dashboard's established
-    "static demo" degradation instead of a crash."""
+    "static demo" degradation instead of a crash.
+
+    `connected` and `last_query_failed` together distinguish three states a
+    caller may need to tell apart: connection unavailable (`connected` is
+    False), the most recent query against an established pool succeeded
+    (`connected` is True, `last_query_failed` is False), and a query failed
+    against an established pool -- a SQL error, not a dropped connection
+    (`connected` is True, `last_query_failed` is True). fetch_one/fetch_all's
+    None/[] return contract is unchanged by this -- `last_query_failed` is
+    additive state for callers that need to tell "no rows" apart from "the
+    query errored," not a replacement for it."""
 
     def __init__(self) -> None:
         self._pool: Any = None
+        self._last_query_failed: bool = False
 
     @property
     def connected(self) -> bool:
         return self._pool is not None
+
+    @property
+    def last_query_failed(self) -> bool:
+        """Whether the most recently completed fetch_one/fetch_all raised
+        against an established pool. Meaningless while `connected` is False
+        (there is no pool to query against)."""
+        return self._last_query_failed
 
     async def open(self) -> None:
         try:
@@ -74,9 +92,11 @@ class RisingWavePool:
                 async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
                     await cur.execute(sql, params)
                     row: dict[str, Any] | None = await cur.fetchone()
+                    self._last_query_failed = False
                     return row
         except Exception:
             log.exception("RisingWave query failed: %s", sql[:80])
+            self._last_query_failed = True
             return None
 
     async def fetch_all(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -87,7 +107,9 @@ class RisingWavePool:
                 async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
                     await cur.execute(sql, params)
                     rows: list[dict[str, Any]] = await cur.fetchall()
+                    self._last_query_failed = False
                     return rows
         except Exception:
             log.exception("RisingWave query failed: %s", sql[:80])
+            self._last_query_failed = True
             return []

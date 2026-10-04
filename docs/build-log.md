@@ -1,5 +1,185 @@
 # Build Log
 
+## 2026-10-04 — d7 Phase 5B: MCP contract frozen (Day 7 closed)
+
+Final bounded Day 7 session. Corrects the skip-vs-failure semantics of
+`get_failing_traces`, adds an operator score filter that is explicitly not a
+failure classifier, fixes count truthfulness, proves the MCP server over a
+real stdio JSON-RPC connection, and lands three small real fixes. Zero
+Gemini calls; no state mutation; no git push. Scope matched the session's
+no-go list exactly -- no schema/Kafka change, no frontier enrichment, no
+invented threshold, no red-team, no frontend.
+
+### Skip vs. failure classification (`get_failing_traces`)
+
+A `judge_verdicts` row with `status` in (`partial`, `failed`) does not mean
+the judge pipeline failed -- it means fewer than 3 of 3 RAGAS metrics
+completed, for one of two very different reasons. `FlashJudge`
+(`finsentry/judges/flash_judge.py`) marks all three metrics
+`skipped_non_success` or `skipped_no_key` *without calling Gemini* when
+there is nothing to evaluate (a blocked/errored request, or the judge
+disabled) -- `total_gemini_calls` stays 0. A `skipped_evaluator_error`
+status means Gemini *was* called and the evaluator itself raised --
+`total_gemini_calls` is typically >0. That persisted field alone, no new
+event field, distinguishes a judge-skip from a genuine pipeline failure.
+
+Every `FailingTrace` now carries a derived `classification`:
+`guardrail_blocked` and `rag_system_error` for `rag_events` rows (from their
+own `status`), `judge_skipped` for `judge_verdicts` rows with
+`total_gemini_calls=0`, `judge_pipeline_failure` for the same statuses with
+`total_gemini_calls>0`. `total_gemini_calls` is surfaced on the trace itself
+so the classification is auditable, not asserted. Verified against the real
+Day 7 blocked request (`app_trace_id=7b7a37e6-b22b-45da-a8df-d0a98a095236`):
+its `judge_verdicts` row classifies as `judge_skipped`, not a pipeline
+failure -- see `test_get_failing_traces_classifies_real_d7_blocked_request_as_judge_skipped`.
+
+### `score_below`: an operator filter, not a failure policy
+
+Added `score_below: float | None = None` to `get_failing_traces`. When set,
+it additionally returns `status="complete"` `judge_verdicts` rows where
+`answer_relevance_score` or `context_relevance_score` falls below that
+value. There is no calibrated platform threshold for either dimension
+(unlike faithfulness, which gates generation at a Python default of 0.7 --
+see the dead-config note below), so this is explicitly an operator-chosen
+investigation filter, not a failure classifier: a matched row carries
+`matched_score_filter` (dimension + actual score + the threshold the caller
+passed), never a `classification`. The same row is included or excluded
+purely by whatever value the caller supplies, which is exactly why it
+cannot be a failure verdict. Faithfulness is excluded from this filter --
+the async Flash judge recomputes faithfulness independently of the gate
+that already made the pass/fail call for that response, so it would be a
+noisy signal to re-threshold here. `score_below=None` (the default)
+reproduces prior behavior exactly, verified by
+`test_get_failing_traces_score_below_none_leaves_behavior_unchanged`.
+
+Verified live against real RisingWave data: `score_below=0.99` correctly
+returned 3 real `complete` rows with `answer_relevance_score`/
+`context_relevance_score` at 0.0, each carrying `matched_score_filter`
+entries and `classification=null` -- not counted in `failure_record_count`.
+
+### Count truthfulness
+
+`GetFailingTracesResult.count` is replaced by three honest fields:
+`failure_record_count` (rows where `classification is not None` -- actual
+failures only), `score_filter_match_count` (rows that matched `score_below`
+-- explicitly not counted as failures), and `unique_trace_count` (distinct
+`app_trace_id`s across everything returned). A request failing at two
+layers still produces two rows (kept, not deduplicated -- it is real), but
+`unique_trace_count` now tells the caller it is one request, not two.
+
+### Real MCP protocol-boundary proof
+
+`tests/mcp/test_protocol_stdio.py` launches the server as an actual
+subprocess via its real entrypoint (`python -m finsentry.mcp.server`) and
+drives it with the installed SDK's own `mcp.Client` over real stdio
+JSON-RPC -- the first test in this codebase proving the wire protocol
+itself, not just in-process tool registration (`test_server.py` already
+covered that). Verified: handshake succeeds (`server_info.name ==
+"finsentry-ops"`, version `"0.1.0"`); `tools/list` returns exactly the five
+backed tools, `run_red_team_scenario` absent, every tool's input schema
+exposed (`type: "object"`); a real `tools/call` round trip against
+`get_drift_report` (no infra dependency) returns valid structured output;
+calling `get_judge_scores` with a missing required argument is rejected
+(`CallToolResult.is_error=True` -- this SDK reports argument-validation
+failures as a tool-level error result, not a JSON-RPC `MCPError`, confirmed
+by reading `mcp.server.mcpserver.server._handle_call_tool`, not assumed);
+the subprocess shuts down cleanly on context exit. Kept deterministic by
+overriding `RISINGWAVE_PORT` to an unused port in the subprocess env, so
+`dao.open()` always fails the same way into offline mode regardless of
+what is or isn't running on the host -- no RisingWave dependency. The test
+takes ~30s: `psycopg_pool` retries the refused connection with backoff for
+its full `open(wait=True)` default timeout before giving up, which is
+real, pre-existing DAO behavior, not something this test introduced.
+
+### DAO three-state health (Phase 3)
+
+`RisingWavePool.connected` (`_pool is not None`) could not previously be
+told apart from a query failure: both `fetch_one`/`fetch_all` returning
+None/[] on a healthy pool with a bad query, and the same return value when
+there was never a pool to query, looked identical to a caller. Added
+`last_query_failed`, set to `False` on a successful query and `True` on an
+exception against an established pool, reset at the start of every call.
+`fetch_one`/`fetch_all`'s existing None/[] return contract is unchanged --
+this is additive state for a caller that needs to tell "no rows" apart from
+"the query errored," not a replacement for the offline-safe design.
+Three states a caller can now distinguish: `connected=False` (connection
+unavailable), `connected=True, last_query_failed=False` (query succeeded),
+`connected=True, last_query_failed=True` (query failed, connection intact).
+Tests: unopened pool, successful open + successful query, successful open +
+query failure, clean close.
+
+### Limit bounds (Phase 3)
+
+`get_failing_traces` and `search_prompt_injections` inline their `limit`
+argument directly into SQL text (RisingWave's streaming planner rejects a
+bound `LIMIT` parameter -- a Day 7 finding). Added `finsentry.mcp._util.
+validate_limit`, enforcing `1 <= limit <= 500` before either query runs --
+500 because these are incident-investigation tools (recent failures, recent
+injection attempts), not bulk export, and the cap only needs to rule out an
+accidental or malicious unbounded scan, not model realistic investigative
+page sizes. Out-of-range values raise `ValueError`, which the MCP SDK
+surfaces as `CallToolResult(is_error=True)`.
+
+### Drift-report wording (Phase 3)
+
+`get_drift_report`'s empty-transition-history note previously read "the
+judge has not crossed any hysteresis threshold since the audit wrapper was
+last used" -- an empty persisted artifact proves no such thing; it may
+simply never have been written, or the judge may have crossed a threshold
+before the audit wrapper was ever used. Replaced with "no transition-audit
+history is available in the persisted artifact," which states only what
+the empty artifact actually proves. No controller/policy/threshold change.
+
+### Doc corrections (Phase 3)
+
+The Day 7 opening entry above claimed tool registration used the
+`@server.tool()` decorator; the code has always used imperative
+`server.add_tool(fn)` (see `finsentry/mcp/server.py`). Corrected the wording
+in place rather than rewriting history. Separately: `config/rails.yml`'s
+`output.faithfulness.threshold: 0.7` is dead config -- confirmed by reading
+`InputRailsAdapter.__init__` (`finsentry/gateway/rails.py`), which parses
+only `raw["rails"]["input"]`; the faithfulness rail's real threshold is a
+Python default (`finsentry/rails/output/faithfulness.py:87`,
+`threshold: float = 0.7`) that happens to match the YAML by coincidence,
+not by being read from it. Noted here as a known issue, explicitly NOT
+fixed this session -- out of scope per the session's no-go list.
+
+### Verification
+
+509 passed (495 prior baseline + 14 new: 3 DAO, 3 `_util`, 1 drift wording,
+1 injections limit, 5 traces classification/score_below/limit, 1 real
+stdio protocol), `ruff check .` clean, `mypy finsentry/ --strict` clean
+across 82 source files. Protocol smoke test run explicitly and shown
+passing (30.58s, deterministic). Live demo (`scripts/
+mcp_investigation_demo_d7.py`) re-run against real RisingWave: the arc
+still completes end to end, and the real blocked-request trace
+(`7b7a37e6-...`) now shows `classification="judge_skipped"` /
+`classification="guardrail_blocked"`, `failure_record_count=2`,
+`unique_trace_count=1`. A manual in-process call with `score_below=0.99`
+against the same live data confirmed `matched_score_filter` populates
+correctly on real `complete` rows and is never counted toward
+`failure_record_count`. Zero Gemini calls this session (every tool call
+reads already-persisted RisingWave rows or on-disk artifacts); no rail,
+`decide_ensemble`, orchestrator, adapter, retriever, or calibration code
+touched beyond the read-only use already in place.
+
+### Deliberate, documented limitations (unchanged from Day 7's opening entry)
+
+Rich flash-tier RAGAS evidence (unsupported_claims, rationales,
+chunk_rationales) is generated at compute time but not persisted in
+`JudgeVerdictEvent`/`judge_verdicts` -- not changed this session. Frontier
+`per_judge_results` is not surfaced by `get_judge_scores` -- the only real
+rows are stale `stub-judge` placeholders; `get_judge_scores` stays
+`judge_verdicts`-only. Indirect (retrieval-rail) prompt-injection detection
+runs but is never persisted to Kafka or RisingWave, so `search_prompt_
+injections.indirect` stays `None` with a reason. Injection clustering is
+deferred until that signal is persisted. `run_red_team_scenario` is
+deferred to Day 10 (no stored-scenario registry exists). `config/
+rails.yml`'s dead output-threshold is noted above, not fixed.
+
+Status: DAY 7 CLOSED -- MCP contract frozen. No further MCP work until the
+frontend consumes it; no Day 7.5/7.6.
+
 ## 2026-10-04 — d7: MCP operational interface
 
 Day 7. An MCP server exposing five of the spec's six operational tools,
@@ -49,7 +229,9 @@ pattern-matching a remembered FastMCP example, because `mcp` 2.x renamed
 `FastMCP`. Importing `mcp.server.fastmcp` confirmed this immediately -- the
 module is now a deliberate `ModuleNotFoundError` shim: *"FastMCP is now
 `mcp.server.mcpserver.MCPServer`"*, with a link to the real migration guide.
-Used `mcp.server.mcpserver.MCPServer` directly: `@server.tool()` decorator
+Used `mcp.server.mcpserver.MCPServer` directly: imperative `server.add_tool(fn)`
+registration (not the `@server.tool()` decorator -- corrected in the Day 7
+closure entry below, same behavior, wrong prior description)
 (docstring becomes the tool description when none is passed explicitly --
 confirmed by reading `Tool.from_function`'s `func_doc = description or
 fn.__doc__ or ""`), structured output auto-derived from the return type
