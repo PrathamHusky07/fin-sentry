@@ -88,7 +88,7 @@ class FailingTrace:
 @dataclass
 class GetFailingTracesResult:
     traces: list[FailingTrace]
-    failure_record_count: int
+    classification_counts: dict[str, int]
     score_filter_match_count: int
     unique_trace_count: int
     risingwave_connected: bool
@@ -253,6 +253,14 @@ async def get_failing_traces(
     judge_skipped (nothing to evaluate -- total_gemini_calls=0), or
     judge_pipeline_failure (the judge ran and failed -- total_gemini_calls>0).
 
+    classification_counts is a per-classification breakdown (only keys that
+    are actually present), not a single collapsed "failure" scalar -- there
+    is no uncontested line between "a failure" and "not a failure" across
+    these four states (judge_skipped in particular is a consequence of an
+    upstream block/error, not an independent failure, and must never be
+    added into the same bucket as guardrail_blocked/rag_system_error/
+    judge_pipeline_failure). Read the breakdown, not a sum of it.
+
     score_below (default None, unset -> no change in behavior) is NOT part of
     this failure taxonomy -- it is an operator-supplied investigation filter
     with no default threshold, because no calibrated platform threshold
@@ -260,7 +268,8 @@ async def get_failing_traces(
     additionally returns status="complete" judge_verdicts rows scoring below
     that value, each carrying matched_score_filter (dimension + actual score)
     instead of a classification -- a filter match is explicitly not a
-    failure verdict. Faithfulness is excluded (see module docstring).
+    failure verdict and is never counted in classification_counts.
+    Faithfulness is excluded (see module docstring).
     """
     validate_limit(limit)
     traces: list[FailingTrace] = []
@@ -282,13 +291,18 @@ async def get_failing_traces(
     traces.sort(key=lambda t: t.timestamp_utc or "", reverse=True)
     traces = traces[:limit]
 
-    failure_record_count = sum(1 for t in traces if t.classification is not None)
+    classification_counts: dict[str, int] = {}
+    for t in traces:
+        if t.classification is not None:
+            classification_counts[t.classification] = (
+                classification_counts.get(t.classification, 0) + 1
+            )
     score_filter_match_count = sum(1 for t in traces if t.matched_score_filter)
     unique_trace_count = len({t.app_trace_id for t in traces})
 
     return GetFailingTracesResult(
         traces=traces,
-        failure_record_count=failure_record_count,
+        classification_counts=classification_counts,
         score_filter_match_count=score_filter_match_count,
         unique_trace_count=unique_trace_count,
         risingwave_connected=dao.connected,

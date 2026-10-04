@@ -60,7 +60,10 @@ async def test_get_failing_traces_merges_rag_event_and_judge_failures(monkeypatc
     result = await get_failing_traces(failure_type="any", limit=10)
 
     assert calls == ["rag_events", "judge_verdicts"]
-    assert result.failure_record_count == 2
+    assert result.classification_counts == {
+        "guardrail_blocked": 1,
+        "judge_pipeline_failure": 1,
+    }
     assert result.unique_trace_count == 2
     assert result.score_filter_match_count == 0
     assert result.risingwave_connected is True
@@ -76,7 +79,8 @@ async def test_get_failing_traces_classifies_real_d7_blocked_request_as_judge_sk
     guardrail-blocked request produces a judge_verdicts row with
     status='failed' and total_gemini_calls=0 because there is nothing to
     judge on a blocked request with no answer. That is a judge-skip, not a
-    pipeline failure."""
+    pipeline failure -- classification_counts must show both counted
+    separately, not lumped together as "2 failures"."""
     _connect()
     trace_id = "7b7a37e6-b22b-45da-a8df-d0a98a095236"
     rag_rows = [
@@ -117,7 +121,7 @@ async def test_get_failing_traces_classifies_real_d7_blocked_request_as_judge_sk
     rag_trace = next(t for t in result.traces if t.source == "rag_event")
     assert rag_trace.classification == "guardrail_blocked"
 
-    assert result.failure_record_count == 2
+    assert result.classification_counts == {"guardrail_blocked": 1, "judge_skipped": 1}
     assert result.unique_trace_count == 1
 
 
@@ -145,7 +149,7 @@ async def test_get_failing_traces_classifies_gemini_calls_gt_zero_as_pipeline_fa
 
     assert len(result.traces) == 1
     assert result.traces[0].classification == "judge_pipeline_failure"
-    assert result.failure_record_count == 1
+    assert result.classification_counts == {"judge_pipeline_failure": 1}
 
 
 async def test_get_failing_traces_score_below_flags_match_not_failure(monkeypatch: Any) -> None:
@@ -181,7 +185,7 @@ async def test_get_failing_traces_score_below_flags_match_not_failure(monkeypatc
     assert matched.matched_score_filter[0].dimension == "answer_relevance"
     assert matched.matched_score_filter[0].score == 0.4
     assert matched.matched_score_filter[0].threshold == 0.7
-    assert result.failure_record_count == 0
+    assert result.classification_counts == {}
     assert result.score_filter_match_count == 1
     assert result.unique_trace_count == 1
 
@@ -202,7 +206,7 @@ async def test_get_failing_traces_score_below_none_leaves_behavior_unchanged(
 
     assert not any("j.status = 'complete'" in sql for sql in calls)
     assert result.traces == []
-    assert result.failure_record_count == 0
+    assert result.classification_counts == {}
     assert result.score_filter_match_count == 0
     assert result.unique_trace_count == 0
 
@@ -228,7 +232,7 @@ async def test_get_failing_traces_offline_returns_empty_not_error(monkeypatch: A
     result = await get_failing_traces()
 
     assert result.traces == []
-    assert result.failure_record_count == 0
+    assert result.classification_counts == {}
     assert result.unique_trace_count == 0
     assert result.risingwave_connected is False
 

@@ -1,5 +1,66 @@
 # Build Log
 
+## 2026-10-04 — d7 Phase 5C: count-semantics correction (Day 7 re-closed)
+
+Single-fix correction to the Phase 5B closure below. `failure_record_count`
+collapsed `judge_skipped` into the same number as `guardrail_blocked`/
+`rag_system_error`/`judge_pipeline_failure` -- counting a judge-skip (the
+Phase 5B entry's own words: "nothing to evaluate," a consequence of an
+upstream block or error, not an independent failure) as if it were a
+failure. The code contradicted the entry's own description ("actual
+failures only"). No other Day 7 scope touched.
+
+### The fix
+
+Replaced the single `failure_record_count` scalar on `GetFailingTracesResult`
+with `classification_counts: dict[str, int]` -- a per-classification
+breakdown (`guardrail_blocked`, `rag_system_error`, `judge_pipeline_failure`,
+`judge_skipped`; only classifications actually present appear as keys).
+There is no uncontested line between "a failure" and "not a failure" across
+these four states, so the tool reports the breakdown and lets the caller
+draw that line, rather than making the judgment call itself and baking it
+into a number whose definition only shows up in a docstring. `judge_skipped`
+and `score_below` filter matches are never counted in `classification_counts`
+-- the same rule as before, now impossible to violate silently since there
+is no single sum to misdefine. `score_filter_match_count` and
+`unique_trace_count` are unchanged. The classification logic itself
+(`finsentry/mcp/tools/traces.py`'s `_RAG_EVENT_CLASSIFICATION` map and the
+`total_gemini_calls==0` judge-skip check) was already correct and was not
+touched.
+
+Considered and declined: an additional `actionable_failure_count` (blocked +
+rag_system_error + pipeline_failure, excluding skips and filter matches) was
+offered as an option for a future Day 9 UI. Not added -- no consumer needs
+it yet, and reintroducing a single collapsed number, even a cleanly defined
+one, is the shape of thing this fix exists to get rid of. If a UI need
+surfaces a concrete case for it later, it can be computed by the caller from
+`classification_counts` with no server change.
+
+Real-D7-trace regression test updated to assert the honest shape directly:
+`classification_counts == {"guardrail_blocked": 1, "judge_skipped": 1}`,
+`unique_trace_count == 1` -- the skip is visible, and is not lumped with the
+block into a "2 failures" count. All six `failure_record_count` call sites
+in `tests/mcp/tools/test_traces.py` updated to assert on
+`classification_counts` instead (either a specific breakdown or `{}`).
+
+### Evidence regenerated
+
+Re-ran `scripts/mcp_investigation_demo_d7.py` against real RisingWave. The
+committed `docs/measurements/mcp/mcp-investigation-demo-d7.json` now shows
+`get_failing_traces`'s `structured_content` with `classification_counts:
+{"guardrail_blocked": 1, "judge_skipped": 1}`, `unique_trace_count: 1`,
+`score_filter_match_count: 0`, and no `failure_record_count` key -- the
+corrected contract, not the Phase 5B one.
+
+### Verification
+
+509 passed (same count as Phase 5B -- this is a rename/reshape of an
+existing field, not new test surface), `ruff check .` clean, `mypy
+finsentry/ --strict` clean across 82 source files. Zero Gemini calls; no
+rail, judge, DAO, drift, or protocol-test code touched; no git push.
+
+Status: DAY 7 CLOSED -- MCP contract frozen (count semantics corrected).
+
 ## 2026-10-04 — d7 Phase 5B: MCP contract frozen (Day 7 closed)
 
 Final bounded Day 7 session. Corrects the skip-vs-failure semantics of

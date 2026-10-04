@@ -6,7 +6,10 @@
     },
     "is_error": false,
     "structured_content": {
-      "failure_record_count": 2,
+      "classification_counts": {
+        "guardrail_blocked": 1,
+        "judge_skipped": 1
+      },
       "risingwave_connected": true,
       "score_filter_match_count": 0,
       "traces": [
