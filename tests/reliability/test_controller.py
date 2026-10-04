@@ -213,3 +213,16 @@ def test_mark_operationally_unavailable_overrides_kappa_derived_state() -> None:
     controller.mark_operationally_available()
     assert _state(controller) == "healthy"  # kappa-derived state unaffected underneath
     assert _mode(controller) == "normal"
+
+
+def test_fresh_controller_cold_starts_insufficient_data_and_normal() -> None:
+    """Restart semantics, accepted as a known limitation (see docs/build-log.md's
+    Day 6 Phase 2 entry): health state lives only in memory, so a process
+    restart always re-creates a DriftController with no prior observations.
+    It cold-starts insufficient_data/normal -- fail-open to "gathering
+    evidence" -- which means a previously-drifted judge is re-admitted
+    until the window refills with real observations. A fail-safe variant
+    that cold-starts drifted is the alternative, deferred."""
+    controller = DriftController()
+    assert controller.current_state == "insufficient_data"
+    assert controller.current_mode == "normal"

@@ -192,3 +192,49 @@ async def test_readmission_after_sustained_recovery_calls_underlying_judge_again
     result = await gated.evaluate(_eval_input())
     assert stub.evaluate_call_count == 2
     assert result.status == "success"
+
+
+async def test_proof_b_synthetic_closed_loop_healthy_to_drifted_to_recovered() -> None:
+    """Day 6 Phase 2 Proof B: the closed-loop control-behavior proof, through
+    the real DriftController + DriftGatedJudge + unmodified decide_ensemble().
+    Every LabeledResult here is injected/synthetic, NOT live Gemini -- this
+    proves the mechanism reacts correctly to a given kappa sequence, it does
+    NOT claim the live Gemini judge actually drifted (see Proof A in
+    docs/build-log.md for the live, un-staged canary run)."""
+    stub = _StubJudge("gemini-rubric")
+    controller = DriftController(_CFG)
+    gated = DriftGatedJudge(stub, controller)
+
+    # 1. healthy: underlying judge is called, decide_ensemble gets a real verdict.
+    result = await gated.evaluate(_eval_input())
+    assert result.status == "success"
+    assert decide_ensemble([result]).disagreement_taxonomy == "single_judge"
+
+    # 2. sustained degradation (K=2 consecutive breaches, per _CFG) -> drifted + frontier_only.
+    bad = LabeledResult("supported", True, observed_at=_T0)
+    for _ in range(2):
+        controller.record_result(bad)
+    assert controller.current_state == "drifted"
+    assert controller.current_mode == "frontier_only"
+
+    # 3. gated judge bypassed -- the bypassed result feeds the real, unmodified
+    # decide_ensemble, which (HHEM disabled, today's default) falls through
+    # to its pre-existing all_unavailable branch. No new logic anywhere.
+    gated_result = await gated.evaluate(_eval_input())
+    assert stub.evaluate_call_count == 1  # unchanged -- underlying judge not called again
+    assert gated_result.status == "unavailable"
+    outcome = decide_ensemble([gated_result])
+    assert outcome.verdict == "ensemble_insufficient"
+    assert outcome.disagreement_taxonomy == "all_unavailable"
+
+    # 4. sustained recovery (M=3 consecutive recovery-grade windows, per _CFG) -> normal.
+    good = LabeledResult("refuted", True, observed_at=_T0)
+    for _ in range(3):
+        controller.record_result(good)
+    assert controller.current_state == "healthy"
+    assert controller.current_mode == "normal"
+
+    # 5. re-admitted: underlying judge is called again.
+    result = await gated.evaluate(_eval_input())
+    assert stub.evaluate_call_count == 2
+    assert result.status == "success"
