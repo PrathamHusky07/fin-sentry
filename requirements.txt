@@ -16,10 +16,13 @@ bitsandbytes>=0.43.0
 accelerate>=0.30.0
 
 # Observability
-opentelemetry-api>=1.28.0
-opentelemetry-sdk>=1.28.0
-opentelemetry-exporter-otlp>=1.28.0
-opentelemetry-exporter-otlp-proto-grpc>=1.28.0
+# Floor raised to 1.45.0 (Day 7): adding mcp pulled in opentelemetry-api
+# 1.45.0 as a transitive dependency; sdk/exporters must stay in lockstep
+# with api or opentelemetry.util.types imports break across the version seam.
+opentelemetry-api>=1.45.0
+opentelemetry-sdk>=1.45.0
+opentelemetry-exporter-otlp>=1.45.0
+opentelemetry-exporter-otlp-proto-grpc>=1.45.0
 
 # Ingestion
 edgartools>=2.0.0
@@ -47,6 +50,11 @@ pyyaml>=6.0.0
 # Ops / measurement scripts
 psutil>=6.0.0
 sentencepiece>=0.2.0
+
+# MCP operational interface (Day 7) -- also declared in pyproject.toml's
+# [project.dependencies] via `uv add mcp`; listed here too so a plain
+# `pip install -r requirements.txt` stays complete.
+mcp>=2.3.0
 
 # Dev
 ruff>=0.5.0

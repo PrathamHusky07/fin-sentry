@@ -22,14 +22,11 @@ from __future__ import annotations
 
 import datetime
 import logging
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 
-import psycopg
-import psycopg.rows
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -39,6 +36,7 @@ from finsentry.consumer.lag_monitor import (
     ConsumerLagReport,
     lag_monitor_from_env,
 )
+from finsentry.risingwave.dao import RisingWavePool
 
 load_dotenv()
 
@@ -69,36 +67,18 @@ def _to_jsonable(value: Any) -> Any:
 # Database connection pool
 # ---------------------------------------------------------------------------
 
-_pool: Any = None
-
-
-def _rw_dsn() -> str:
-    host = os.getenv("RISINGWAVE_HOST", "localhost")
-    port = os.getenv("RISINGWAVE_PORT", "4566")
-    user = os.getenv("RISINGWAVE_USER", "root")
-    db = os.getenv("RISINGWAVE_DB", "dev")
-    return f"postgresql://{user}@{host}:{port}/{db}"
+_dao = RisingWavePool()
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
-    global _pool, _lag_monitor
-    try:
-        import psycopg_pool  # lazy; optional at import time
-
-        pool = psycopg_pool.AsyncConnectionPool(_rw_dsn(), min_size=1, max_size=3, open=False)
-        await pool.open(wait=True)
-        _pool = pool
+    global _lag_monitor
+    await _dao.open()
+    if _dao.connected:
         log.info("Dashboard connected to RisingWave")
-    except Exception as exc:
-        log.warning(
-            "Dashboard: could not connect to RisingWave — %s (running in offline mode)", exc
-        )
-        _pool = None
     _lag_monitor = lag_monitor_from_env()
     yield
-    if _pool is not None:
-        await _pool.close()
+    await _dao.close()
 
 
 app = FastAPI(title="FinSentry Evaluation Dashboard", lifespan=lifespan)
@@ -110,31 +90,11 @@ app = FastAPI(title="FinSentry Evaluation Dashboard", lifespan=lifespan)
 
 
 async def _fetch_one(sql: str) -> dict[str, Any] | None:
-    if _pool is None:
-        return None
-    try:
-        async with _pool.connection() as conn:
-            async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-                await cur.execute(sql)
-                row: dict[str, Any] | None = await cur.fetchone()
-                return row
-    except Exception:
-        log.exception("Dashboard query failed: %s", sql[:80])
-        return None
+    return await _dao.fetch_one(sql)
 
 
 async def _fetch_all(sql: str) -> list[dict[str, Any]]:
-    if _pool is None:
-        return []
-    try:
-        async with _pool.connection() as conn:
-            async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-                await cur.execute(sql)
-                rows: list[dict[str, Any]] = await cur.fetchall()
-                return rows
-    except Exception:
-        log.exception("Dashboard query failed: %s", sql[:80])
-        return []
+    return await _dao.fetch_all(sql)
 
 
 async def _fetch_metrics() -> dict[str, Any]:
@@ -197,7 +157,7 @@ async def _fetch_metrics() -> dict[str, Any]:
         "relevance": relevance,
         "tokens": tokens,
         "cost": cost,
-        "risingwave_connected": _pool is not None,
+        "risingwave_connected": _dao.connected,
     }
 
 
@@ -228,7 +188,7 @@ async def _fetch_frontier_metrics() -> dict[str, Any]:
         "disagreement_counts": {
             row["disagreement_classification"]: row["count"] for row in disagreement_rows
         },
-        "risingwave_connected": _pool is not None,
+        "risingwave_connected": _dao.connected,
     }
 
 
