@@ -27,9 +27,11 @@ from tenacity import (
     wait_exponential,
 )
 
+from finsentry.events.metrics_snapshot import MetricsSnapshot
 from finsentry.events.producer import RagEventProducer
 from finsentry.events.schema import RagResponseEvent
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker
+from finsentry.gateway.metrics_poller import MetricsPoller
 from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.observability.tracing import configure_tracer_provider, get_tracer, set_app_trace_id
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
@@ -67,6 +69,8 @@ _schema_rail: SchemaEnforcementRail | None = None
 _phrase_rail: RegulatedPhraseRail | None = None
 _faithfulness_rail: FaithfulnessRail | None = None
 _rag_event_producer: RagEventProducer | None = None
+_metrics_http_client: httpx.AsyncClient | None = None
+_metrics_poller: MetricsPoller | None = None
 _tracer = get_tracer()
 
 # Tenacity strategy for the 20-second total request budget.
@@ -147,6 +151,7 @@ class _AuthError(Exception):
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _adapter, _embed_model, _rag_breaker, _retrieval_rail
     global _schema_rail, _phrase_rail, _faithfulness_rail, _rag_event_producer
+    global _metrics_http_client, _metrics_poller
 
     configure_tracer_provider(
         cast(Literal["console", "otlp", "none"], os.getenv("OTEL_EXPORTER", "none"))
@@ -200,8 +205,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     await _rag_event_producer.start()
 
+    # Day 8 Option C: the gateway never imports RisingWave. This poller's
+    # only job is an httpx call to the metrics service's snapshot endpoint.
+    _metrics_http_client = httpx.AsyncClient()
+    _metrics_poller = MetricsPoller(_metrics_http_client)
+    await _metrics_poller.start()
+
     yield
 
+    await _metrics_poller.stop()
+    await _metrics_http_client.aclose()
     await _rag_event_producer.stop()
 
 
@@ -228,6 +241,57 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Live Operations SSE (Day 8, Option C)
+# ---------------------------------------------------------------------------
+
+_SSE_KEEPALIVE_TIMEOUT_SECONDS = 15.0
+
+
+async def _ops_stream_events(queue: asyncio.Queue[MetricsSnapshot]) -> AsyncGenerator[bytes]:
+    """Relay every snapshot the poller broadcasts to this one SSE client,
+    with a keep-alive comment if nothing arrives for a while. This is a
+    snapshot relay, not an event log -- each frame is the full current
+    state, not a delta."""
+    try:
+        while True:
+            try:
+                snapshot = await asyncio.wait_for(
+                    queue.get(), timeout=_SSE_KEEPALIVE_TIMEOUT_SECONDS
+                )
+                yield f"event: snapshot\ndata: {snapshot.model_dump_json()}\n\n".encode()
+            except TimeoutError:
+                yield b": keep-alive\n\n"
+    finally:
+        if _metrics_poller is not None:
+            _metrics_poller.unsubscribe(queue)
+
+
+@app.get("/ops/stream")
+async def ops_stream() -> Response:
+    """SSE snapshot relay for the Live Operations route. One MetricsPoller
+    per gateway process (started in lifespan, see above) serves every
+    connection to this route -- this handler only subscribes a queue to it,
+    it never polls the metrics service itself."""
+    if _metrics_poller is None:
+        return JSONResponse({"error": "metrics poller not initialised"}, status_code=503)
+
+    queue = _metrics_poller.subscribe()
+    return StreamingResponse(
+        _ops_stream_events(queue),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # nginx buffers proxied responses by default, which would hold
+            # every SSE frame until the buffer fills -- defeating the point
+            # of a live stream. This header is nginx-specific and ignored by
+            # anything else that proxies this route.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
