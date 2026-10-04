@@ -1,5 +1,149 @@
 # Build Log
 
+## 2026-10-03 — d6 Phase 0: judge-health drift-monitoring design (pre-code checkpoint)
+
+Day 6. Baseline confirmed before any design or code: 437 passed, 5
+deselected, `ruff check .` clean, `mypy finsentry/ --strict` clean (65
+files) — matches the expected 437 from the end of M4.
+
+### Assumption being stated explicitly before coding (per CLAUDE.md principle 1)
+
+The prompt's Phase 2 names the judge being monitored "flash" ("normal
+(flash + frontier as today)... frontier_only (degraded flash judge is
+bypassed)"). There is a *separate* FlashJudge pipeline in
+`finsentry/judges/flash_judge.py` (RAGAS metrics, `JudgeVerdictEvent`,
+runs on 100% of traffic) that is structurally disconnected from M3's
+ensemble contract (`decide_ensemble`, `JudgeResult`, `EnsembleOutcome`)
+--  it has never participated in `decide_ensemble` and has zero M4
+calibration evidence. Reading "flash" as that pipeline would make Phase
+0's requirement ("derive the baseline from the M4 calibration evidence
+you already have") and Phase 2's requirement ("wire the fallback through
+M3's existing ensemble contract, no new branching logic in
+`decide_ensemble`") mutually impossible without reopening/crossing the
+Flash/Frontier boundary that M1-M3's build log explicitly protected.
+
+Reading "flash" instead as **`GeminiRubricAdapter`** -- the frontier-tier
+judge that happens to run a flash-class Gemini model
+(`gemini-3.6-flash`), is the only reading under which both requirements
+are simultaneously satisfiable: M4 calibrated exactly this judge, and
+bypassing it via admission control naturally routes through
+`decide_ensemble`'s existing `single_judge` (if HHEM is enabled) or
+`ensemble_insufficient`/`all_unavailable` (today's actual default, HHEM
+disabled) branches with zero new logic. Proceeding on this reading;
+flagging it here instead of silently picking one.
+
+### Monitored quantity
+
+Windowed Cohen's kappa between `GeminiRubricAdapter`'s `JudgeResult.decision`
+and the benchmark's `is_hallucination` gold label, over a rolling window
+of the N most-recently-scored labeled benchmark items ("canary" items --
+`hallucination_bench` rows re-scored periodically through the live
+judge; Day 6 builds the pure compute + stateful hysteresis + admission
+control, proven with synthetic data, not the live periodic canary
+scheduler itself, which is future (Day 7+) wiring -- stated explicitly
+so this isn't silently claimed as running in production yet).
+
+Decision-to-boolean mapping: `"refuted"` -> predicted hallucination
+(True), `"supported"` -> predicted faithful (False). `"abstain"` and
+`"unavailable"` are excluded from the kappa computation (an abstention
+is a non-rating, not a prediction -- standard Cohen's kappa convention
+requires both raters to have rated the item; `"unavailable"` carries no
+evaluative signal at all, that's `JudgeHealth`'s existing job, not this
+one's) but are still counted and reported as evidence (`n_abstain`,
+`n_unavailable`) for operational visibility.
+
+Window = N most-recent labeled items in arrival order (a maxlen rolling
+buffer, not time-based). **N = 150**, chosen because it is the exact
+size of M4's own held-out split (148 committed decisions after excluding
+abstain) -- M4 itself demonstrated this size gives a stable kappa
+estimate ("a 22-positive estimate is meaningfully tighter" than 6).
+**min_n = 30** committed decisions: below this, state is
+`insufficient_data`, never `healthy`/`degraded`/`drifted`.
+
+### Health baseline and drift threshold, derived from M4 evidence (not a textbook 0.6)
+
+Recomputed (offline, reading the frozen `finqa_judge_outputs.json`,
+zero new Gemini calls) the decision-based kappa M4's own
+`calibration_summary.json` doesn't directly report -- M4's kappa was
+computed by thresholding the continuous `detector_score` at a swept
+value, which treats abstain rows as thresholded positive/negative;
+Day 6's kappa excludes abstain entirely, a different quantity:
+
+| split | n total | n committed | kappa (decision-based) |
+|---|---|---|---|
+| calibration | 350 | 342 | 0.5760 |
+| holdout | 150 | 148 | 0.6593 |
+| combined | 500 | 490 | **0.6050** |
+
+**Healthy baseline kappa = 0.6050** (combined, n=490 committed -- the
+best point estimate of this judge's normal performance).
+
+Bootstrapped (2000 resamples, seeded) the sampling-noise distribution of
+this exact statistic at window=150 against the pooled 490 committed
+(decision, gold) pairs, to find a drift threshold that is a genuine
+degradation and not sampling noise at this window size:
+
+| window n | mean | stdev | p05 | p25 | p50 | p75 | p95 |
+|---|---|---|---|---|---|---|---|
+| 20 | 0.562 | 0.319 | -0.053 | 0.385 | 0.615 | 0.773 | 1.000 |
+| 30 | 0.580 | 0.248 | 0.000 | 0.453 | 0.630 | 0.762 | 1.000 |
+| 50 | 0.589 | 0.186 | 0.242 | 0.464 | 0.608 | 0.729 | 0.865 |
+| 100 | 0.596 | 0.125 | 0.382 | 0.521 | 0.608 | 0.681 | 0.796 |
+| **150** | 0.602 | 0.100 | **0.427** | 0.538 | 0.608 | 0.670 | 0.756 |
+
+This directly justifies min_n=30 too: at n=30 the kappa stdev is 0.248
+and p05 touches 0.0 -- not usable even as a preliminary read, whereas by
+n=150 it has settled (stdev=0.100) to within sight of the 0.558-0.659
+spread M4 already observed between its own calibration and holdout
+splits.
+
+**Drift entry threshold = 0.43** -- the p05 of the window=150 bootstrap:
+a genuinely healthy judge produces a single window this low only ~5% of
+the time from resampling noise alone. **Recovery threshold = 0.54** --
+just under the p25: recovering trust requires performing at least as
+well as the healthy judge's own bottom quartile, not merely climbing
+back over the drift line. Margin over entry = 0.11.
+
+### Failure-cost asymmetry and hysteresis
+
+Stated preference: favor catching real drift over tolerating missed
+drift (a missed drift keeps a broken judge's verdicts reaching
+decisions; a false alarm only costs conservatism -- bypassing a judge
+that was actually fine, falling back to `ensemble_insufficient`). This
+asymmetry sets K < M directly:
+
+- **Entry K = 3** consecutive windows at/below 0.43 before declaring
+  `drifted` (and flipping the operating mode) -- small, so a genuinely
+  broken judge is not trusted for long. Any single non-breaching window
+  resets the streak to 0 (strict consecutive count, not leaky).
+- **Recovery M = 5** consecutive windows at/above 0.54 before declaring
+  `healthy` again -- larger than K and at the stricter threshold,
+  because re-admitting a possibly-still-broken judge is the costly
+  direction once in fallback; conservatism while drifted is the
+  tolerated cost, so recovery is deliberately slower to confirm than
+  entry. M > K and the recovery bar is numerically stricter than the
+  entry bar -- both forms of "recovery stricter than entry" are
+  satisfied, not just the window count.
+- `insufficient_data` windows advance neither counter (they carry no
+  information about accuracy either way).
+
+### Architecture: admission control in front of the existing contract
+
+`decide_ensemble` is not touched. A new `DriftGatedJudge` (implements
+the existing `FrontierJudge` protocol by composition, consuming its
+interface rather than modifying it) wraps `GeminiRubricAdapter`: when
+the wrapped `DriftController`'s mode is `frontier_only`, `evaluate()`
+returns a synthesized `JudgeResult(status="unavailable",
+decision="unavailable")` without calling the underlying adapter at all;
+`decide_ensemble` then falls through to its pre-existing
+`single_judge` (HHEM, if enabled) or `ensemble_insufficient`/
+`all_unavailable` (HHEM disabled, today's default) branches --
+unmodified code paths already covered by M3's test suite. When mode is
+`normal`, the wrapper delegates to the real adapter unchanged.
+`health_check()` always delegates to the underlying adapter -- drift
+bypass is an accuracy-based decision, independent of the adapter's own
+operational liveness.
+
 ## 2026-10-03 — d5a-m4 Phase 1+2: evaluation correction and larger-sample characterization
 
 Closes M4. Two parts: Phase 1 corrected the evaluation methodology offline
