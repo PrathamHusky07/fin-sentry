@@ -1,0 +1,243 @@
+[
+  {
+    "arguments": {
+      "limit": 10,
+      "time_window_minutes": 1440
+    },
+    "is_error": false,
+    "structured_content": {
+      "count": 10,
+      "risingwave_connected": true,
+      "traces": [
+        {
+          "app_trace_id": "7b7a37e6-b22b-45da-a8df-d0a98a095236",
+          "block_rail": null,
+          "block_reason": null,
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "judge_verdict",
+          "status": "failed",
+          "ticker": "AAPL",
+          "timestamp_utc": "2026-10-04T19:18:31.929029+00:00"
+        },
+        {
+          "app_trace_id": "7b7a37e6-b22b-45da-a8df-d0a98a095236",
+          "block_rail": "check prompt injection",
+          "block_reason": "input_rail_blocked",
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "rag_event",
+          "status": "blocked",
+          "ticker": "AAPL",
+          "timestamp_utc": "2026-10-04T19:18:31.888556+00:00"
+        },
+        {
+          "app_trace_id": "712407e9-af59-4dc4-831c-e4143343f85e",
+          "block_rail": null,
+          "block_reason": null,
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "judge_verdict",
+          "status": "failed",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:55:18.129701+00:00"
+        },
+        {
+          "app_trace_id": "712407e9-af59-4dc4-831c-e4143343f85e",
+          "block_rail": "schema-enforcement",
+          "block_reason": "hallucinated_citation",
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "rag_event",
+          "status": "blocked",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:55:18.127122+00:00"
+        },
+        {
+          "app_trace_id": "e6ff616d-1916-431a-8ded-b949be40255d",
+          "block_rail": null,
+          "block_reason": null,
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "judge_verdict",
+          "status": "failed",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:55:03.167301+00:00"
+        },
+        {
+          "app_trace_id": "e6ff616d-1916-431a-8ded-b949be40255d",
+          "block_rail": "faithfulness",
+          "block_reason": "low_faithfulness",
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "rag_event",
+          "status": "blocked",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:55:03.161929+00:00"
+        },
+        {
+          "app_trace_id": "d4c1653f-9583-4ce3-a280-750e03646d0c",
+          "block_rail": null,
+          "block_reason": null,
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "judge_verdict",
+          "status": "failed",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:54:51.810439+00:00"
+        },
+        {
+          "app_trace_id": "d4c1653f-9583-4ce3-a280-750e03646d0c",
+          "block_rail": "faithfulness",
+          "block_reason": "low_faithfulness",
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "rag_event",
+          "status": "blocked",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:54:51.798172+00:00"
+        },
+        {
+          "app_trace_id": "85cf4797-b39d-44f3-a4d1-5f87f6c1cf39",
+          "block_rail": null,
+          "block_reason": null,
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "judge_verdict",
+          "status": "failed",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:53:20.533822+00:00"
+        },
+        {
+          "app_trace_id": "85cf4797-b39d-44f3-a4d1-5f87f6c1cf39",
+          "block_rail": "schema-enforcement",
+          "block_reason": "hallucinated_citation",
+          "endpoint": "/v1/rag/query",
+          "error_detail": null,
+          "error_kind": null,
+          "source": "rag_event",
+          "status": "blocked",
+          "ticker": "AMZN",
+          "timestamp_utc": "2026-10-03T19:53:20.515998+00:00"
+        }
+      ]
+    },
+    "tool": "get_failing_traces"
+  },
+  {
+    "arguments": {
+      "app_trace_id": "7b7a37e6-b22b-45da-a8df-d0a98a095236"
+    },
+    "is_error": false,
+    "structured_content": {
+      "app_trace_id": "7b7a37e6-b22b-45da-a8df-d0a98a095236",
+      "block_rail": "check prompt injection",
+      "block_reason": "input_rail_blocked",
+      "endpoint": "/v1/rag/query",
+      "found": true,
+      "input_rail_status": "blocked",
+      "note": "persisted rail-decision snapshot, not a NeMo ExplainInfo trace",
+      "output_rail_trace_snapshot": {},
+      "risingwave_connected": true,
+      "status": "blocked",
+      "timestamp_utc": "2026-10-04T19:18:31.888556+00:00"
+    },
+    "tool": "explain_guardrail_decision"
+  },
+  {
+    "arguments": {
+      "app_trace_id": "7b7a37e6-b22b-45da-a8df-d0a98a095236"
+    },
+    "is_error": false,
+    "structured_content": {
+      "app_trace_id": "7b7a37e6-b22b-45da-a8df-d0a98a095236",
+      "count": 1,
+      "risingwave_connected": true,
+      "verdicts": [
+        {
+          "answer_relevance_score": null,
+          "answer_relevance_status": "skipped_non_success",
+          "context_relevance_score": null,
+          "context_relevance_status": "skipped_non_success",
+          "evaluation_latency_ms": 0,
+          "faithfulness_score": null,
+          "faithfulness_status": "skipped_non_success",
+          "judge_model": "gemini-3.6-flash",
+          "judge_tier": "flash",
+          "status": "failed",
+          "timestamp_utc": "2026-10-04T19:18:31.929029+00:00",
+          "total_cost_usd": 0.0,
+          "total_gemini_calls": 0,
+          "total_input_tokens": 0,
+          "total_output_tokens": 0,
+          "total_thoughts_tokens": 0
+        }
+      ]
+    },
+    "tool": "get_judge_scores"
+  },
+  {
+    "arguments": {},
+    "is_error": false,
+    "structured_content": {
+      "judge_id": "gemini-rubric",
+      "last_health_reading": {
+        "committed_n": 30,
+        "kappa": 0.5161290322580646,
+        "n_abstain": 0,
+        "n_unavailable": 0,
+        "source": "docs/measurements/reliability/canary-live-smoke-d6p2.json",
+        "state": "degraded",
+        "state_as_of": "2026-10-04T17:11:56.703109+00:00",
+        "window_n": 30
+      },
+      "note": "reporting last-persisted state as of state_as_of; this is not a continuously running monitor. No transition-audit history exists yet -- the judge has not crossed any hysteresis threshold since the audit wrapper was last used",
+      "policy": {
+        "drift_entry_threshold": 0.43,
+        "entry_consecutive_windows": 3,
+        "healthy_baseline_kappa": 0.605,
+        "min_n": 30,
+        "recovery_consecutive_windows": 5,
+        "recovery_threshold": 0.54,
+        "window_size": 150
+      },
+      "transition_history": []
+    },
+    "tool": "get_drift_report"
+  },
+  {
+    "arguments": {
+      "limit": 20,
+      "time_window_minutes": 1440
+    },
+    "is_error": false,
+    "structured_content": {
+      "direct": [
+        {
+          "app_trace_id": "7b7a37e6-b22b-45da-a8df-d0a98a095236",
+          "block_rail": "check prompt injection",
+          "block_reason": "input_rail_blocked",
+          "endpoint": "/v1/rag/query",
+          "timestamp_utc": "2026-10-04T19:18:31.888556+00:00"
+        }
+      ],
+      "direct_count_by_rail": {
+        "check prompt injection": 1
+      },
+      "indirect": null,
+      "indirect_deferred_reason": "RetrievalRail drops a chunk when Prompt Guard 2 scores it above the retrieval threshold, but only logs the drop -- no Kafka event or RisingWave column persists it today. Indirect injection clustering is deferred until the event contract captures this signal.",
+      "risingwave_connected": true,
+      "time_window_minutes": 1440
+    },
+    "tool": "search_prompt_injections"
+  }
+]

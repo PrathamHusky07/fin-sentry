@@ -1,5 +1,205 @@
 # Build Log
 
+## 2026-10-04 — d7: MCP operational interface
+
+Day 7. An MCP server exposing five of the spec's six operational tools,
+backed entirely by real persisted platform state -- no mocked tool, no
+synthetic data. The sixth tool (`run_red_team_scenario`) is deferred to
+Day 10, when its stored-scenario registry exists.
+
+### Day 6 closure
+
+Confirmed `DAY 6 PHASE 2` and `d6p2-canary` present in `docs/build-log.md`
+at `HEAD` before starting. Fixed the one acknowledged Phase 2 loose end:
+`AuditedDriftController._reason()` labeled every healthy<->degraded
+single-window mirror `sustained_degradation`/`sustained_recovery`, which
+overclaims -- those transitions never crossed the K/M hysteresis. Added
+`window_classification_change` for exactly that case; `sustained_degradation`
+is now only for `->drifted`, `sustained_recovery` only for moves out of
+`drifted`/`unavailable`. Test:
+`test_single_window_healthy_to_degraded_mirror_is_not_labeled_sustained`.
+Baseline after the fix: 474 passed, 5 deselected, ruff clean, mypy clean
+(71 files).
+
+### MCP SDK: pinned at the resolver's choice, not assumed
+
+`uv add mcp` resolved **mcp==2.3.0** (31 packages). Per the operator's
+explicit instruction, the version was never assumed from prior discussion --
+resolved, installed, and verified via `importlib.metadata.version("mcp")`
+after the fact. `uv add` created `pyproject.toml`'s first-ever
+`[project.dependencies]` array (`mcp>=2.3.0`); this project's other ~40
+dependencies live in `requirements.txt` with no prior `[project.dependencies]`
+section, so this is a new (small, explicit) pattern, not a replacement of
+the old one. Mirrored into `requirements.txt` too so a plain `pip install -r
+requirements.txt` stays complete.
+
+The resolution bumped `opentelemetry-api` to 1.45.0 as a transitive
+dependency, which broke `opentelemetry.util.types` imports against the
+still-1.44.0 `opentelemetry-sdk`/exporters installed from `requirements.txt`'s
+loose `>=1.28.0` ranges (`tests/gateway/test_circuit_breaker.py` failed to
+collect: `cannot import name '_ExtendedAttributes'`). Fixed by raising the
+whole OTel stack's floor to 1.45.0 in `requirements.txt` -- a version-seam
+fix, not a feature change. Caught by running the full suite immediately
+after the dependency add, not assumed safe.
+
+### The real v2 API surface, verified against the installed package
+
+The operator explicitly required inspecting the installed SDK rather than
+pattern-matching a remembered FastMCP example, because `mcp` 2.x renamed
+`FastMCP`. Importing `mcp.server.fastmcp` confirmed this immediately -- the
+module is now a deliberate `ModuleNotFoundError` shim: *"FastMCP is now
+`mcp.server.mcpserver.MCPServer`"*, with a link to the real migration guide.
+Used `mcp.server.mcpserver.MCPServer` directly: `@server.tool()` decorator
+(docstring becomes the tool description when none is passed explicitly --
+confirmed by reading `Tool.from_function`'s `func_doc = description or
+fn.__doc__ or ""`), structured output auto-derived from the return type
+annotation (dataclasses supported, confirmed via `tools/base.py`'s "Case 4:
+dataclasses, regular classes with annotations"), `server.run()` (defaults to
+`transport="stdio"`), `server.list_tools()` / `server.call_tool()` for
+in-process testing. All five tools use plain `@dataclass` return types,
+matching the rest of the codebase's style (`JudgeResult`, `JudgeHealthRecord`,
+etc.) rather than introducing pydantic models.
+
+### OpenTelemetry: already done by the SDK
+
+Inspecting `mcp/server/lowlevel/server.py` found `self.middleware =
+[OpenTelemetryMiddleware()]` -- on by default for every server, per a
+comment in the SDK's own source: *"ships on by default so every server
+emits a [span/trace]"*. It wraps every `tools/call` with `gen_ai.tool.name`,
+outcome, and latency, calling `opentelemetry.trace.get_tracer("mcp-python-sdk")`
+at import time -- which resolves through OTel's proxy-tracer mechanism to
+whatever `TracerProvider` is installed later, the same pattern
+`finsentry/gateway/main.py` already relies on. `server.py` calls
+`configure_tracer_provider(os.getenv("OTEL_EXPORTER", "none"))` once at
+startup -- the same primitive the gateway uses, driven by the same env var.
+No per-tool span code was written; the spec's "instrumented with
+OpenTelemetry per the July 2026 specification" requirement is satisfied by
+the SDK itself.
+
+### Shared RisingWave DAO
+
+No existing shared module: only `finsentry/dashboard/app.py` talked to
+RisingWave. Extracted the DSN/pool/fetch_one/fetch_all primitives into
+`finsentry/risingwave/dao.py` (`RisingWavePool`, offline-safe: a closed or
+failed pool returns `None`/`[]`, never raises). `dashboard/app.py` now
+delegates to one `RisingWavePool` instance; its own domain queries, routes,
+and HTML rendering are unchanged -- all 14 pre-existing dashboard tests pass
+unmodified. `finsentry/mcp/state.py` holds the MCP server's own pool
+instance (same class, separate instance, separate process).
+
+### The five backed tools and their real sources
+
+- **get_failing_traces**: `rag_events` (`status IN ('blocked','error')`) +
+  `judge_verdicts` (`status IN ('partial','failed')`, left-joined to
+  `rag_events` for endpoint/ticker). `failure_type` selects which source(s).
+- **explain_guardrail_decision**: the persisted `rag_events` snapshot
+  (`input_rail_status`, `block_reason`, `block_rail`,
+  `output_rail_trace_snapshot`) for one `app_trace_id`. Confirmed scoped
+  away from NeMo's `ExplainInfo`: `InputRailsAdapter.get_nemo()` exists with
+  a comment flagging it for "Day 7 MCP audit surface," but `nemo.explain()`
+  reflects only the *most recent* `check_async` call on one shared
+  in-process `LLMRails` instance -- not historical, not indexed by
+  `app_trace_id`, and in the gateway's process, not MCP's. Using it would be
+  wrong under concurrent traffic and impossible across the process boundary.
+  That stale comment is now effectively dead for the MCP use case; not
+  touched, per the no-unrelated-cleanup rule, just not followed.
+- **get_judge_scores**: `judge_verdicts` rows for one `app_trace_id`, flash
+  and frontier tiers both present via `judge_tier` (operator-confirmed scope:
+  no `rag_frontier_verdicts` ensemble enrichment).
+- **search_prompt_injections**: `rag_events` where `input_rail_status=
+  'blocked'`. `indirect` is always `None` with a reason -- `RetrievalRail`
+  (`finsentry/rails/retrieval/rail.py`) drops a chunk when Prompt Guard 2
+  scores it above the 0.3 retrieval threshold, but only `log.warning`'s the
+  drop; nothing is written to Kafka or a RisingWave column, so there is
+  nothing to query.
+- **get_drift_report**: the Day 6 `canary-live-smoke-d6p2.json` (last health
+  reading, `state_as_of`) and `canary_transitions.json` (if present -- it
+  doesn't exist yet, since Proof A used the raw `DriftController` directly,
+  not `AuditedDriftController`; handled as an empty history, not an error),
+  plus the live `DriftConfig()` for every policy value. No RisingWave
+  access. Explicitly reports "last-persisted state," never "live
+  monitoring."
+
+### Two real bugs, found only by running against real RisingWave
+
+Design-time assumptions are not verification. Running the tools against an
+actual blocked gateway request surfaced two bugs no amount of re-reading the
+code would have caught:
+
+1. `block_rail` is not `Rail.name` ("prompt-guard-2"). `finsentry/gateway/
+   main.py` sets `block_rail=rail_name` from `InputRailsAdapter.run()`'s
+   NeMo `result.rail` -- the **Colang flow name**. The real persisted value
+   for a blocked prompt-injection attempt was `"check prompt injection"`
+   (`finsentry/gateway/colang/config.co`). `search_prompt_injections`
+   originally filtered for `["prompt-guard-2", "llama-guard-3"]` and would
+   have matched zero real rows, forever. Fixed to filter on the real flow
+   name, and dropped the Llama Guard inclusion entirely -- "check hazard
+   taxonomy" is Meta's hazard/content-policy taxonomy, a different concern
+   from prompt injection, not a second injection signal.
+2. RisingWave's streaming query planner rejects a bound `LIMIT` parameter:
+   *"expects an integer or expression that can be evaluated to an integer
+   after LIMIT, but found non-const expression"*. `limit` is already
+   `int`-typed by each tool's own MCP input schema (validated before the
+   function body runs), so inlining it as a literal is safe; fixed in all
+   three affected queries (`get_failing_traces` x2, `search_prompt_injections`).
+
+### The demo: real infra, reset and rebuilt live
+
+RisingWave's container had crashed (`docker ps` showed `Exited (1) 18 hours
+ago`, worker-expiry errors in its log) and its sources/MVs were gone on
+restart (fresh catalog). Restarted it, re-ran `scripts/init_risingwave.py`
+(idempotent, `IF NOT EXISTS`), confirmed empty tables, then issued one real
+request through the already-running gateway dev server designed to trip the
+prompt-injection input rail (zero downstream LLM call, zero Gemini call --
+blocking happens before retrieval/generation). It landed as a real row with
+`app_trace_id=7b7a37e6-b22b-45da-a8df-d0a98a095236`, and the flash-tier judge
+consumer (which runs on 100% of traffic) correctly emitted a
+`status="failed"` verdict for it with `total_gemini_calls=0` (nothing to
+judge on a blocked request with no answer -- a real, honest, non-alarming
+"judge pipeline failure" row, left as-is, not filtered out).
+
+`scripts/mcp_investigation_demo_d7.py` ran the full arc against this real
+trace: `get_failing_traces` (10 traces, including the new one) ->
+`explain_guardrail_decision` (found=true, the real snapshot) ->
+`get_judge_scores` (1 verdict, the flash-tier failure) -> `get_drift_report`
+(state=degraded, the real Proof A reading) -> `search_prompt_injections` (1
+direct match, correctly counted under the real flow name after the bug fix).
+Captured to `docs/measurements/mcp/mcp-investigation-demo-d7.json`.
+
+### Guarantees
+
+Read-only: no tool mutates `rag_events`/`judge_verdicts`, re-runs a rail, or
+touches `decide_ensemble`/`DriftController`'s mode. Zero Gemini calls this
+entire session -- the one real gateway request was blocked pre-generation,
+and every MCP tool only reads already-persisted rows or on-disk artifacts.
+No scope creep: no `get_platform_health`, no `get_frontier_verdict`, no
+`run_red_team_scenario` registered, no second OTel config, no dashboard
+import into MCP (the shared DAO instead), no reopening of `decide_ensemble`/
+the orchestrator/adapters/retriever/calibration metrics beyond read-only use.
+
+### Verification
+
+490 passed (474 Day-6-closure baseline + 16 new: 3 DAO tests, 13 MCP tool/
+server tests), 5 deselected (slow), `ruff check .` clean, `mypy finsentry/
+--strict` clean across 82 source files.
+
+=== DAY 7 REPORT ===
+Day 6 closure: build-log in HEAD yes, audit reason fixed yes (test: test_single_window_healthy_to_degraded_mirror_is_not_labeled_sustained)
+Baseline: 474 passed, 5 deselected, ruff clean, mypy clean (71 files)
+MCP SDK: mcp 2.3.0 (resolved by uv add, not assumed)
+Shared RisingWave access: new shared module -- finsentry/risingwave/dao.py (none existed before; dashboard/app.py now consumes it too)
+Tools backed: get_failing_traces, explain_guardrail_decision, get_judge_scores, search_prompt_injections (direct only, indirect deferred -- not persisted anywhere), get_drift_report
+  data sources: get_failing_traces -> rag_events + judge_verdicts | explain_guardrail_decision -> rag_events snapshot | get_judge_scores -> judge_verdicts | search_prompt_injections -> rag_events (block_rail='check prompt injection') | get_drift_report -> canary-live-smoke-d6p2.json + canary_transitions.json + live DriftConfig()
+Deferred: run_red_team_scenario -> Day 10 (no stored-scenario registry)
+explain_guardrail_decision: persisted snapshot only (no overclaimed ExplainInfo): CONFIRMED
+get_drift_report: policy read from authoritative DriftConfig (not duplicated): CONFIRMED; state_as_of present
+OTel: existing setup reused (configure_tracer_provider via OTEL_EXPORTER); SDK's own OpenTelemetryMiddleware wraps every tool call by default, no-op safe without a collector
+Read-only / zero-Gemini / no-mutation: CONFIRMED
+Investigation demo: all 5 tools exercised against real RisingWave + reliability-artifact data -- docs/measurements/mcp/mcp-investigation-demo-d7.json
+Tests: 490, ruff clean, mypy clean
+Commits: 254ec67 (Day 6 audit fix), 5d6198a (mcp dep + DAO, 8 files -- one logical unit: the dependency add, its required OTel version-alignment fix, and the extraction it enables), 913acfa (5 tools + server + tests, 16 files -- one logical unit: the entire new MCP tool surface and its tests), <this entry>
+Status: DAY 7 COMPLETE -- MCP operational interface
+
 ## 2026-10-04 — d6 Phase 2: live reliability loop (Day 6 closed)
 
 Closes the loop the Phase 1-4 entry below deferred: a real, leakage-free
