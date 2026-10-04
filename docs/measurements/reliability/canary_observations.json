@@ -1,0 +1,242 @@
+{
+  "0d23905bfb03a841": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "0d23905bfb03a841",
+    "observed_at": "2026-10-04T17:11:30.007391+00:00",
+    "status": "success"
+  },
+  "1461e57912a87196": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": true,
+    "id": "1461e57912a87196",
+    "observed_at": "2026-10-04T17:10:07.726060+00:00",
+    "status": "success"
+  },
+  "1f2dcc280f552785": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": true,
+    "id": "1f2dcc280f552785",
+    "observed_at": "2026-10-04T17:10:05.339674+00:00",
+    "status": "success"
+  },
+  "2bca3a3ff1bcd9f6": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "2bca3a3ff1bcd9f6",
+    "observed_at": "2026-10-04T17:11:16.517934+00:00",
+    "status": "success"
+  },
+  "30f57edc5dbcff40": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "30f57edc5dbcff40",
+    "observed_at": "2026-10-04T17:11:36.780302+00:00",
+    "status": "success"
+  },
+  "32ca4f1d16f4fbdc": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "32ca4f1d16f4fbdc",
+    "observed_at": "2026-10-04T17:10:53.310981+00:00",
+    "status": "success"
+  },
+  "35432e027017bc2a": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "35432e027017bc2a",
+    "observed_at": "2026-10-04T17:10:25.770990+00:00",
+    "status": "success"
+  },
+  "3b0eb1090edb7315": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "3b0eb1090edb7315",
+    "observed_at": "2026-10-04T17:10:16.200724+00:00",
+    "status": "success"
+  },
+  "4b87e83f09eb5ab2": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "4b87e83f09eb5ab2",
+    "observed_at": "2026-10-04T17:11:33.437900+00:00",
+    "status": "success"
+  },
+  "505e9cf33e0108ca": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "505e9cf33e0108ca",
+    "observed_at": "2026-10-04T17:10:56.184059+00:00",
+    "status": "success"
+  },
+  "54152d62b63dd0a0": {
+    "decision": "refuted",
+    "error_detail": null,
+    "gold_is_hallucination": true,
+    "id": "54152d62b63dd0a0",
+    "observed_at": "2026-10-04T17:10:12.057270+00:00",
+    "status": "success"
+  },
+  "66d791070c8f547c": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "66d791070c8f547c",
+    "observed_at": "2026-10-04T17:10:34.474085+00:00",
+    "status": "success"
+  },
+  "6707277e4a9468bf": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "6707277e4a9468bf",
+    "observed_at": "2026-10-04T17:11:56.703109+00:00",
+    "status": "success"
+  },
+  "6a744d41ed396881": {
+    "decision": "refuted",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "6a744d41ed396881",
+    "observed_at": "2026-10-04T17:11:25.355648+00:00",
+    "status": "success"
+  },
+  "747765c8baa9f680": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "747765c8baa9f680",
+    "observed_at": "2026-10-04T17:11:27.830630+00:00",
+    "status": "success"
+  },
+  "790a76031c65e546": {
+    "decision": "refuted",
+    "error_detail": null,
+    "gold_is_hallucination": true,
+    "id": "790a76031c65e546",
+    "observed_at": "2026-10-04T17:09:58.708902+00:00",
+    "status": "success"
+  },
+  "7ae54cd894c9d056": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "7ae54cd894c9d056",
+    "observed_at": "2026-10-04T17:10:28.389671+00:00",
+    "status": "success"
+  },
+  "834cfda4f94fa47e": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "834cfda4f94fa47e",
+    "observed_at": "2026-10-04T17:11:53.943836+00:00",
+    "status": "success"
+  },
+  "9443977a2b45cdb5": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "9443977a2b45cdb5",
+    "observed_at": "2026-10-04T17:10:43.297647+00:00",
+    "status": "success"
+  },
+  "9779a76a8123f20f": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "9779a76a8123f20f",
+    "observed_at": "2026-10-04T17:10:37.225461+00:00",
+    "status": "success"
+  },
+  "9b6d966729138907": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "9b6d966729138907",
+    "observed_at": "2026-10-04T17:10:40.078121+00:00",
+    "status": "success"
+  },
+  "a69fafd7d6cd3ecf": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "a69fafd7d6cd3ecf",
+    "observed_at": "2026-10-04T17:11:47.444205+00:00",
+    "status": "success"
+  },
+  "bccd2fff39a58520": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "bccd2fff39a58520",
+    "observed_at": "2026-10-04T17:10:49.266130+00:00",
+    "status": "success"
+  },
+  "bfeb622cd9ef832a": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "bfeb622cd9ef832a",
+    "observed_at": "2026-10-04T17:11:02.224241+00:00",
+    "status": "success"
+  },
+  "c0369662885ef494": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "c0369662885ef494",
+    "observed_at": "2026-10-04T17:11:51.444926+00:00",
+    "status": "success"
+  },
+  "c911411be80e5393": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "c911411be80e5393",
+    "observed_at": "2026-10-04T17:10:45.738921+00:00",
+    "status": "success"
+  },
+  "dcbfdad577f12042": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "dcbfdad577f12042",
+    "observed_at": "2026-10-04T17:11:08.818725+00:00",
+    "status": "success"
+  },
+  "df005189bea02185": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "df005189bea02185",
+    "observed_at": "2026-10-04T17:11:12.841998+00:00",
+    "status": "success"
+  },
+  "e14454440197a824": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "e14454440197a824",
+    "observed_at": "2026-10-04T17:10:59.395238+00:00",
+    "status": "success"
+  },
+  "f459a17e5466c465": {
+    "decision": "supported",
+    "error_detail": null,
+    "gold_is_hallucination": false,
+    "id": "f459a17e5466c465",
+    "observed_at": "2026-10-04T17:11:05.448714+00:00",
+    "status": "success"
+  }
+}

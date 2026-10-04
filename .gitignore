@@ -22,6 +22,7 @@ scripts/
 !scripts/embed_golden_set.py
 !scripts/calibrate_finqa_judge.py
 !scripts/finqa_threshold_sweep.py
+!scripts/canary_live_smoke_d6p2.py
 # Unit tests for scripts are under tests/, not scripts/
 !tests/scripts/
 

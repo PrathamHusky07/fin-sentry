@@ -1,5 +1,189 @@
 # Build Log
 
+## 2026-10-04 — d6 Phase 2: live reliability loop (Day 6 closed)
+
+Closes the loop the Phase 1-4 entry below deferred: a real, leakage-free
+labeled canary now scores through the live Gemini judge and feeds the
+frozen Day 6 controller, proving judge failure is a detected, auditable,
+automatically-managed event, not just a synthetic mechanism. The frozen
+policy (window=150, min_n=30, drift_entry=0.43, recovery=0.54, K=3, M=5,
+healthy_baseline_kappa=0.6050) was not retuned; the live canary observations
+were used only to monitor against it, never to adjust it.
+
+### Canary contract and the leakage constraint
+
+The health-state boundary classifies on `committed_n` (supported/refuted
+decisions in the window), not `window_n` (total observations) --
+`compute_window_health` returns `insufficient_data` only when
+`committed_n < 30`, regardless of how many total observations arrived. A
+batch of 30 Gemini calls is `insufficient_data` only if fewer than 30 of
+them commit; the live run below committed all 30.
+
+Leakage: the canary pool excludes the full 500-key set of
+`docs/measurements/calibration/finqa_judge_outputs.json` (the ids M4
+scored, of which 490 committed and became the health baseline), not just
+the 490 committed ones -- reusing any of the 500 would contaminate
+monitoring with calibration data. `hallucination_bench` has 1651 rows;
+eligible pool = 1651 - 500 = **1151**, confirmed empirically by
+`select_canary_ids` at run time, not hardcoded. Selection is a seeded,
+stratified (preserving the benchmark's source positive rate, not the
+eligible-subset rate -- matching `scripts/calibrate_finqa_judge.py`'s
+convention) deterministic sample via `finsentry.calibration.split.
+stratified_subsample`, reused as-is. Provenance (seed `d6p2-canary-v1`,
+excluded-id count, a sha256 of the sorted excluded-id set, eligible pool
+size, selected ids) is a computed artifact on every run, not a claim.
+
+The window is a rolling view of observations, not 150 rows permanently
+assigned -- `BenchmarkCanaryScorer` only ever calls
+`DriftController.record_result()`; the controller owns the window.
+
+### Phase 1 corrections to the frozen mechanism (preconditions)
+
+1. `LabeledResult` gained an explicit `observed_at: str` (ISO-8601) input
+   field -- `compute_window_health` never calls `datetime.now()`, staying
+   pure. `JudgeHealthRecord` now exposes `latest_observed_at` (max
+   `observed_at` in the window, `None` if empty) and the `entry_threshold`/
+   `recovery_threshold` it was classified against, so a caller holding one
+   record has full evidence without re-inspecting config.
+2. `DriftConfig.__post_init__` now bounds `drift_entry_threshold`,
+   `recovery_threshold`, and `healthy_baseline_kappa` to `[0.0, 1.0]`
+   (kappa's true range is `[-1, 1]`, but a threshold below 0 is nonsensical
+   for a policy meant to catch worse-than-chance agreement), requires both
+   streak counts `>= 1`, and makes `healthy_baseline_kappa` a live
+   invariant: `drift_entry_threshold < recovery_threshold <=
+   healthy_baseline_kappa` -- recovery can never be configured stricter
+   than the judge's own established healthy baseline. Six new boundary
+   tests in `test_health.py`.
+3. Two comment corrections in `test_health.py`/`test_controller.py`: the
+   "kappa < 0" claim was wrong (that fixture's kappa is exactly 0.0,
+   verified `p_o == p_e == 0.5`); the `_HEALTHY_ITEM`/`_BAD_ITEM` fixtures
+   are now flagged as deliberately single-gold-class, not statistically
+   representative.
+
+### Phase 2: the missing re-admission proof
+
+Phase 1-3 (prior entry) proved the controller's *mode* returns to normal
+after sustained recovery, but never proved the gated judge is actually
+called again. `test_readmission_after_sustained_recovery_calls_underlying_
+judge_again` drives `DriftGatedJudge` through normal (stub called) ->
+drifted (stub not called, 3x) -> sustained recovery -> normal (stub called
+again), asserting the call count directly.
+
+### BenchmarkCanaryScorer (finsentry/reliability/canary.py)
+
+One concrete class, no `CanarySource`/`ProductionLabelSource` abstraction --
+`LabeledResult` is already the stable seam a future production-label
+source would plug into; building a generic abstraction now would be
+speculative. `select_canary_ids` is pure (no I/O beyond caller-provided
+rows). `run_canary_cycle` owns its own `CostBudget` (never the frontier
+consumer's -- that one is ephemeral per-event) and a `GeminiRubricAdapter`
+built from env in vertex mode, mirroring `calibrate_finqa_judge.py`'s
+resumable pattern: scored ids persist to
+`docs/measurements/reliability/canary_observations.json`, so a killed run
+resumes without re-scoring. Failure semantics: a timeout/model_error result
+carries `decision="unavailable"` (enforced by `JudgeResult.__post_init__`)
+and becomes an unavailable `LabeledResult` -- excluded from kappa, counted
+as evidence, never recorded as a committed decision (tested with a
+mocked-failure adapter). `budget_exhausted` specifically stops the cycle
+without recording an observation at all (no evaluation happened), reporting
+partial results -- distinct from a genuine judge failure.
+
+### Audit trail (finsentry/reliability/audit.py)
+
+`AuditedDriftController` wraps a `DriftController` and emits a structured
+`TransitionRecord` (logged and appended to
+`docs/measurements/reliability/canary_transitions.json`) only when
+`record_result()` actually changes sustained state or operating mode, never
+on every observation. The controller stays the sole authority; the one
+thing it didn't expose -- the entry/recovery streak counters -- was added
+as two minimal read-only properties (`entry_streak`, `recovery_streak`) on
+`DriftController` itself, not recomputed externally. Known gap, documented
+in the module: `mark_operationally_unavailable()`/`_available()` are called
+directly on the controller, not through this wrapper, so a transition they
+cause is only (not) surfaced on the next *audited* call, by which point
+both sides of the comparison already reflect the override. Test: a
+synthetic healthy -> drifted -> recovered sequence (K=1, M=2) emits exactly
+two transition records with correct before/after state, mode, and reason
+fields.
+
+### Proof A -- live canary feed is real
+
+`python scripts/canary_live_smoke_d6p2.py --n 30`, 2026-10-04, against the
+frozen production `DriftConfig()` defaults, no staged outcome:
+
+- Eligible pool: 1151. Excluded M4 ids: 500 (sha256
+  `d62f5e62a647d587d1459264c39b09ae9787544f29b0dc89221321185af4aeeb`).
+- Scored this run: 30/30 committed (`n_abstain=0`, `n_unavailable=0`) --
+  `window_n=30`, `committed_n=30`.
+- **kappa = 0.5161**, state = **degraded** (below recovery_threshold=0.54,
+  above drift_entry_threshold=0.43 -- the middle band, a real single-window
+  reading, not drift: drift requires K=3 *sustained* breaches, which this
+  single window did not produce).
+- Spend: $0.096972 (well under the $5/run, $0.02/call ceilings).
+- Disjoint from the 500 M4-scored ids: confirmed `True`, computed live.
+- Raw artifact: `docs/measurements/reliability/canary-live-smoke-d6p2.json`;
+  resumable store: `docs/measurements/reliability/canary_observations.json`.
+
+This is the honest result the code produced, not a target: a live judge
+reading in the middle band is itself useful evidence (this specific
+30-row sample performed below its own 0.6050 baseline but not badly enough
+to call it drift), and it is exactly what Phase 0's design predicted could
+happen without staging anything.
+
+### Proof B -- synthetic closed-loop control behavior
+
+`test_proof_b_synthetic_closed_loop_healthy_to_drifted_to_recovered`
+(`test_gated_judge.py`) drives the real `DriftController` +
+`DriftGatedJudge` + unmodified `decide_ensemble()` through injected (NOT
+live Gemini) `LabeledResult`s: healthy (judge called, `single_judge`) ->
+sustained degradation (K=2) -> drifted/frontier_only -> bypassed result
+into `decide_ensemble` -> `ensemble_insufficient`/`all_unavailable` ->
+sustained recovery (M=3) -> normal, judge called again. This proves control
+*behavior*, not that the live judge drifted -- Proof A and Proof B are
+deliberately separate artifacts answering different questions.
+
+### Restart semantics (accepted limitation, not built)
+
+No persistence was added. A freshly constructed `DriftController` cold-
+starts `insufficient_data`/`normal` (tested) -- fail-open to "gathering
+evidence." After a process restart, a previously-drifted judge is
+re-admitted until the window refills with real observations, because
+health state lives only in memory. This is a deliberate, accepted
+trade-off today; a fail-safe variant that cold-starts `drifted` is the
+alternative, deferred to a future reliability phase alongside durable
+health state.
+
+### Not done, per the no-go list
+
+`decide_ensemble`, the orchestrator, every adapter's scoring logic, the
+retriever, and the calibration metrics were read but not modified. No
+threshold was retuned. No `CanarySource`/multi-source abstraction, no
+scheduler, no state persistence, no dashboard, no MCP, no rubric v3, no
+HHEM revival.
+
+### Verification
+
+473 passed (456 baseline + 17 new: 6 Phase 1 config/timestamp tests, 1
+re-admission test, 6 canary-scorer tests, 2 audit tests, 1 Proof B test, 1
+restart-semantics test), 5 deselected (slow), `ruff check .` clean, `mypy
+finsentry/ --strict` clean across 71 source files.
+
+=== DAY 6 PHASE 2 REPORT ===
+Baseline: 456 passed, 5 deselected, ruff clean, mypy clean (69 files)
+Phase 1 corrections: observed_at done (6 tests incl. timestamp exposure) | config bounds + baseline-now-live done (4 boundary tests) | comment fixes done
+Re-admission test: done -- gated judge called again after sustained recovery (stub call count 1 -> unchanged through drift -> 2)
+Canary leakage constraint: exclude all 500 M4-scored ids (490 committed baseline); eligible pool 1151; excluded-ID hash d62f5e62a647d587d1459264c39b09ae9787544f29b0dc89221321185af4aeeb
+BenchmarkCanaryScorer: deterministic selection, own CostBudget, resumable, failure->unavailable tested
+Audit trail: transition records on state/mode change only -- test: exactly 2 records on healthy->drifted->recovered (K=1, M=2)
+Proof A (live): window_n=30, committed_n=30, state=degraded, kappa=0.5161290322580646, n_abstain=0, n_unavailable=0, spend=$0.096972, disjoint-from-M4 confirmed=yes
+Proof B (synthetic closed loop): healthy->drifted->gate->decide_ensemble=ensemble_insufficient->recovery->re-admit, tested
+Restart semantics: cold-start insufficient_data->normal, documented limitation, tested
+Production thresholds/adapters/decide_ensemble changed: NO
+Scheduler/persistence/dashboard/MCP/rubric-v3/HHEM: NONE
+Tests: 473, ruff clean, mypy clean
+Commits: 9367754 (Phase 1 pre), 630e1fc (re-admission), d4f2e92 (canary scorer), b2c5784 (audit), ef41253 (proofs + restart), <this entry>
+Status: DAY 6 PHASE 2 COMPLETE -- Day 6 closed
+
 ## 2026-10-03 — d6 Phase 1-4: judge accuracy-drift closed loop (complete)
 
 Implements the Phase 0 design (previous entry) in `finsentry/reliability/`:
