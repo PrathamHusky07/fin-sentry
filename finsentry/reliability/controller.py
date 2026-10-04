@@ -60,6 +60,17 @@ class DriftController:
     def config(self) -> DriftConfig:
         return self._config
 
+    @property
+    def entry_streak(self) -> int:
+        """Read-only: the minimal hook a transition-audit observer needs to
+        report full evidence without reaching into private state. Does not
+        change core hysteresis logic."""
+        return self._entry_streak
+
+    @property
+    def recovery_streak(self) -> int:
+        return self._recovery_streak
+
     def mark_operationally_unavailable(self) -> None:
         """Call when the judge's own operational JudgeHealth (uptime/error
         rate, a separate signal -- see health.py's module docstring) reports
