@@ -1,0 +1,22 @@
+Day 8 Gate C: proof that metrics-service call rate is independent of
+SSE connection count (one poller per gateway process, not per connection).
+
+Baseline (0 external SSE clients connected to the gateway):
+  metrics-service /metrics/snapshot hit count before: 56
+  metrics-service /metrics/snapshot hit count after 9s: 59
+  delta: 3 calls / 9s (matches the fixed 3s poll interval)
+
+5 concurrent SSE clients connected to GET /ops/stream for the same 9s window:
+  metrics-service /metrics/snapshot hit count before: 62
+  metrics-service /metrics/snapshot hit count after 9s: 65
+  delta: 3 calls / 9s -- identical to the 0-client baseline
+
+Per-client frames received during the 5-client window (from dashboard
+access log hits, not from re-polling): each of the 5 independent curl
+clients received 4 real `event: snapshot` frames -- 20 total frames
+delivered to clients from 3 backend poll calls, confirming true in-process
+broadcast fan-out rather than per-connection polling.
+
+Conclusion: metrics-service query load is a function of the poller's fixed
+interval (and therefore of gateway replica count), never of browser/SSE
+connection count.
