@@ -21,8 +21,11 @@ _SMALL_CFG = DriftConfig(
 )
 
 
-def _lr(decision: JudgeDecision, gold: bool) -> LabeledResult:
-    return LabeledResult(decision=decision, gold_is_hallucination=gold)
+_T0 = "2026-01-01T00:00:00+00:00"
+
+
+def _lr(decision: JudgeDecision, gold: bool, observed_at: str = _T0) -> LabeledResult:
+    return LabeledResult(decision=decision, gold_is_hallucination=gold, observed_at=observed_at)
 
 
 def test_insufficient_data_below_min_n_even_with_perfect_committed_decisions() -> None:
@@ -67,9 +70,11 @@ def test_healthy_when_kappa_at_or_above_recovery_threshold() -> None:
 
 def test_degraded_when_kappa_below_recovery_threshold() -> None:
     # gold=[T,T,F,F], predicted=[supported,refuted,refuted,supported]
-    # (systematically backwards) -> kappa < 0, well below entry_threshold=0.3,
-    # still just "degraded" at the single-window level (not "drifted" --
-    # that requires sustained evidence from the hysteresis controller).
+    # (systematically backwards) -> kappa == 0.0 exactly (verified: p_o == p_e
+    # == 0.5), below entry_threshold=0.3 -- the assertion below only needs
+    # kappa < drift_entry_threshold, not kappa < 0; still just "degraded" at
+    # the single-window level (not "drifted" -- that requires sustained
+    # evidence from the hysteresis controller).
     results = [
         _lr("supported", True),
         _lr("refuted", True),
@@ -128,3 +133,41 @@ def test_drift_config_rejects_entry_threshold_not_below_recovery() -> None:
 def test_drift_config_rejects_recovery_streak_shorter_than_entry_streak() -> None:
     with pytest.raises(ValueError, match="recovery_consecutive_windows"):
         DriftConfig(entry_consecutive_windows=5, recovery_consecutive_windows=3)
+
+
+def test_drift_config_rejects_threshold_above_one() -> None:
+    with pytest.raises(ValueError, match="recovery_threshold"):
+        DriftConfig(drift_entry_threshold=0.5, recovery_threshold=1.5, healthy_baseline_kappa=1.5)
+
+
+def test_drift_config_rejects_threshold_below_zero() -> None:
+    with pytest.raises(ValueError, match="drift_entry_threshold"):
+        DriftConfig(drift_entry_threshold=-0.1, recovery_threshold=0.5)
+
+
+def test_drift_config_rejects_zero_consecutive_windows() -> None:
+    with pytest.raises(ValueError, match="consecutive_windows"):
+        DriftConfig(entry_consecutive_windows=0, recovery_consecutive_windows=0)
+
+
+def test_drift_config_rejects_recovery_threshold_above_healthy_baseline_kappa() -> None:
+    with pytest.raises(ValueError, match="healthy_baseline_kappa"):
+        DriftConfig(drift_entry_threshold=0.3, recovery_threshold=0.7, healthy_baseline_kappa=0.6)
+
+
+def test_record_surfaces_latest_observed_at_and_active_thresholds() -> None:
+    results = [
+        _lr("refuted", True, observed_at="2026-01-01T00:00:00+00:00"),
+        _lr("refuted", True, observed_at="2026-01-03T00:00:00+00:00"),
+        _lr("supported", False, observed_at="2026-01-02T00:00:00+00:00"),
+        _lr("supported", False, observed_at="2026-01-02T12:00:00+00:00"),
+    ]
+    record = compute_window_health(results, _SMALL_CFG)
+    assert record.latest_observed_at == "2026-01-03T00:00:00+00:00"
+    assert record.entry_threshold == _SMALL_CFG.drift_entry_threshold
+    assert record.recovery_threshold == _SMALL_CFG.recovery_threshold
+
+
+def test_record_latest_observed_at_is_none_for_empty_window() -> None:
+    record = compute_window_health([], _SMALL_CFG)
+    assert record.latest_observed_at is None

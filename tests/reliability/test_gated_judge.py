@@ -13,6 +13,8 @@ from finsentry.reliability.controller import DriftController
 from finsentry.reliability.gated_judge import DriftGatedJudge
 from finsentry.reliability.health import DriftConfig, LabeledResult
 
+_T0 = "2026-01-01T00:00:00+00:00"
+
 _CFG = DriftConfig(
     window_size=1,
     min_n=1,
@@ -82,7 +84,7 @@ async def test_drifted_mode_bypasses_the_underlying_judge_without_calling_it() -
     gated = DriftGatedJudge(stub, controller)
 
     # Drive to drifted (K=2 consecutive breaches).
-    bad = LabeledResult("supported", True)
+    bad = LabeledResult("supported", True, observed_at=_T0)
     for _ in range(2):
         controller.record_result(bad)
     assert controller.current_mode == "frontier_only"
@@ -100,7 +102,7 @@ async def test_health_check_always_delegates_regardless_of_drift_mode() -> None:
     controller = DriftController(_CFG)
     gated = DriftGatedJudge(stub, controller)
     for _ in range(2):
-        controller.record_result(LabeledResult("supported", True))
+        controller.record_result(LabeledResult("supported", True, observed_at=_T0))
     assert controller.current_mode == "frontier_only"
 
     health = await gated.health_check()
@@ -116,7 +118,7 @@ async def test_closed_loop_single_judge_bypassed_produces_ensemble_insufficient(
     controller = DriftController(_CFG)
     gated = DriftGatedJudge(stub, controller)
     for _ in range(2):
-        controller.record_result(LabeledResult("supported", True))
+        controller.record_result(LabeledResult("supported", True, observed_at=_T0))
     assert controller.current_mode == "frontier_only"
 
     gated_result = await gated.evaluate(_eval_input())
@@ -134,7 +136,7 @@ async def test_closed_loop_with_a_second_live_judge_produces_single_judge() -> N
     controller = DriftController(_CFG)
     gated = DriftGatedJudge(stub, controller)
     for _ in range(2):
-        controller.record_result(LabeledResult("supported", True))
+        controller.record_result(LabeledResult("supported", True, observed_at=_T0))
 
     gated_result = await gated.evaluate(_eval_input())
     second_judge_result = JudgeResult(

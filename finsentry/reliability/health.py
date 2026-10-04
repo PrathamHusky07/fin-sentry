@@ -23,6 +23,7 @@ itself "drifted" (that requires sustained evidence) and never "unavailable"
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, get_args
 
 from finsentry.calibration.metrics import cohens_kappa, confusion_matrix
@@ -56,6 +57,9 @@ class LabeledResult:
 
     decision: JudgeDecision
     gold_is_hallucination: bool
+    # ISO-8601 string, supplied by the caller -- never datetime.now() inside this
+    # module (compute_window_health stays pure/deterministic, see module docstring).
+    observed_at: str
 
 
 @dataclass(frozen=True)
@@ -80,11 +84,6 @@ class DriftConfig:
             raise ValueError(
                 f"DriftConfig.min_n={self.min_n} must be <= window_size={self.window_size}"
             )
-        if self.drift_entry_threshold >= self.recovery_threshold:
-            raise ValueError(
-                "DriftConfig.drift_entry_threshold must be < recovery_threshold "
-                f"(got {self.drift_entry_threshold} >= {self.recovery_threshold})"
-            )
         if self.recovery_consecutive_windows < self.entry_consecutive_windows:
             raise ValueError(
                 "DriftConfig.recovery_consecutive_windows must be >= "
@@ -93,6 +92,36 @@ class DriftConfig:
             )
         if self.min_n < 1 or self.window_size < 1:
             raise ValueError("DriftConfig.min_n and window_size must be >= 1")
+        if self.entry_consecutive_windows < 1 or self.recovery_consecutive_windows < 1:
+            raise ValueError(
+                "DriftConfig.entry_consecutive_windows and recovery_consecutive_windows "
+                "must be >= 1"
+            )
+        # Kappa's theoretical range is [-1, 1], but a threshold below 0 is
+        # nonsensical for this policy: this mechanism exists to catch a judge
+        # performing worse than chance-corrected agreement, and a negative
+        # bar would mean "healthy" tolerates worse-than-chance agreement.
+        for field_name, value in (
+            ("drift_entry_threshold", self.drift_entry_threshold),
+            ("recovery_threshold", self.recovery_threshold),
+            ("healthy_baseline_kappa", self.healthy_baseline_kappa),
+        ):
+            if not (0.0 <= value <= 1.0):
+                raise ValueError(f"DriftConfig.{field_name}={value!r} must be in [0.0, 1.0]")
+        # healthy_baseline_kappa is a live invariant, not a decorative field:
+        # recovery can never be set to reclaim a judge at a bar stricter than
+        # its own established healthy baseline.
+        entry, recovery, baseline = (
+            self.drift_entry_threshold,
+            self.recovery_threshold,
+            self.healthy_baseline_kappa,
+        )
+        if not (entry < recovery <= baseline):
+            raise ValueError(
+                "DriftConfig requires drift_entry_threshold < recovery_threshold <= "
+                f"healthy_baseline_kappa (got {self.drift_entry_threshold} < "
+                f"{self.recovery_threshold} <= {self.healthy_baseline_kappa})"
+            )
 
 
 @dataclass
@@ -106,6 +135,13 @@ class JudgeHealthRecord:
     n_abstain: int
     n_unavailable: int
     config: DriftConfig
+    # The max observed_at among this window's results (None for an empty
+    # window), and the entry/recovery thresholds this record was classified
+    # against -- both duplicated from config onto the record so a caller
+    # holding one record has the full evidence without re-inspecting config.
+    latest_observed_at: str | None
+    entry_threshold: float
+    recovery_threshold: float
 
     def __post_init__(self) -> None:
         if self.state not in _JUDGE_HEALTH_STATE_VALUES:
@@ -158,4 +194,16 @@ def compute_window_health(
         n_abstain=n_abstain,
         n_unavailable=n_unavailable,
         config=cfg,
+        latest_observed_at=_latest_observed_at(labeled_results),
+        entry_threshold=cfg.drift_entry_threshold,
+        recovery_threshold=cfg.recovery_threshold,
     )
+
+
+def _latest_observed_at(labeled_results: list[LabeledResult]) -> str | None:
+    """Max observed_at among the window's results, or None if empty. Parses
+    to datetime for correct chronological comparison (not relying on
+    ISO-string lexicographic ordering), but returns the original string."""
+    if not labeled_results:
+        return None
+    return max(labeled_results, key=lambda r: datetime.fromisoformat(r.observed_at)).observed_at

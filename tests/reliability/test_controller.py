@@ -11,6 +11,8 @@ from __future__ import annotations
 from finsentry.reliability.controller import DriftController, OperatingMode
 from finsentry.reliability.health import DriftConfig, JudgeHealthState, LabeledResult
 
+_T0 = "2026-01-01T00:00:00+00:00"
+
 
 def _state(controller: DriftController) -> JudgeHealthState:
     """Reads current_state through a function call rather than a bare
@@ -30,16 +32,22 @@ def _mode(controller: DriftController) -> OperatingMode:
 # same gold label (True) and differ only in decision, so the kappa of any
 # mix of them is governed purely by how many of the window's 3 slots are
 # "correct" -- verified concretely in the assertions below, not assumed.
-_HEALTHY_ITEM = LabeledResult(decision="refuted", gold_is_hallucination=True)  # always correct
-_BAD_ITEM = LabeledResult(decision="supported", gold_is_hallucination=True)  # always wrong (FN)
+# These fixtures are deliberately single-gold-class (gold is always True):
+# they exercise the controller's breach/no-breach streak boundary, not
+# kappa gradation across a realistic label mix -- do not mistake them for
+# statistically representative windows.
+# always correct
+_HEALTHY_ITEM = LabeledResult(decision="refuted", gold_is_hallucination=True, observed_at=_T0)
+# always wrong (FN)
+_BAD_ITEM = LabeledResult(decision="supported", gold_is_hallucination=True, observed_at=_T0)
 
 # gold=[T,T,F], predicted=[T,F,F] (middle item is a false negative) -> kappa=0.4
 # (hand-derivation in docs/build-log.md's Day 6 Phase 0 entry's method; here
 # verified empirically by the assertion in test_recovery_requires_clearing_the_stricter_margin).
 _MIDDLE_BATCH = [
-    LabeledResult(decision="refuted", gold_is_hallucination=True),
-    LabeledResult(decision="supported", gold_is_hallucination=True),
-    LabeledResult(decision="supported", gold_is_hallucination=False),
+    LabeledResult(decision="refuted", gold_is_hallucination=True, observed_at=_T0),
+    LabeledResult(decision="supported", gold_is_hallucination=True, observed_at=_T0),
+    LabeledResult(decision="supported", gold_is_hallucination=False, observed_at=_T0),
 ]
 
 _CFG_W3 = DriftConfig(
@@ -84,19 +92,21 @@ def test_transitions_to_drifted_after_exactly_k_windows_not_before() -> None:
 def test_single_noisy_window_inside_healthy_stream_does_not_transition() -> None:
     controller = DriftController(_CFG_W1)
 
-    r1 = controller.record_result(LabeledResult("refuted", True))  # correct -> kappa=1.0
+    # correct -> kappa=1.0
+    r1 = controller.record_result(LabeledResult("refuted", True, observed_at=_T0))
     assert r1.kappa == 1.0
     assert _state(controller) == "healthy"
     assert _mode(controller) == "normal"
 
-    # one noisy breach
-    r2 = controller.record_result(LabeledResult("supported", True))  # wrong -> kappa=0.0
+    # one noisy breach -- wrong -> kappa=0.0
+    r2 = controller.record_result(LabeledResult("supported", True, observed_at=_T0))
     assert r2.kappa == 0.0
     assert _state(controller) == "degraded"
     assert _mode(controller) == "normal"  # still not drifted -- K=3 needed
 
     # back to healthy immediately -- hysteresis must hold, no transition occurred
-    r3 = controller.record_result(LabeledResult("refuted", True))  # correct -> kappa=1.0
+    # correct -> kappa=1.0
+    r3 = controller.record_result(LabeledResult("refuted", True, observed_at=_T0))
     assert r3.kappa == 1.0
     assert _state(controller) == "healthy"
     assert _mode(controller) == "normal"
@@ -104,8 +114,8 @@ def test_single_noisy_window_inside_healthy_stream_does_not_transition() -> None
 
 def test_recovery_requires_m_consecutive_windows_stricter_than_entry() -> None:
     controller = DriftController(_CFG_W1)
-    good = LabeledResult("refuted", True)
-    bad = LabeledResult("supported", True)
+    good = LabeledResult("refuted", True, observed_at=_T0)
+    bad = LabeledResult("supported", True, observed_at=_T0)
 
     # Drive to drifted (K=3 consecutive breaches).
     for _ in range(3):
@@ -177,7 +187,7 @@ def test_insufficient_data_while_window_below_min_n_claims_neither_healthy_nor_d
         recovery_consecutive_windows=3,
     )
     controller = DriftController(cfg)
-    good = LabeledResult("refuted", True)
+    good = LabeledResult("refuted", True, observed_at=_T0)
 
     for i in range(3):  # committed_n will be 1, 2, 3 -- all < min_n=4
         record = controller.record_result(good)
@@ -193,7 +203,7 @@ def test_insufficient_data_while_window_below_min_n_claims_neither_healthy_nor_d
 
 def test_mark_operationally_unavailable_overrides_kappa_derived_state() -> None:
     controller = DriftController(_CFG_W1)
-    controller.record_result(LabeledResult("refuted", True))
+    controller.record_result(LabeledResult("refuted", True, observed_at=_T0))
     assert _state(controller) == "healthy"
 
     controller.mark_operationally_unavailable()
