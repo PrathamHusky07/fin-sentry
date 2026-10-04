@@ -15,6 +15,7 @@ import httpx
 import psycopg
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, Field
@@ -205,6 +206,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(title="fin-sentry gateway", lifespan=lifespan)
+
+# Narrow local-dev CORS: the Next.js dev server (localhost:3000) is a
+# different origin than the gateway (localhost:8000), so the browser needs
+# this for both the RAG endpoints and the Day 8 SSE route. The deployed
+# topology (Vercel frontend, nginx-fronted gateway replicas) has a different
+# origin model entirely and is configured separately at deploy time, not here.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
 # ---------------------------------------------------------------------------
