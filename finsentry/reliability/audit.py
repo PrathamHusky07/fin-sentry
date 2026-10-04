@@ -39,7 +39,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CANARY_TRANSITIONS_PATH = _REPO_ROOT / "docs/measurements/reliability/canary_transitions.json"
 
 TransitionReason = str  # one of: sustained_degradation, sustained_recovery,
-# operationally_unavailable, insufficient_data
+# operationally_unavailable, insufficient_data, window_classification_change
 
 
 @dataclass(frozen=True)
@@ -61,18 +61,19 @@ class TransitionRecord:
 
 
 def _reason(previous_state: JudgeHealthState, new_state: JudgeHealthState) -> TransitionReason:
+    if new_state == "drifted":
+        return "sustained_degradation"
     if new_state == "unavailable":
         return "operationally_unavailable"
     if new_state == "insufficient_data":
         return "insufficient_data"
-    if new_state == "drifted":
-        return "sustained_degradation"
-    # new_state is healthy or degraded: a recovery-direction move out of a
-    # stricter state, or (rarely) a plain single-window mirror between
-    # healthy and degraded that never reached sustained drift/unavailable.
-    if previous_state in ("drifted", "unavailable") or new_state == "healthy":
-        return "sustained_recovery"
-    return "sustained_degradation"
+    # new_state is healthy or degraded.
+    if previous_state in ("drifted", "unavailable"):
+        return "sustained_recovery"  # a genuine move out of a sustained/override state
+    # A plain single-window classification change (insufficient_data's first
+    # real verdict, or a healthy<->degraded mirror) that never crossed the
+    # K/M hysteresis -- not "sustained" anything.
+    return "window_classification_change"
 
 
 def _append_transition(path: Path, transition: TransitionRecord) -> None:

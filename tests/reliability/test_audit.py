@@ -84,3 +84,40 @@ def test_no_transition_record_when_state_and_mode_unchanged(tmp_path: Path) -> N
     audited.record_result(_GOOD)
 
     assert not transitions_path.exists()
+
+
+# entry_consecutive_windows=2 here (vs. _CFG's 1): a single breach is not yet
+# sustained, so sustained_state mirrors the single window's own classification
+# ("degraded") instead of jumping straight to "drifted".
+_CFG_K2 = DriftConfig(
+    window_size=1,
+    min_n=1,
+    drift_entry_threshold=0.3,
+    recovery_threshold=0.6,
+    entry_consecutive_windows=2,
+    recovery_consecutive_windows=2,
+)
+
+
+def test_single_window_healthy_to_degraded_mirror_is_not_labeled_sustained(
+    tmp_path: Path,
+) -> None:
+    """A lone breaching window (entry_streak=1 < K=2) mirrors the controller's
+    sustained_state to "degraded" without crossing any hysteresis threshold --
+    this is a plain classification change, not sustained degradation, and must
+    not be mislabeled as one."""
+    transitions_path = tmp_path / "canary_transitions.json"
+    controller = DriftController(_CFG_K2)
+    controller.record_result(_GOOD)  # healthy baseline, not through the audit layer
+    audited = AuditedDriftController(
+        controller, judge_id="gemini-rubric", transitions_path=transitions_path
+    )
+
+    audited.record_result(_BAD)
+    assert controller.current_state == "degraded"
+
+    records = json.loads(transitions_path.read_text())
+    assert len(records) == 1
+    assert records[0]["previous_state"] == "healthy"
+    assert records[0]["new_state"] == "degraded"
+    assert records[0]["reason"] == "window_classification_change"
