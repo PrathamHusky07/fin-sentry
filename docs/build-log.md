@@ -151,13 +151,23 @@ not batched). Killed the replica serving an open SSE connection
 reported as exactly that, an honest reconnect-and-resume, never "zero
 dropped connections" -- reconnected in 2.18s to `gateway-3` (confirmed via
 the instance header, not assumed), and resumed real snapshots immediately.
-`/health` and a real end-to-end `/v1/rag/query` (real embedding, pgvector
-retrieval, Ollama `llama3.1:8b` generation, real output rails --
-`GEMINI_MODE`/`KAFKA_MODE` disabled for this demo topology so it costs
-nothing and doesn't write synthetic traffic into Day 6/7's real calibration
-data) both kept succeeding through the kill. Full evidence:
-`docs/measurements/frontend/day8-sse-failover.json`. `gateway-2` was
-restarted afterward to leave the topology intact.
+`/health` stayed available throughout, served by the surviving `gateway-1`.
+A real end-to-end `/v1/rag/query` (real embedding, pgvector retrieval,
+Ollama `llama3.1:8b` generation, real output rails -- `GEMINI_MODE`/
+`KAFKA_MODE` disabled for this demo topology so it costs nothing and
+doesn't write synthetic traffic into Day 6/7's real calibration data) was
+run after `gateway-2` was restarted, not during the outage -- an earlier
+draft of this entry overstated that as "both kept succeeding through the
+kill." Corrected during Day 8 close with a fresh, bounded re-run that
+issues the real RAG query while a replica is still dead: SSE identified
+`gateway-3` as its serving replica, `docker kill finsentry-gateway-3`, then
+a real `/v1/rag/query` through nginx while `gateway-3` was still down
+returned `200 OK` in 43.3s, served by the surviving `gateway-2` (confirmed
+via `gateway-2`'s own access log and `gateway-3`'s log showing no activity
+during the gap). The gateway/RAG request path, not just `/health`, is now
+proven available during a replica failure. Full evidence:
+`docs/measurements/frontend/day8-sse-failover.json`. `gateway-2` and
+`gateway-3` were each restarted afterward to leave the topology intact.
 
 **Documented, deliberate SPOF.** The dashboard/metrics service is a single
 container in this phase -- not fronted by nginx, not replicated. A
@@ -195,7 +205,8 @@ session.
 Commits: `18a5ff0` (filing_date fix), `094c957` (MetricsSnapshot contract),
 `aa0a6a4` (METRICS_SERVICE_URL + CORS), `8e9553c` (web/ scaffold),
 `154383d` (gateway SSE poller), `bfad7a1` (browser SSE proof), `219f346`
-(nginx failover topology).
+(nginx failover topology), `e69f19c` (this build-log entry) -- 8 commits,
+not 7; an earlier draft of this list omitted its own closing commit.
 
 Status: DAY 8 COMPLETE -- scaffold + real SSE + nginx failover proven; Day
 9 foundation ready.
