@@ -64,6 +64,7 @@ def _get_analyzer() -> Any:
     global _analyzer
     if _analyzer is None:
         from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
+        from presidio_analyzer.nlp_engine import NlpEngineProvider
         from presidio_analyzer.predefined_recognizers import (
             CreditCardRecognizer,
             EmailRecognizer,
@@ -80,7 +81,18 @@ def _get_analyzer() -> Any:
         registry.add_recognizer(PhoneRecognizer())
         registry.add_recognizer(UsBankRecognizer())
         registry.add_recognizer(IbanRecognizer())
-        _analyzer = AnalyzerEngine(registry=registry)
+        # Every recognizer above is pattern-based (regex); none needs spaCy
+        # NER. Left unconfigured, AnalyzerEngine falls back to its own
+        # default NlpEngineProvider, which wants en_core_web_lg and downloads
+        # it at request time if missing -- en_core_web_sm (already baked
+        # into the gateway image) is pinned explicitly here instead.
+        nlp_engine = NlpEngineProvider(
+            nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            }
+        ).create_engine()
+        _analyzer = AnalyzerEngine(nlp_engine=nlp_engine, registry=registry)
     return _analyzer
 
 
