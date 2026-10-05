@@ -33,6 +33,7 @@ class TraceListItem(BaseModel):
     timestamp_utc: datetime
     endpoint: str
     ticker: str | None
+    query: str
     rag_status: str
     judge_state: JudgeState
     frontier_sampled: bool

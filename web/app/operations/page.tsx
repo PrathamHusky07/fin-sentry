@@ -1,19 +1,10 @@
 import type { Metadata } from "next";
-import { LiveSnapshotProbe } from "@/components/live-snapshot-probe";
-import { RouteStub } from "@/components/route-stub";
+import { LiveOperations } from "@/components/live-operations";
 
 export const metadata: Metadata = {
   title: "Live Operations — Fin-Sentry",
 };
 
 export default function OperationsPage() {
-  return (
-    <RouteStub
-      title="Live Operations"
-      description="Request throughput, average and P95 latency, token usage, and cost, updating from a real Server-Sent Events connection to the gateway."
-      reason="Day 8 builds the SSE transport end to end. The charts that read it are Day 9 work, built once the real snapshot feed is proven in the browser."
-    >
-      <LiveSnapshotProbe />
-    </RouteStub>
-  );
+  return <LiveOperations />;
 }

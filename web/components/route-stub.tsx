@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-type Provenance = "PERSISTED" | "DERIVED" | "LIVE" | "HISTORICAL" | "PLANNED" | "NOT_AVAILABLE";
+type Provenance =
+  "PERSISTED" | "DERIVED" | "LIVE" | "HISTORICAL" | "PLANNED" | "NOT_AVAILABLE";
 
 export interface RouteStubProps {
   /** The route's operational name, e.g. "Live Operations". */
@@ -42,11 +43,18 @@ export function RouteStub({
       <span className="border-warning/40 bg-warning/10 text-warning inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-medium tracking-wide uppercase">
         {PROVENANCE_LABEL[provenance]}
       </span>
-      <h1 id="route-stub-heading" className="text-text-primary text-2xl font-semibold tracking-tight">
+      <h1
+        id="route-stub-heading"
+        className="text-text-primary text-2xl font-semibold tracking-tight"
+      >
         {title}
       </h1>
-      <p className="text-text-primary text-base leading-relaxed">{description}</p>
-      <p className="border-border text-text-secondary border-l-2 pl-4 text-sm">{reason}</p>
+      <p className="text-text-primary text-base leading-relaxed">
+        {description}
+      </p>
+      <p className="border-border text-text-secondary border-l-2 pl-4 text-sm">
+        {reason}
+      </p>
       {children}
     </section>
   );

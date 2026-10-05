@@ -435,7 +435,7 @@ async def _fetch_trace_list(
     # finsentry/mcp/tools/traces.py).
     rows = await _fetch_all(
         f"""
-        SELECT r.app_trace_id, r.timestamp_utc, r.endpoint, r.ticker,
+        SELECT r.app_trace_id, r.timestamp_utc, r.endpoint, r.ticker, r.query,
                r.status AS rag_status, j.status AS judge_status
         FROM rag_events r
         LEFT JOIN judge_verdicts j ON j.app_trace_id = r.app_trace_id
@@ -461,6 +461,7 @@ async def _fetch_trace_list(
             "timestamp_utc": r["timestamp_utc"],
             "endpoint": r["endpoint"],
             "ticker": r["ticker"],
+            "query": r["query"],
             "rag_status": r["rag_status"],
             "judge_state": _classify_judge_state(r["judge_status"]),
             "frontier_sampled": r["app_trace_id"] in sampled_ids,
