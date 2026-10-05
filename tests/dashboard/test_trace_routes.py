@@ -267,6 +267,66 @@ async def test_calibration_health_reports_position_between_thresholds() -> None:
     assert body["position"] == "between_thresholds"
 
 
+async def test_traces_list_judge_failed_on_successful_rag_classifies_as_blocked() -> None:
+    """Day 9 Phase 0 finding (docs/build-log.md): finsentry/judges/flash_judge.py's
+    complete_count==0 branch writes judge_verdicts.status="failed" whenever all
+    three RAGAS metrics error out (e.g. a Gemini outage) -- the exact case
+    Session 2B's reliability experiment will create -- even when the RAG
+    request itself succeeded. _classify_judge_state only reads judge_status,
+    never cross-checks rag_events.status, so this case is classified
+    identically to a real guardrail block. Documented as current behavior,
+    not endorsed: this test exists so Session 2B's fifth-state decision shows
+    up as a diff here, not a silent behavior change."""
+    row = {
+        "app_trace_id": "trace-judge-errored-on-success",
+        "timestamp_utc": _NOW,
+        "endpoint": "rag",
+        "ticker": "AAPL",
+        "query": "What was Apple's gross margin last quarter?",
+        "rag_status": "success",
+        "judge_status": "failed",
+    }
+    with patch(
+        "finsentry.dashboard.app._fetch_all",
+        AsyncMock(
+            side_effect=lambda sql, params=(): [row] if "LEFT JOIN judge_verdicts" in sql else []
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/traces")
+
+    traces = resp.json()["traces"]
+    assert traces[0]["rag_status"] == "success"
+    assert traces[0]["judge_state"] == "blocked_before_evaluation"
+
+
+async def test_traces_list_unknown_judge_status_falls_back_to_blocked() -> None:
+    """A judge_status outside {None, complete, partial, failed} -- a future
+    status value never seen in today's data -- currently falls into the same
+    catch-all branch as a real 'failed' status. Documented as current
+    behavior."""
+    row = {
+        "app_trace_id": "trace-unknown-judge-status",
+        "timestamp_utc": _NOW,
+        "endpoint": "rag",
+        "ticker": "AAPL",
+        "query": "q",
+        "rag_status": "success",
+        "judge_status": "some_future_status",
+    }
+    with patch(
+        "finsentry.dashboard.app._fetch_all",
+        AsyncMock(
+            side_effect=lambda sql, params=(): [row] if "LEFT JOIN judge_verdicts" in sql else []
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/traces")
+
+    traces = resp.json()["traces"]
+    assert traces[0]["judge_state"] == "blocked_before_evaluation"
+
+
 async def test_calibration_health_insufficient_data_when_no_reading_persisted() -> None:
     report = GetDriftReportResult(
         judge_id="gemini-rubric",
