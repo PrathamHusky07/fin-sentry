@@ -35,6 +35,7 @@ class TraceListItem(BaseModel):
     ticker: str | None
     query: str
     rag_status: str
+    block_reason: str | None
     judge_state: JudgeState
     frontier_sampled: bool
 

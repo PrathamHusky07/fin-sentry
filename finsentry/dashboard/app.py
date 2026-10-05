@@ -415,8 +415,26 @@ def _classify_judge_state(judge_status: str | None) -> JudgeState:
     return "blocked_before_evaluation"  # judge_status == "failed"
 
 
+# Translates the public four-state judge_state filter back to the raw
+# judge_verdicts.status condition _classify_judge_state derives it from --
+# the dashboard never stores judge_state itself, only judge_status.
+_JUDGE_STATE_TO_STATUS_SQL: dict[str, str] = {
+    "never_evaluated": "j.status IS NULL",
+    "evaluated": "j.status = 'complete'",
+    "partially_evaluated": "j.status = 'partial'",
+    "blocked_before_evaluation": "j.status = 'failed'",
+}
+
+
 async def _fetch_trace_list(
-    limit: int, offset: int, ticker: str | None, rag_status: str | None
+    limit: int,
+    offset: int,
+    ticker: str | None,
+    rag_status: str | None,
+    q: str | None = None,
+    judge_state: str | None = None,
+    frontier_sampled: bool | None = None,
+    disagreement: bool | None = None,
 ) -> list[dict[str, Any]]:
     validate_limit(limit)
     conditions: list[str] = []
@@ -427,6 +445,23 @@ async def _fetch_trace_list(
     if rag_status is not None:
         conditions.append("r.status = %s")
         params.append(rag_status)
+    if q is not None:
+        conditions.append("(r.query ILIKE %s OR r.app_trace_id ILIKE %s)")
+        pattern = f"%{q}%"
+        params.extend([pattern, pattern])
+    if judge_state is not None:
+        conditions.append(_JUDGE_STATE_TO_STATUS_SQL[judge_state])
+    if frontier_sampled is not None:
+        sampled_ids = list(await _fetch_frontier_sampled_ids())
+        if frontier_sampled:
+            conditions.append("r.app_trace_id = ANY(%s)")
+            params.append(sampled_ids)
+        else:
+            conditions.append("NOT (r.app_trace_id = ANY(%s))")
+            params.append(sampled_ids)
+    if disagreement:
+        conditions.append("r.app_trace_id = ANY(%s)")
+        params.append(list(await _fetch_disagreement_trace_ids()))
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     # LIMIT/OFFSET must be const expressions in RisingWave's streaming query
@@ -436,7 +471,7 @@ async def _fetch_trace_list(
     rows = await _fetch_all(
         f"""
         SELECT r.app_trace_id, r.timestamp_utc, r.endpoint, r.ticker, r.query,
-               r.status AS rag_status, j.status AS judge_status
+               r.status AS rag_status, r.block_reason, j.status AS judge_status
         FROM rag_events r
         LEFT JOIN judge_verdicts j ON j.app_trace_id = r.app_trace_id
         {where_clause}
@@ -447,13 +482,13 @@ async def _fetch_trace_list(
     )
 
     trace_ids = [r["app_trace_id"] for r in rows]
-    sampled_ids: set[str] = set()
+    sampled_ids_for_page: set[str] = set()
     if trace_ids:
         sampled_rows = await _fetch_all(
             "SELECT DISTINCT app_trace_id FROM rag_frontier_verdicts WHERE app_trace_id = ANY(%s)",
             (trace_ids,),
         )
-        sampled_ids = {r["app_trace_id"] for r in sampled_rows}
+        sampled_ids_for_page = {r["app_trace_id"] for r in sampled_rows}
 
     return [
         {
@@ -463,11 +498,17 @@ async def _fetch_trace_list(
             "ticker": r["ticker"],
             "query": r["query"],
             "rag_status": r["rag_status"],
+            "block_reason": r["block_reason"],
             "judge_state": _classify_judge_state(r["judge_status"]),
-            "frontier_sampled": r["app_trace_id"] in sampled_ids,
+            "frontier_sampled": r["app_trace_id"] in sampled_ids_for_page,
         }
         for r in rows
     ]
+
+
+async def _fetch_frontier_sampled_ids() -> set[str]:
+    rows = await _fetch_all("SELECT DISTINCT app_trace_id FROM rag_frontier_verdicts")
+    return {r["app_trace_id"] for r in rows}
 
 
 def _real_frontier_evidence(per_judge_results: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -479,6 +520,51 @@ def _real_frontier_evidence(per_judge_results: list[dict[str, Any]]) -> dict[str
         if j.get("judge_id") == _REAL_FRONTIER_JUDGE_ID and j.get("evidence") is not None:
             return j
     return None
+
+
+# A flash score and a real frontier gemini-rubric score this far apart counts
+# as a cross-tier disagreement worth surfacing. A UI display cutoff, not a
+# swept classifier threshold -- see docs/internal/day9-frontend-data-contract.md.
+_DISAGREEMENT_SCORE_DELTA = 0.5
+
+
+async def _fetch_disagreement_trace_ids() -> set[str]:
+    """Traces where the flash tier and the real frontier gemini-rubric
+    judge substantially disagree on faithfulness -- never
+    disagreement_classification, which classifies disagreement within the
+    frontier ensemble's own judges, not between flash and frontier (see
+    data contract). Picks the latest-by-evaluation_ts frontier row per
+    trace, same rule as _fetch_frontier_section, and only ever a real
+    non-stub gemini-rubric entry via _real_frontier_evidence."""
+    rows = await _fetch_all(
+        """
+        SELECT r.app_trace_id, j.faithfulness_score AS flash_score,
+               f.per_judge_results, f.evaluation_ts
+        FROM rag_events r
+        JOIN judge_verdicts j ON j.app_trace_id = r.app_trace_id
+        JOIN rag_frontier_verdicts f ON f.app_trace_id = r.app_trace_id
+        WHERE j.faithfulness_status = 'complete'
+        """
+    )
+
+    latest_by_trace: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        existing = latest_by_trace.get(row["app_trace_id"])
+        if existing is None or row["evaluation_ts"] > existing["evaluation_ts"]:
+            latest_by_trace[row["app_trace_id"]] = row
+
+    disagreement_ids: set[str] = set()
+    for trace_id, row in latest_by_trace.items():
+        real = _real_frontier_evidence(row["per_judge_results"] or [])
+        if real is None:
+            continue
+        frontier_score = real.get("faithfulness_score")
+        flash_score = row["flash_score"]
+        if frontier_score is None or flash_score is None:
+            continue
+        if abs(flash_score - frontier_score) >= _DISAGREEMENT_SCORE_DELTA:
+            disagreement_ids.add(trace_id)
+    return disagreement_ids
 
 
 async def _fetch_frontier_section(app_trace_id: str) -> FrontierSectionView:
@@ -664,10 +750,16 @@ async def traces(
     offset: int = 0,
     ticker: str | None = None,
     status: str | None = None,
+    q: str | None = None,
+    judge_state: str | None = None,
+    frontier_sampled: bool | None = None,
+    disagreement: bool | None = None,
 ) -> TraceListResponse:
-    """Internal contract for the gateway's /ops/traces proxy (Judge Panel
+    """Internal contract for the gateway's /ops/traces proxy (Investigations
     table) -- not a public-facing route."""
-    rows = await _fetch_trace_list(limit, offset, ticker, status)
+    rows = await _fetch_trace_list(
+        limit, offset, ticker, status, q, judge_state, frontier_sampled, disagreement
+    )
     return TraceListResponse(
         traces=[TraceListItem(**r) for r in rows],
         next_offset=offset + limit if len(rows) == limit else None,

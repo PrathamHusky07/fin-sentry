@@ -328,11 +328,25 @@ async def ops_traces(
     offset: int = 0,
     ticker: str | None = None,
     status: str | None = None,
+    q: str | None = None,
+    judge_state: str | None = None,
+    frontier_sampled: bool | None = None,
+    disagreement: bool | None = None,
 ) -> TraceListResponse:
     if _metrics_http_client is None:
         return JSONResponse({"error": "metrics client not initialised"}, status_code=503)  # type: ignore[return-value]
     try:
-        return await fetch_trace_list(_metrics_http_client, limit, offset, ticker, status)
+        return await fetch_trace_list(
+            _metrics_http_client,
+            limit,
+            offset,
+            ticker,
+            status,
+            q,
+            judge_state,
+            frontier_sampled,
+            disagreement,
+        )
     except httpx.HTTPError:
         log.warning("dashboard /traces unreachable", exc_info=True)
         return JSONResponse({"error": "metrics service unreachable"}, status_code=503)  # type: ignore[return-value]

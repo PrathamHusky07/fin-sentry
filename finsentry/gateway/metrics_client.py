@@ -47,16 +47,28 @@ async def fetch_trace_list(
     offset: int,
     ticker: str | None,
     status: str | None,
+    q: str | None = None,
+    judge_state: str | None = None,
+    frontier_sampled: bool | None = None,
+    disagreement: bool | None = None,
     timeout: float = 5.0,
 ) -> TraceListResponse:
-    """Fetch the Judge Panel trace list from the dashboard's /traces route.
-    Raises httpx.HTTPError on any failure; the caller's route handler
+    """Fetch the Investigations trace list from the dashboard's /traces
+    route. Raises httpx.HTTPError on any failure; the caller's route handler
     decides what to return to the browser."""
-    params: dict[str, str | int] = {"limit": limit, "offset": offset}
+    params: dict[str, str | int | bool] = {"limit": limit, "offset": offset}
     if ticker is not None:
         params["ticker"] = ticker
     if status is not None:
         params["status"] = status
+    if q is not None:
+        params["q"] = q
+    if judge_state is not None:
+        params["judge_state"] = judge_state
+    if frontier_sampled is not None:
+        params["frontier_sampled"] = frontier_sampled
+    if disagreement is not None:
+        params["disagreement"] = disagreement
     resp = await client.get(f"{METRICS_SERVICE_URL}/traces", params=params, timeout=timeout)
     resp.raise_for_status()
     return TraceListResponse.model_validate(resp.json())
