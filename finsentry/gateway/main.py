@@ -30,7 +30,17 @@ from tenacity import (
 from finsentry.events.metrics_snapshot import MetricsSnapshot
 from finsentry.events.producer import RagEventProducer
 from finsentry.events.schema import RagResponseEvent
+from finsentry.events.trace_api import (
+    CalibrationHealthResponse,
+    TraceDetailResponse,
+    TraceListResponse,
+)
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker
+from finsentry.gateway.metrics_client import (
+    fetch_calibration_health,
+    fetch_trace_detail,
+    fetch_trace_list,
+)
 from finsentry.gateway.metrics_poller import MetricsPoller
 from finsentry.gateway.rails import InputRailsAdapter
 from finsentry.observability.tracing import configure_tracer_provider, get_tracer, set_app_trace_id
@@ -304,6 +314,53 @@ async def ops_stream() -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Trace investigation proxy (Day 9, Option C): the gateway stays the single
+# browser-facing origin. These routes make an httpx call to the dashboard's
+# internal /traces, /traces/{id}, /calibration/health routes -- the same
+# mechanism as the Day 8 metrics poller, via METRICS_SERVICE_URL -- never
+# importing dashboard functions or touching RisingWave directly.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/ops/traces", response_model=TraceListResponse)
+async def ops_traces(
+    limit: int = 50,
+    offset: int = 0,
+    ticker: str | None = None,
+    status: str | None = None,
+) -> TraceListResponse:
+    if _metrics_http_client is None:
+        return JSONResponse({"error": "metrics client not initialised"}, status_code=503)  # type: ignore[return-value]
+    try:
+        return await fetch_trace_list(_metrics_http_client, limit, offset, ticker, status)
+    except httpx.HTTPError:
+        log.warning("dashboard /traces unreachable", exc_info=True)
+        return JSONResponse({"error": "metrics service unreachable"}, status_code=503)  # type: ignore[return-value]
+
+
+@app.get("/ops/traces/{app_trace_id}", response_model=TraceDetailResponse)
+async def ops_trace_detail(app_trace_id: str) -> TraceDetailResponse:
+    if _metrics_http_client is None:
+        return JSONResponse({"error": "metrics client not initialised"}, status_code=503)  # type: ignore[return-value]
+    try:
+        return await fetch_trace_detail(_metrics_http_client, app_trace_id)
+    except httpx.HTTPError:
+        log.warning("dashboard /traces/%s unreachable", app_trace_id, exc_info=True)
+        return JSONResponse({"error": "metrics service unreachable"}, status_code=503)  # type: ignore[return-value]
+
+
+@app.get("/ops/calibration/health", response_model=CalibrationHealthResponse)
+async def ops_calibration_health() -> CalibrationHealthResponse:
+    if _metrics_http_client is None:
+        return JSONResponse({"error": "metrics client not initialised"}, status_code=503)  # type: ignore[return-value]
+    try:
+        return await fetch_calibration_health(_metrics_http_client)
+    except httpx.HTTPError:
+        log.warning("dashboard /calibration/health unreachable", exc_info=True)
+        return JSONResponse({"error": "metrics service unreachable"}, status_code=503)  # type: ignore[return-value]
+
+
+# ---------------------------------------------------------------------------
 # Chat completions proxy
 # ---------------------------------------------------------------------------
 
@@ -323,9 +380,7 @@ async def chat_completions(request: Request) -> Response:
             updated_messages, status, rail_name, _explain = await _adapter.run(messages)
         except Exception as exc:
             log.error("Input rail enforcement failed: %s", exc, exc_info=True)
-            return JSONResponse(
-                {"error": "input rail service unavailable"}, status_code=503
-            )
+            return JSONResponse({"error": "input rail service unavailable"}, status_code=503)
 
         if status == RailStatus.BLOCKED:
             block_body: dict[str, str] = {"error": "request blocked by input rail"}
@@ -455,9 +510,7 @@ an answer explaining what is missing, an empty citations list [], and confidence
 - output ONLY the JSON object, no surrounding text"""
 
 
-def _build_rag_messages(
-    query: str, chunks: list[RetrievedChunk]
-) -> list[dict[str, str]]:
+def _build_rag_messages(query: str, chunks: list[RetrievedChunk]) -> list[dict[str, str]]:
     chunks_text = "\n\n".join(
         f"[chunk_id={c.chunk_id}] ticker={c.ticker}, "
         f"filing_type={c.filing_type}, date={c.filing_date}\n{c.text}"
@@ -643,9 +696,7 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         set_app_trace_id(root_span, app_trace_id)
 
         try:
-            return await _rag_query_inner(
-                request_body, app_trace_id, request_start_time
-            )
+            return await _rag_query_inner(request_body, app_trace_id, request_start_time)
         except Exception as exc:
             error_kind = type(exc).__name__
             error_detail = str(exc)[:500]
@@ -692,9 +743,7 @@ async def _rag_query_inner(
                     error_kind="input_rail_service_unavailable",
                     error_detail=str(exc)[:500],
                 )
-                return JSONResponse(
-                    {"error": "input rail service unavailable"}, status_code=503
-                )
+                return JSONResponse({"error": "input rail service unavailable"}, status_code=503)
 
             if status == RailStatus.BLOCKED:
                 input_rail_status = "blocked"
@@ -730,9 +779,7 @@ async def _rag_query_inner(
     # 2. Embed the (possibly sanitised) query.
     with _tracer.start_as_current_span("rag.embed_query"):
         embedding: list[float] = (
-            await asyncio.to_thread(
-                lambda: _embed_model.encode([query], show_progress_bar=False)
-            )
+            await asyncio.to_thread(lambda: _embed_model.encode([query], show_progress_bar=False))
         )[0].tolist()
 
     # 3. Retrieve top_k chunks via cosine similarity.
@@ -774,9 +821,7 @@ async def _rag_query_inner(
                         block_reason="no_trustworthy_sources",
                         block_rail="retrieval-rail",
                         input_rail_status=input_rail_status,
-                        total_latency_ms=int(
-                            (time.monotonic() - request_start_time) * 1000
-                        ),
+                        total_latency_ms=int((time.monotonic() - request_start_time) * 1000),
                     )
                 )
             )
@@ -807,7 +852,10 @@ async def _rag_query_inner(
         try:
             raw_body_holder: list[str] = []
             answer = await _call_downstream_rag(
-                prompt_messages, _DOWNSTREAM_URL, _rag_breaker, raw_body_holder  # type: ignore[arg-type]
+                prompt_messages,
+                _DOWNSTREAM_URL,
+                _rag_breaker,  # type: ignore[arg-type]
+                raw_body_holder,
             )
             raw_downstream_body = raw_body_holder[-1] if raw_body_holder else answer
         except _DownstreamCircuitOpenError as exc:
@@ -819,13 +867,9 @@ async def _rag_query_inner(
                 status_code=503,
             )
         except _NonRetryableError as exc:
-            return JSONResponse(
-                {"error": "bad request to downstream"}, status_code=exc.status_code
-            )
+            return JSONResponse({"error": "bad request to downstream"}, status_code=exc.status_code)
         except _AuthError:
-            return JSONResponse(
-                {"error": "downstream auth misconfiguration"}, status_code=502
-            )
+            return JSONResponse({"error": "downstream auth misconfiguration"}, status_code=502)
         except RetryError as exc:
             last = exc.last_attempt.exception()
             if isinstance(last, _RateLimitError):
@@ -934,9 +978,7 @@ async def _rag_query_inner(
             try:
                 parsed_answer = RagAnswerResponse.model_validate_json(answer)
             except Exception:
-                parsed_answer = RagAnswerResponse(
-                    answer=answer, citations=[], confidence="low"
-                )
+                parsed_answer = RagAnswerResponse(answer=answer, citations=[], confidence="low")
 
     # Rail B: regulated-phrase blocklist (runs on answer text only)
     with _tracer.start_as_current_span("rag.phrase_rail"):
@@ -984,9 +1026,7 @@ async def _rag_query_inner(
     # Rail C: faithfulness (async, fail-open per ADR 005)
     with _tracer.start_as_current_span("rag.faithfulness_rail"):
         if _faithfulness_rail is not None:
-            faith_decision = await _faithfulness_rail.check(
-                parsed_answer.answer, filtered_chunks
-            )
+            faith_decision = await _faithfulness_rail.check(parsed_answer.answer, filtered_chunks)
             output_trace["faithfulness"] = faith_decision.details
             if faith_decision.outcome == "block":
                 if _rag_event_producer is not None:

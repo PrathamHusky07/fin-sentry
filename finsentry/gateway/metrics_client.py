@@ -18,6 +18,11 @@ import os
 import httpx
 
 from finsentry.events.metrics_snapshot import MetricsSnapshot
+from finsentry.events.trace_api import (
+    CalibrationHealthResponse,
+    TraceDetailResponse,
+    TraceListResponse,
+)
 
 METRICS_SERVICE_URL: str = os.getenv("METRICS_SERVICE_URL", "http://localhost:8081")
 
@@ -34,3 +39,44 @@ async def fetch_snapshot(client: httpx.AsyncClient, timeout: float = 5.0) -> Met
     resp = await client.get(f"{METRICS_SERVICE_URL}/metrics/snapshot", timeout=timeout)
     resp.raise_for_status()
     return MetricsSnapshot.model_validate(resp.json())
+
+
+async def fetch_trace_list(
+    client: httpx.AsyncClient,
+    limit: int,
+    offset: int,
+    ticker: str | None,
+    status: str | None,
+    timeout: float = 5.0,
+) -> TraceListResponse:
+    """Fetch the Judge Panel trace list from the dashboard's /traces route.
+    Raises httpx.HTTPError on any failure; the caller's route handler
+    decides what to return to the browser."""
+    params: dict[str, str | int] = {"limit": limit, "offset": offset}
+    if ticker is not None:
+        params["ticker"] = ticker
+    if status is not None:
+        params["status"] = status
+    resp = await client.get(f"{METRICS_SERVICE_URL}/traces", params=params, timeout=timeout)
+    resp.raise_for_status()
+    return TraceListResponse.model_validate(resp.json())
+
+
+async def fetch_trace_detail(
+    client: httpx.AsyncClient, app_trace_id: str, timeout: float = 5.0
+) -> TraceDetailResponse:
+    """Fetch one trace's drill-down detail from the dashboard's
+    /traces/{app_trace_id} route. Raises httpx.HTTPError on any failure."""
+    resp = await client.get(f"{METRICS_SERVICE_URL}/traces/{app_trace_id}", timeout=timeout)
+    resp.raise_for_status()
+    return TraceDetailResponse.model_validate(resp.json())
+
+
+async def fetch_calibration_health(
+    client: httpx.AsyncClient, timeout: float = 5.0
+) -> CalibrationHealthResponse:
+    """Fetch the calibration-health panel from the dashboard's
+    /calibration/health route. Raises httpx.HTTPError on any failure."""
+    resp = await client.get(f"{METRICS_SERVICE_URL}/calibration/health", timeout=timeout)
+    resp.raise_for_status()
+    return CalibrationHealthResponse.model_validate(resp.json())

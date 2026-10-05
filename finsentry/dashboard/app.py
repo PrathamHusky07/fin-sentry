@@ -23,6 +23,7 @@ Environment variables:
     RISINGWAVE_USER   (default: root)
     RISINGWAVE_DB     (default: dev)
 """
+
 from __future__ import annotations
 
 import datetime
@@ -30,7 +31,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -51,6 +52,18 @@ from finsentry.events.metrics_snapshot import (
     TokenUsageMetrics,
     is_stale,
 )
+from finsentry.events.trace_api import (
+    CalibrationHealthResponse,
+    FlashJudgeView,
+    FrontierEvidenceView,
+    FrontierSectionView,
+    JudgeState,
+    TraceDetailResponse,
+    TraceListItem,
+    TraceListResponse,
+)
+from finsentry.mcp._util import validate_limit
+from finsentry.mcp.tools.drift import get_drift_report
 from finsentry.risingwave.dao import RisingWavePool
 
 load_dotenv()
@@ -104,12 +117,12 @@ app = FastAPI(title="FinSentry Evaluation Dashboard", lifespan=lifespan)
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_one(sql: str) -> dict[str, Any] | None:
-    return await _dao.fetch_one(sql)
+async def _fetch_one(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    return await _dao.fetch_one(sql, params)
 
 
-async def _fetch_all(sql: str) -> list[dict[str, Any]]:
-    return await _dao.fetch_all(sql)
+async def _fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    return await _dao.fetch_all(sql, params)
 
 
 async def _fetch_metrics() -> dict[str, Any]:
@@ -381,6 +394,300 @@ async def metrics_snapshot() -> MetricsSnapshot:
     return await _build_snapshot()
 
 
+# ---------------------------------------------------------------------------
+# Trace investigation (Day 9): Judge Panel list, trace drill-down,
+# calibration-health panel. Internal contracts for the gateway's httpx
+# proxy routes (Option C) -- not public-facing routes. See
+# finsentry/events/trace_api.py for the four-state judge model and the
+# frontier stub-filtering rule these build.
+# ---------------------------------------------------------------------------
+
+_REAL_FRONTIER_JUDGE_ID: Literal["gemini-rubric"] = "gemini-rubric"
+
+
+def _classify_judge_state(judge_status: str | None) -> JudgeState:
+    if judge_status is None:
+        return "never_evaluated"
+    if judge_status == "complete":
+        return "evaluated"
+    if judge_status == "partial":
+        return "partially_evaluated"
+    return "blocked_before_evaluation"  # judge_status == "failed"
+
+
+async def _fetch_trace_list(
+    limit: int, offset: int, ticker: str | None, rag_status: str | None
+) -> list[dict[str, Any]]:
+    validate_limit(limit)
+    conditions: list[str] = []
+    params: list[Any] = []
+    if ticker is not None:
+        conditions.append("r.ticker = %s")
+        params.append(ticker)
+    if rag_status is not None:
+        conditions.append("r.status = %s")
+        params.append(rag_status)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    # LIMIT/OFFSET must be const expressions in RisingWave's streaming query
+    # planner, not bound parameters -- both are already int-typed by this
+    # function's own signature, so inlining is safe (same pattern as
+    # finsentry/mcp/tools/traces.py).
+    rows = await _fetch_all(
+        f"""
+        SELECT r.app_trace_id, r.timestamp_utc, r.endpoint, r.ticker,
+               r.status AS rag_status, j.status AS judge_status
+        FROM rag_events r
+        LEFT JOIN judge_verdicts j ON j.app_trace_id = r.app_trace_id
+        {where_clause}
+        ORDER BY r.timestamp_utc DESC
+        LIMIT {int(limit)} OFFSET {int(offset)}
+        """,
+        tuple(params),
+    )
+
+    trace_ids = [r["app_trace_id"] for r in rows]
+    sampled_ids: set[str] = set()
+    if trace_ids:
+        sampled_rows = await _fetch_all(
+            "SELECT DISTINCT app_trace_id FROM rag_frontier_verdicts WHERE app_trace_id = ANY(%s)",
+            (trace_ids,),
+        )
+        sampled_ids = {r["app_trace_id"] for r in sampled_rows}
+
+    return [
+        {
+            "app_trace_id": r["app_trace_id"],
+            "timestamp_utc": r["timestamp_utc"],
+            "endpoint": r["endpoint"],
+            "ticker": r["ticker"],
+            "rag_status": r["rag_status"],
+            "judge_state": _classify_judge_state(r["judge_status"]),
+            "frontier_sampled": r["app_trace_id"] in sampled_ids,
+        }
+        for r in rows
+    ]
+
+
+def _real_frontier_evidence(per_judge_results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The one real, non-stub, non-null-evidence gemini-rubric entry in a
+    per_judge_results array, or None. Never picks a stub-a/stub-b/test-judge
+    entry, and never picks an entry whose evidence is null -- both are
+    confirmed to occur in real persisted rows (see docs/build-log.md)."""
+    for j in per_judge_results:
+        if j.get("judge_id") == _REAL_FRONTIER_JUDGE_ID and j.get("evidence") is not None:
+            return j
+    return None
+
+
+async def _fetch_frontier_section(app_trace_id: str) -> FrontierSectionView:
+    # Most recent row by evaluation_ts: confirmed against every real
+    # duplicate-trace case today that this is the real gemini-rubric row,
+    # never the earlier stub placeholder (see docs/build-log.md).
+    row = await _fetch_one(
+        """
+        SELECT verdict, per_judge_results, evaluation_ts
+        FROM rag_frontier_verdicts
+        WHERE app_trace_id = %s
+        ORDER BY evaluation_ts DESC
+        LIMIT 1
+        """,
+        (app_trace_id,),
+    )
+    if row is None:
+        return FrontierSectionView(
+            sampled=False, evidence=None, note="frontier not sampled for this trace"
+        )
+
+    real = _real_frontier_evidence(row["per_judge_results"] or [])
+    if real is None:
+        return FrontierSectionView(
+            sampled=True,
+            evidence=None,
+            note="frontier evaluated with no real judge recorded",
+        )
+
+    evidence = real["evidence"] or {}
+    return FrontierSectionView(
+        sampled=True,
+        evidence=FrontierEvidenceView(
+            judge_id=_REAL_FRONTIER_JUDGE_ID,
+            faithfulness_score=real.get("faithfulness_score"),
+            rubric_reasoning=evidence.get("rubric_reasoning"),
+            cited_chunks_supporting=evidence.get("cited_chunks_supporting") or [],
+            cited_chunks_contradicting=evidence.get("cited_chunks_contradicting") or [],
+            verdict=row["verdict"],
+            evaluation_ts=row["evaluation_ts"],
+        ),
+        note="real gemini-rubric evidence for this trace",
+    )
+
+
+async def _fetch_trace_detail(app_trace_id: str) -> TraceDetailResponse:
+    rag_row = await _fetch_one(
+        """
+        SELECT app_trace_id, status, endpoint, ticker, query, answer, confidence,
+               model_used, citations, retrieved_chunk_ids, block_reason, block_rail,
+               error_kind, error_detail, timestamp_utc
+        FROM rag_events
+        WHERE app_trace_id = %s
+        ORDER BY timestamp_utc DESC
+        LIMIT 1
+        """,
+        (app_trace_id,),
+    )
+    if rag_row is None:
+        return TraceDetailResponse(
+            app_trace_id=app_trace_id,
+            found=False,
+            rag_status=None,
+            endpoint=None,
+            ticker=None,
+            query=None,
+            answer=None,
+            confidence=None,
+            model_used=None,
+            citations=[],
+            retrieved_chunk_ids=[],
+            block_reason=None,
+            block_rail=None,
+            error_kind=None,
+            error_detail=None,
+            timestamp_utc=None,
+            judge_state="never_evaluated",
+            flash=None,
+            frontier=FrontierSectionView(
+                sampled=False, evidence=None, note="frontier not sampled for this trace"
+            ),
+            risingwave_connected=_dao.connected,
+            note="no matching rag_events row" if _dao.connected else "RisingWave offline",
+        )
+
+    judge_row = await _fetch_one(
+        """
+        SELECT status, timestamp_utc, faithfulness_score, faithfulness_status,
+               answer_relevance_score, answer_relevance_status,
+               context_relevance_score, context_relevance_status
+        FROM judge_verdicts
+        WHERE app_trace_id = %s
+        ORDER BY timestamp_utc DESC
+        LIMIT 1
+        """,
+        (app_trace_id,),
+    )
+    flash = (
+        FlashJudgeView(
+            status=judge_row["status"],
+            timestamp_utc=judge_row["timestamp_utc"],
+            faithfulness_score=judge_row["faithfulness_score"],
+            faithfulness_status=judge_row["faithfulness_status"],
+            answer_relevance_score=judge_row["answer_relevance_score"],
+            answer_relevance_status=judge_row["answer_relevance_status"],
+            context_relevance_score=judge_row["context_relevance_score"],
+            context_relevance_status=judge_row["context_relevance_status"],
+        )
+        if judge_row is not None
+        else None
+    )
+
+    frontier = await _fetch_frontier_section(app_trace_id)
+
+    return TraceDetailResponse(
+        app_trace_id=app_trace_id,
+        found=True,
+        rag_status=rag_row["status"],
+        endpoint=rag_row["endpoint"],
+        ticker=rag_row["ticker"],
+        query=rag_row["query"],
+        answer=rag_row["answer"],
+        confidence=rag_row["confidence"],
+        model_used=rag_row["model_used"],
+        citations=rag_row["citations"] or [],
+        retrieved_chunk_ids=rag_row["retrieved_chunk_ids"] or [],
+        block_reason=rag_row["block_reason"],
+        block_rail=rag_row["block_rail"],
+        error_kind=rag_row["error_kind"],
+        error_detail=rag_row["error_detail"],
+        timestamp_utc=rag_row["timestamp_utc"],
+        judge_state=_classify_judge_state(judge_row["status"] if judge_row else None),
+        flash=flash,
+        frontier=frontier,
+        risingwave_connected=_dao.connected,
+        note="persisted trace snapshot",
+    )
+
+
+def _calibration_position(
+    kappa: float | None, entry_threshold: float, recovery_threshold: float
+) -> Literal[
+    "at_or_above_recovery", "between_thresholds", "at_or_below_entry", "insufficient_data"
+]:
+    if kappa is None:
+        return "insufficient_data"
+    if kappa >= recovery_threshold:
+        return "at_or_above_recovery"
+    if kappa <= entry_threshold:
+        return "at_or_below_entry"
+    return "between_thresholds"
+
+
+async def _fetch_calibration_health() -> CalibrationHealthResponse:
+    """Current position vs. the Day 6 DriftConfig thresholds, reusing
+    get_drift_report (finsentry/mcp/tools/drift.py) as the query source of
+    truth -- it reads the real canary artifact and the live DriftConfig
+    policy, no RisingWave access. One point-in-time panel, never a trend
+    chart: only one real historical kappa observation exists on disk."""
+    report = await get_drift_report()
+    reading = report.last_health_reading
+    kappa = reading.kappa if reading is not None else None
+    return CalibrationHealthResponse(
+        judge_id=report.judge_id,
+        kappa=kappa,
+        state=reading.state if reading is not None else None,
+        window_n=reading.window_n if reading is not None else None,
+        min_n=report.policy.min_n,
+        healthy_baseline_kappa=report.policy.healthy_baseline_kappa,
+        drift_entry_threshold=report.policy.drift_entry_threshold,
+        recovery_threshold=report.policy.recovery_threshold,
+        position=_calibration_position(
+            kappa, report.policy.drift_entry_threshold, report.policy.recovery_threshold
+        ),
+        state_as_of=reading.state_as_of if reading is not None else None,
+        note=report.note,
+    )
+
+
+@app.get("/traces", response_model=TraceListResponse)
+async def traces(
+    limit: int = 50,
+    offset: int = 0,
+    ticker: str | None = None,
+    status: str | None = None,
+) -> TraceListResponse:
+    """Internal contract for the gateway's /ops/traces proxy (Judge Panel
+    table) -- not a public-facing route."""
+    rows = await _fetch_trace_list(limit, offset, ticker, status)
+    return TraceListResponse(
+        traces=[TraceListItem(**r) for r in rows],
+        next_offset=offset + limit if len(rows) == limit else None,
+        risingwave_connected=_dao.connected,
+    )
+
+
+@app.get("/traces/{app_trace_id}", response_model=TraceDetailResponse)
+async def trace_detail(app_trace_id: str) -> TraceDetailResponse:
+    """Internal contract for the gateway's /ops/traces/{id} proxy (trace
+    drill-down) -- not a public-facing route."""
+    return await _fetch_trace_detail(app_trace_id)
+
+
+@app.get("/calibration/health", response_model=CalibrationHealthResponse)
+async def calibration_health() -> CalibrationHealthResponse:
+    """Internal contract for the gateway's /ops/calibration/health proxy
+    (calibration-health panel) -- not a public-facing route."""
+    return await _fetch_calibration_health()
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
     data = await _fetch_metrics()
@@ -490,7 +797,7 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
   <div class="grid">
     <div class="card">
       <div class="card-label">Total Requests</div>
-      <div class="card-value">{_fmt(tp.get('total_requests'))}</div>
+      <div class="card-value">{_fmt(tp.get("total_requests"))}</div>
     </div>
     <div class="card">
       <div class="card-label">Success Rate</div>
@@ -498,11 +805,11 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
     </div>
     <div class="card">
       <div class="card-label">Avg Latency</div>
-      <div class="card-value">{_fmt(tp.get('avg_latency_ms'), ' ms')}</div>
+      <div class="card-value">{_fmt(tp.get("avg_latency_ms"), " ms")}</div>
     </div>
     <div class="card">
       <div class="card-label">p95 Latency</div>
-      <div class="card-value">{_fmt(tp.get('p95_latency_ms'), ' ms')}</div>
+      <div class="card-value">{_fmt(tp.get("p95_latency_ms"), " ms")}</div>
     </div>
   </div>
 
@@ -510,21 +817,21 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
   <div class="grid">
     <div class="card">
       <div class="card-label">Faithfulness</div>
-      <div class="card-value">{_fmt(fa.get('avg_faithfulness'))}</div>
-      <div class="card-sub">{_fmt(fa.get('verdicts_count'))} verdicts</div>
+      <div class="card-value">{_fmt(fa.get("avg_faithfulness"))}</div>
+      <div class="card-sub">{_fmt(fa.get("verdicts_count"))} verdicts</div>
     </div>
     <div class="card">
       <div class="card-label">Answer Relevance</div>
-      <div class="card-value">{_fmt(re.get('avg_answer_relevance'))}</div>
+      <div class="card-value">{_fmt(re.get("avg_answer_relevance"))}</div>
     </div>
     <div class="card">
       <div class="card-label">Context Relevance</div>
-      <div class="card-value">{_fmt(re.get('avg_context_relevance'))}</div>
+      <div class="card-value">{_fmt(re.get("avg_context_relevance"))}</div>
     </div>
     <div class="card">
       <div class="card-label">Faithfulness Skip Rate</div>
       <div class="card-value">{_skip_rate(fa)}</div>
-      <div class="card-sub">of {_fmt(fa.get('verdicts_count'))} verdicts</div>
+      <div class="card-sub">of {_fmt(fa.get("verdicts_count"))} verdicts</div>
     </div>
   </div>
 
@@ -532,19 +839,19 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
   <div class="grid">
     <div class="card">
       <div class="card-label">Input Tokens</div>
-      <div class="card-value">{_fmt(tok.get('input_tokens_total'))}</div>
+      <div class="card-value">{_fmt(tok.get("input_tokens_total"))}</div>
     </div>
     <div class="card">
       <div class="card-label">Output Tokens</div>
-      <div class="card-value">{_fmt(tok.get('output_tokens_total'))}</div>
+      <div class="card-value">{_fmt(tok.get("output_tokens_total"))}</div>
     </div>
     <div class="card">
       <div class="card-label">Thoughts Tokens</div>
-      <div class="card-value">{_fmt(tok.get('thoughts_tokens_total'))}</div>
+      <div class="card-value">{_fmt(tok.get("thoughts_tokens_total"))}</div>
     </div>
     <div class="card">
       <div class="card-label">Gemini Calls</div>
-      <div class="card-value">{_fmt(tok.get('gemini_calls_total'))}</div>
+      <div class="card-value">{_fmt(tok.get("gemini_calls_total"))}</div>
     </div>
   </div>
 
@@ -552,12 +859,12 @@ def _render_html(data: dict[str, Any], lag_report: ConsumerLagReport | None = No
   <div class="grid">
     <div class="card">
       <div class="card-label">Total Cost (USD)</div>
-      <div class="card-value">{_fmt_cost(cost.get('cost_total_usd'))}</div>
+      <div class="card-value">{_fmt_cost(cost.get("cost_total_usd"))}</div>
       <div class="card-sub">Vertex AI Standard tier pricing</div>
     </div>
     <div class="card">
       <div class="card-label">Cost (from usage view)</div>
-      <div class="card-value">{_fmt_cost(tok.get('cost_total_usd'))}</div>
+      <div class="card-value">{_fmt_cost(tok.get("cost_total_usd"))}</div>
       <div class="card-sub">Cross-check via mv_judge_usage_1m</div>
     </div>
   </div>

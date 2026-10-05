@@ -84,6 +84,14 @@ services:
     environment:
       RISINGWAVE_HOST: risingwave
       KAFKA_MODE: disabled
+    volumes:
+      # Day 9: /calibration/health reuses finsentry/mcp/tools/drift.py's
+      # get_drift_report(), which reads the real Day 6 canary artifact from
+      # a repo-relative disk path -- the Dockerfile only COPYs finsentry/,
+      # so without this mount the file is invisible inside the container
+      # and the panel always reports "no reading persisted" even though a
+      # real one exists on the host.
+      - ./docs/measurements/reliability:/app/docs/measurements/reliability:ro
     depends_on:
       risingwave:
         condition: service_healthy
