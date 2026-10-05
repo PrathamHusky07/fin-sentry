@@ -1,26 +1,64 @@
 @import "tailwindcss";
 
+/* Fin-Sentry application visual system: a dense operations tool, not a
+   marketing surface (see ../CLAUDE.md). Background-shift elevation, not
+   drop shadows -- bg / bg-elevated / surface are three steps of the same
+   scale, not a color plus a shadow. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafaf9;
+  --background-elevated: #ffffff;
+  --surface: #f2f1ee;
+  --border: #e4e2dd;
+  --text-primary: #1a1c1e;
+  --text-secondary: #6b6f76;
+  --accent: #2b6cb8;
+  --positive: #2f9e59;
+  --warning: #c98a1e;
+  --failure: #c4493d;
+  --info: #4a7fb5;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background-elevated: var(--background-elevated);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-accent: var(--accent);
+  --color-positive: var(--positive);
+  --color-warning: var(--warning);
+  --color-failure: var(--failure);
+  --color-info: var(--info);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0d0f12;
+    --background-elevated: #15181d;
+    --surface: #1b1f26;
+    --border: #272b33;
+    --text-primary: #ededec;
+    --text-secondary: #8b9099;
+    --accent: #5b9bd9;
+    --positive: #4ade80;
+    --warning: #f5a623;
+    --failure: #f2645a;
+    --info: #7daedc;
   }
 }
 
 body {
   background: var(--background);
-  color: var(--foreground);
+  color: var(--text-primary);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Metric values use tabular figures so a changing number never shifts its
+   neighbors' width -- Geist Mono is already loaded for this, no new font. */
+.tabular-metric {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
 }
