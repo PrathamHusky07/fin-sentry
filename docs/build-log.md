@@ -1,5 +1,153 @@
 # Build Log
 
+## 2026-10-05 — d9 Session 2A: product shell, Overview command center, Investigations
+
+The make-or-break frontend session: turned the working-but-primitive Session 1
+investigation tool into a reliability control plane, on top of the Phase
+0-proven backend, with nothing fabricated.
+
+**Workstream 0 gate.** Wrote the full data contract
+(`docs/internal/day9-frontend-data-contract.md`, gitignored per this file's own
+rule -- printed in full in the session report instead) before any UI code.
+Confirmed the real anchors: calibration κ 0.5161 degraded, the real four-state
+judge distribution (42/4/61/71 of 178), 67 blocked requests with a real
+breakdown by `block_reason`, 30 frontier-sampled traces, and the single real
+cross-tier disagreement -- `app_trace_id 96bca4b5...`, the AMZN FY2024
+net-income trace where flash scored faithfulness 1.0 and the real
+`gemini-rubric` frontier judge scored it 0.0 with real reasoning ("the
+retrieved context explicitly contains Amazon's FY2024 net income... the answer
+incorrectly claims this information is not available"). Explicitly rejected
+`disagreement_classification` as that signal: it classifies disagreement
+within the frontier ensemble's own judges, not between flash and frontier (one
+real judge live today), confirmed by reading `finsentry/frontier/types.py` and
+the live data -- the one `strong_disagreement` row in RisingWave is a leftover
+`test-judge` fixture (`risingwave-test-1`), not a real trace. No composite
+"quality %" exists anywhere in the platform and none was derived from
+judge-state counts (completion is not correctness). No trend/time-series
+charts: `mv_request_throughput_1m` has 49 real buckets, but they are sparse and
+bursty (gaps from one minute to 20+ hours, mostly flat 100ms test traffic) --
+a connected line would misrepresent a non-continuous stream as continuously
+monitored, so current-state tiles with honest staleness stayed the only
+latency/throughput representation.
+
+**Backend extension (the one authorized).** Added `q` (ILIKE search),
+`judge_state`, `frontier_sampled`, and `disagreement` query params to
+`/traces` and `/ops/traces`, plus `block_reason` on `TraceListItem`. The
+disagreement-id derivation (flash vs. real frontier `gemini-rubric` score,
+delta >= 0.5, a pragmatic UI cutoff not a swept threshold) is a new dashboard
+query, verified against live RisingWave -- it finds exactly the one real
+Amazon trace. Gateway stays a pure httpx proxy, no RisingWave access added
+there.
+
+**Workstream 1-5.** Shell: active-route nav (now four routes: Overview, Live
+Operations, Investigations, Red Team), shared Panel/StatusDot/AsyncState
+primitives, a shared `useMetricsSnapshot` SSE hook. Overview: system status,
+an "Evaluation completion" metric explicitly labeled as completion not
+quality, Attention Required (calibration degradation, the real disagreement
+count, blocked requests by real reason), judge-state distribution, a
+reliability-pipeline diagram derived from the real rail/judge module layout
+with real all-time counts per stage (not fake live traffic), and Recent
+Investigations prioritizing disagreements and blocked traces over
+"integration test query" noise. Investigations (renamed from Judge Panel,
+`/judges` redirects): search, filters, the disagreement lens
+(deep-linkable via `?disagreement=true`), real server-side pagination over
+the proven `next_offset` contract replacing the hardcoded 50-row window,
+sticky table header in a controlled scroll region, no deduplication of
+distinct trace executions. Trace Detail: a real per-trace execution path
+(request through calibration, each stage read off real `TraceDetailResponse`
+fields), the citation list's `key={chunk_id}` collision fixed to
+`` `${chunk_id}-${index}` `` after confirming real duplicate chunk_ids do occur
+within a single trace's citations (never deduplicated), the section relabeled
+"Cited chunks" with a retrieved-vs-cited count line, and the dialog made
+production-accessible (initial focus, Escape, a real Tab focus trap, focus
+restoration on close). Live Operations: the shared metric tiles, the
+calibration panel kept its own retry, plus judge-state distribution, blocked
+breakdown, and a plain chronological recent-activity list -- explicitly not
+Investigations' full table.
+
+**Two real bugs found live, not assumed fixed.** (1) The citation evidence
+section said "No retrieved evidence recorded" on the Amazon trace while the
+new execution path said "5 chunks retrieved" one section above it --
+`retrieved_chunk_ids` (what was retrieved) and `citations` (what the model
+cited) are different real fields; fixed by relabeling and adding the honest
+"the model cited none of the retrieved context" line, which turned out to be
+a genuinely useful signal for that exact trace. (2) Adding a fourth nav item
+overflowed the header ~70px at 375px width (`scrollWidth - clientWidth`);
+fixed with `flex-wrap` on the nav, re-verified zero horizontal overflow at
+375/768/1440 on Overview, Investigations, and the trace dialog.
+
+**Verification.** `pytest -x -q`: 556 passed. `ruff check .` clean. `mypy
+finsentry/ --strict`: clean, 86 files. `npm run build`, `npx tsc --noEmit`,
+`npm run lint`, `npx prettier --check` on every touched file: all clean.
+`e2e/sse-snapshot.spec.ts` passes against the live stack. Manual Playwright
+verification against live data: Overview renders every real value with no
+fabrication; Investigations search/filter/pagination/sticky-header/
+disagreement-lens all work; the Amazon trace is reachable in one click from
+Overview's Attention Required and renders the real reasoning; a blocked
+prompt-injection trace renders correctly; zero console errors and zero failed
+requests across every screen tested.
+
+Hit a real operational snag mid-session: the local gateway/dashboard dev
+processes (not the ones logged by this session) went unresponsive for several
+minutes under the new heavier aggregate-query load combined with an
+in-progress `--reload` cycle reloading the rail models. Restarted them
+cleanly with logging; the backend itself was never at fault (confirmed via
+direct RisingWave queries throughout), same lesson as Phase 0 -- diagnose the
+live process before the code.
+
+Not done, out of scope for this session: the three reliability experiments,
+the `judge_failed` fifth state (Phase 0's open recommendation, still
+deferred), adaptive sampling, the presentation layer, Red Team's backend.
+
+Commits: `7828280` (backend search/filter/disagreement extension), `ad4e25d`
+(shell primitives), `abf9ff4` (Overview), `e16a283` (Investigations),
+`2387bfe` (trace detail redesign), `8a25c74` (Live Operations rebuild).
+
+Status: DAY 9 SESSION 2A COMPLETE -- product shell + command center +
+investigation experience. Reliability experiments and final polish deferred
+to 2B/2C.
+
+## 2026-10-05 — d9 Phase 0: verify-and-repair, stale-process root cause
+
+Diagnosed the Session 1 report's "live verified" claim against real browser
+evidence that contradicted it (Judge Panel erroring, calibration panel
+showing no reading). The working hypothesis was a RisingWave SQL planner
+rejection of the trace-list query (`LEFT JOIN` plus `= ANY(%s)`); disproved
+directly -- ran both queries by hand and through the real
+`RisingWavePool`/psycopg3 path against live RisingWave, both succeeded every
+time. Root cause: two long-running local `uvicorn` processes (gateway
+`:8000`, dashboard `:8081`), started 42 minutes before commit `535ba4c` added
+the new routes, running without `--reload` -- every new route 404'd on stale
+code, which explains both symptoms with one cause, not two. Not a code
+defect. Restarted both with `--reload` (the documented dev command) and
+re-verified the entire contract live: dashboard direct, gateway proxy, all
+four judge states, the blocked trace, the never-evaluated+frontier-sampled
+case, and the calibration panel -- all real.
+
+Confirmed the four-state judge model's invariant holds against current data
+(61/61 failed-judge rows pair with `blocked` rag_status, zero exceptions) but
+found the code path for a genuine judge error on a *successful* RAG request
+exists (`flash_judge.py`'s `complete_count==0` branch) and would
+misclassify as `blocked_before_evaluation` today -- recommended, not applied,
+a fifth state before Session 2B's Gemini-failure experiment. Checked for
+duplicate `judge_verdicts` rows per trace: none exist; left the list query
+alone as instructed.
+
+Fixed `pii_redaction.py`'s stale "five pattern-based types" comment (six).
+Added a no-mock regression test executing the real trace-list SQL against
+live RisingWave (same discipline as the Day 8 `filing_date` test), plus tests
+documenting current judge-state classification for a judge-error-on-success
+row and an unrecognized status. Replaced the single swallowed-failure
+sentence on the Judge Panel, trace drilldown, and calibration fetch with real
+loading/error/empty states, each carrying the actual HTTP status and a Retry
+control. Made Judge Panel rows keyboard-accessible (focusable, Enter/Space
+activates).
+
+Commits: `080cd48`, `3e4140c`, `00a4b8a`.
+
+Status: foundation proven. Reliability experiments, adaptive sampling, and
+the presentation layer deferred, per plan, to Session 2.
+
 ## 2026-10-05 — d9 Session 1: data foundation + investigation UI
 
 Phase 0 (prior session) found two Day-8-adjacent environment gaps and resolved one
