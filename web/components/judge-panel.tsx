@@ -10,30 +10,44 @@ import type { TraceListResponse } from "@/lib/trace-api";
  * The Judge Panel table: investigation-first, not a dashboard card wall.
  * Clicking a row opens the real trace drill-down (see trace-drilldown.tsx).
  */
+type FetchStatus = "loading" | "error" | "ready";
+
 export function JudgePanel() {
   const [data, setData] = useState<TraceListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<FetchStatus>("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     fetch(`${GATEWAY_URL}/ops/traces?limit=50`)
-      .then((res) =>
-        res.ok ? (res.json() as Promise<TraceListResponse>) : null,
-      )
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(
+            `Trace service unavailable — gateway returned ${res.status}`,
+          );
+        }
+        return res.json() as Promise<TraceListResponse>;
+      })
       .then((body) => {
         if (!cancelled) {
           setData(body);
-          setLoading(false);
+          setStatus("ready");
         }
       })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setErrorMessage(
+            err instanceof Error ? err.message : "Trace service unreachable.",
+          );
+          setStatus("error");
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryToken]);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
@@ -45,17 +59,31 @@ export function JudgePanel() {
         the frontier tier sampled it. Click a row to see the full trace.
       </p>
 
-      {loading ? (
+      {status === "loading" ? (
         <p className="text-text-secondary mt-6 text-sm">Loading…</p>
       ) : null}
 
-      {!loading && (!data || data.traces.length === 0) ? (
-        <p className="text-text-secondary mt-6 text-sm">
-          {data ? "No traces found." : "The trace list could not be loaded."}
-        </p>
+      {status === "error" ? (
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <p className="text-failure text-sm">{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setStatus("loading");
+              setRetryToken((n) => n + 1);
+            }}
+            className="border-border hover:bg-surface min-h-11 rounded-md border px-3 text-sm"
+          >
+            Retry
+          </button>
+        </div>
       ) : null}
 
-      {!loading && data && data.traces.length > 0 ? (
+      {status === "ready" && (!data || data.traces.length === 0) ? (
+        <p className="text-text-secondary mt-6 text-sm">No traces found.</p>
+      ) : null}
+
+      {status === "ready" && data && data.traces.length > 0 ? (
         <div className="border-border mt-6 overflow-x-auto rounded-md border">
           <table className="w-full text-left text-sm">
             <thead>
@@ -72,7 +100,16 @@ export function JudgePanel() {
                 <tr
                   key={trace.app_trace_id}
                   onClick={() => setSelected(trace.app_trace_id)}
-                  className="border-border hover:bg-surface cursor-pointer border-b last:border-b-0"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelected(trace.app_trace_id);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View trace: ${trace.query}`}
+                  className="border-border hover:bg-surface focus-visible:outline-accent cursor-pointer border-b outline-none last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2"
                 >
                   <td className="text-text-primary max-w-xs truncate px-3 py-2">
                     {trace.query}

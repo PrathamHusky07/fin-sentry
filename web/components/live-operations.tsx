@@ -8,6 +8,7 @@ import type { MetricsSnapshot } from "@/lib/metrics-snapshot";
 import type { CalibrationHealthResponse } from "@/lib/trace-api";
 
 type ConnectionState = "connecting" | "open" | "error";
+type CalibrationFetchStatus = "loading" | "error" | "ready";
 
 const DRIFT_STATE_COLOR: Record<string, string> = {
   healthy: "text-positive",
@@ -28,6 +29,10 @@ export function LiveOperations() {
     useState<ConnectionState>("connecting");
   const [calibration, setCalibration] =
     useState<CalibrationHealthResponse | null>(null);
+  const [calibrationStatus, setCalibrationStatus] =
+    useState<CalibrationFetchStatus>("loading");
+  const [calibrationError, setCalibrationError] = useState<string | null>(null);
+  const [calibrationRetryToken, setCalibrationRetryToken] = useState(0);
 
   useEffect(() => {
     const source = new EventSource(`${GATEWAY_URL}/ops/stream`);
@@ -42,19 +47,34 @@ export function LiveOperations() {
   useEffect(() => {
     let cancelled = false;
     fetch(`${GATEWAY_URL}/ops/calibration/health`)
-      .then((res) =>
-        res.ok ? (res.json() as Promise<CalibrationHealthResponse>) : null,
-      )
-      .then((data) => {
-        if (!cancelled) setCalibration(data);
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(
+            `Calibration service unavailable — gateway returned ${res.status}`,
+          );
+        }
+        return res.json() as Promise<CalibrationHealthResponse>;
       })
-      .catch(() => {
-        if (!cancelled) setCalibration(null);
+      .then((data) => {
+        if (!cancelled) {
+          setCalibration(data);
+          setCalibrationStatus("ready");
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setCalibrationError(
+            err instanceof Error
+              ? err.message
+              : "Calibration service unreachable.",
+          );
+          setCalibrationStatus("error");
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [calibrationRetryToken]);
 
   const throughput = snapshot?.throughput ?? null;
   const tokens = snapshot?.tokens ?? null;
@@ -97,8 +117,15 @@ export function LiveOperations() {
               : "offline"
             : "unknown"}
         </span>
-        <span className={`font-medium ${driftColor}`}>
-          Drift: {calibration?.state ?? "no reading persisted"}
+        <span
+          className={`font-medium ${calibrationStatus === "error" ? "text-failure" : driftColor}`}
+        >
+          Drift:{" "}
+          {calibrationStatus === "loading"
+            ? "loading…"
+            : calibrationStatus === "error"
+              ? "unavailable"
+              : (calibration?.state ?? "no reading persisted")}
         </span>
       </section>
 
@@ -146,7 +173,23 @@ export function LiveOperations() {
         />
       </div>
 
-      {calibration ? (
+      {calibrationStatus === "error" ? (
+        <div className="border-border bg-background-elevated mt-6 flex flex-wrap items-center gap-3 rounded-md border p-4">
+          <p className="text-failure text-sm">{calibrationError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setCalibrationStatus("loading");
+              setCalibrationRetryToken((n) => n + 1);
+            }}
+            className="border-border hover:bg-surface min-h-11 rounded-md border px-3 text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {calibrationStatus === "ready" && calibration ? (
         <div className="mt-6">
           <CalibrationHealthPanel health={calibration} />
         </div>

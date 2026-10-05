@@ -30,6 +30,8 @@ function ScoreRow({ label, score, status }: ScoreRowProps) {
   );
 }
 
+type FetchStatus = "loading" | "error" | "ready";
+
 export function TraceDrilldown({
   appTraceId,
   onClose,
@@ -38,27 +40,39 @@ export function TraceDrilldown({
   onClose: () => void;
 }) {
   const [detail, setDetail] = useState<TraceDetailResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<FetchStatus>("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     fetch(`${GATEWAY_URL}/ops/traces/${appTraceId}`)
-      .then((res) =>
-        res.ok ? (res.json() as Promise<TraceDetailResponse>) : null,
-      )
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(
+            `Trace service unavailable — gateway returned ${res.status}`,
+          );
+        }
+        return res.json() as Promise<TraceDetailResponse>;
+      })
       .then((data) => {
         if (!cancelled) {
           setDetail(data);
-          setLoading(false);
+          setStatus("ready");
         }
       })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setErrorMessage(
+            err instanceof Error ? err.message : "Trace service unreachable.",
+          );
+          setStatus("error");
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [appTraceId]);
+  }, [appTraceId, retryToken]);
 
   return (
     <div
@@ -85,17 +99,33 @@ export function TraceDrilldown({
           </button>
         </div>
 
-        {loading ? (
+        {status === "loading" ? (
           <p className="text-text-secondary mt-4 text-sm">Loading…</p>
         ) : null}
 
-        {!loading && (!detail || !detail.found) ? (
+        {status === "error" ? (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-failure text-sm">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setStatus("loading");
+                setRetryToken((n) => n + 1);
+              }}
+              className="border-border hover:bg-surface min-h-11 rounded-md border px-3 text-sm"
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
+
+        {status === "ready" && !detail?.found ? (
           <p className="text-text-secondary mt-4 text-sm">
-            {detail?.note ?? "This trace could not be loaded."}
+            {detail?.note ?? "Trace not found."}
           </p>
         ) : null}
 
-        {!loading && detail?.found ? (
+        {status === "ready" && detail?.found ? (
           <div className="mt-4 space-y-5">
             <section>
               <h3 className="text-text-secondary text-xs tracking-wide uppercase">
