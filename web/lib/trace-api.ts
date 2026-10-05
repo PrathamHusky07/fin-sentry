@@ -17,6 +17,7 @@ export interface TraceListItem {
   ticker: string | null;
   query: string;
   rag_status: string;
+  block_reason: string | null;
   judge_state: JudgeState;
   frontier_sampled: boolean;
 }

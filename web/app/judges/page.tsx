@@ -1,10 +1,5 @@
-import type { Metadata } from "next";
-import { JudgePanel } from "@/components/judge-panel";
-
-export const metadata: Metadata = {
-  title: "Judge Panel — Fin-Sentry",
-};
+import { redirect } from "next/navigation";
 
 export default function JudgesPage() {
-  return <JudgePanel />;
+  redirect("/investigations");
 }
