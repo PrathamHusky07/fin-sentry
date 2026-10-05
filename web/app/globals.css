@@ -62,3 +62,32 @@ body {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
+
+/* Reliability pipeline connector: a static line between stages. The subtle
+   gradient drift is purely decorative (it does not represent request
+   volume or any live value) and is disabled under prefers-reduced-motion. */
+.pipeline-connector {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--border) 0%,
+    var(--accent) 50%,
+    var(--border) 100%
+  );
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pipeline-connector {
+    animation: pipeline-flow 6s linear infinite;
+  }
+}
+
+@keyframes pipeline-flow {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
