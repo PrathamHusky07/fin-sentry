@@ -50,10 +50,18 @@ services:
   risingwave:
     image: risingwavelabs/risingwave:v3.0.3
     container_name: finsentry-risingwave
-    command: playground
+    # `playground` is a documented shortcut for `single-node --in-memory`
+    # ("should not be used in production", per the binary's own --help) --
+    # its meta store and object store are both in-memory, so a restart
+    # wipes every source/materialized-view definition and all data.
+    # `single_node` (the binary's actual default mode) with an explicit
+    # --store-directory persists both to the mounted volume below.
+    command: single_node --store-directory /risingwave/state
     ports:
       - "4566:4566"
       - "5691:5691"
+    volumes:
+      - risingwave_data:/risingwave/state
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/4566' || exit 1"]
       interval: 5s
@@ -143,3 +151,4 @@ services:
 volumes:
   postgres_data:
   redpanda_data:
+  risingwave_data:
