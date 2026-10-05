@@ -10,12 +10,12 @@ _CONFIDENCE_THRESHOLD = 0.7  # Default Presidio threshold is 0.5; 0.7 prevents
 # false-positive redaction of SEC filing identifiers (CIK numbers, CUSIP codes,
 # routing numbers in financial tables) that pattern recognizers can misfire on.
 
-# Input-rail recognizer allowlist — five pattern-based types only.
+# Input-rail recognizer allowlist — six pattern-based types only.
 # PERSON (SpacyRecognizer / NER) is excluded deliberately: in the finance
 # domain, person names in queries are almost always public figures (executives,
 # analysts, board members) legitimately present in SEC filings. Redacting
 # "Tim Cook, CEO of Apple" would silently break RAG retrieval on the corpus.
-# Real PII in this domain is account numbers and tax IDs, which the five
+# Real PII in this domain is account numbers and tax IDs, which the six
 # pattern recognizers below catch reliably.
 _ENTITY_TYPES = [
     "US_SSN",
