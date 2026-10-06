@@ -5,7 +5,7 @@ import type { JudgeStateCounts } from "@/lib/overview-data";
 const ROWS: {
   key: keyof JudgeStateCounts;
   label: string;
-  color: "positive" | "warning" | "info" | "neutral";
+  color: "positive" | "warning" | "info" | "accent" | "neutral";
 }[] = [
   { key: "evaluated", label: "Evaluated", color: "positive" },
   {
@@ -17,6 +17,11 @@ const ROWS: {
     key: "blocked_before_evaluation",
     label: "Blocked before evaluation",
     color: "info",
+  },
+  {
+    key: "judge_failed",
+    label: "Judge pipeline error",
+    color: "accent",
   },
   { key: "never_evaluated", label: "Not yet evaluated", color: "neutral" },
 ];

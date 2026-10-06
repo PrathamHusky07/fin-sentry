@@ -104,7 +104,7 @@ _REAL_PER_JUDGE_RESULTS = [
 
 
 async def _dispatch_fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    if "FROM rag_events r" in sql and "LEFT JOIN judge_verdicts" in sql:
+    if "FROM rag_events r" in sql and "LEFT JOIN (" in sql:
         return [_EVALUATED_ROW, _PARTIAL_ROW, _BLOCKED_ROW, _NEVER_EVALUATED_ROW]
     if "DISTINCT app_trace_id FROM rag_frontier_verdicts" in sql:
         return [{"app_trace_id": "trace-evaluated"}]
@@ -271,16 +271,16 @@ async def test_calibration_health_reports_position_between_thresholds() -> None:
     assert body["position"] == "between_thresholds"
 
 
-async def test_traces_list_judge_failed_on_successful_rag_classifies_as_blocked() -> None:
-    """Day 9 Phase 0 finding (docs/build-log.md): finsentry/judges/flash_judge.py's
-    complete_count==0 branch writes judge_verdicts.status="failed" whenever all
-    three RAGAS metrics error out (e.g. a Gemini outage) -- the exact case
-    Session 2B's reliability experiment will create -- even when the RAG
-    request itself succeeded. _classify_judge_state only reads judge_status,
-    never cross-checks rag_events.status, so this case is classified
-    identically to a real guardrail block. Documented as current behavior,
-    not endorsed: this test exists so Session 2B's fifth-state decision shows
-    up as a diff here, not a silent behavior change."""
+async def test_traces_list_judge_failed_on_successful_rag_classifies_as_judge_failed() -> None:
+    """Day 9 Phase 0 found this case (docs/build-log.md): finsentry/judges/
+    flash_judge.py's complete_count==0 branch writes judge_verdicts.status=
+    "failed" whenever all three RAGAS metrics error out (e.g. a Gemini
+    outage) -- the exact case Session 2B's reliability experiment creates --
+    even when the RAG request itself succeeded. Phase 0 left this
+    misclassified as blocked_before_evaluation (judge_status read with no
+    cross-check against rag_events.status); Session 2B introduces the fifth
+    state, judge_failed, and threads rag_status into the classification to
+    fix it. This is the intentional diff that fix produces."""
     row = {
         "app_trace_id": "trace-judge-errored-on-success",
         "timestamp_utc": _NOW,
@@ -293,23 +293,23 @@ async def test_traces_list_judge_failed_on_successful_rag_classifies_as_blocked(
     }
     with patch(
         "finsentry.dashboard.app._fetch_all",
-        AsyncMock(
-            side_effect=lambda sql, params=(): [row] if "LEFT JOIN judge_verdicts" in sql else []
-        ),
+        AsyncMock(side_effect=lambda sql, params=(): [row] if "LEFT JOIN (" in sql else []),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/traces")
 
     traces = resp.json()["traces"]
     assert traces[0]["rag_status"] == "success"
-    assert traces[0]["judge_state"] == "blocked_before_evaluation"
+    assert traces[0]["judge_state"] == "judge_failed"
 
 
-async def test_traces_list_unknown_judge_status_falls_back_to_blocked() -> None:
+async def test_traces_list_unknown_judge_status_on_success_falls_back_to_judge_failed() -> None:
     """A judge_status outside {None, complete, partial, failed} -- a future
-    status value never seen in today's data -- currently falls into the same
-    catch-all branch as a real 'failed' status. Documented as current
-    behavior."""
+    status value never seen in today's data -- falls into the same
+    catch-all branch as a real 'failed' status, split by rag_status like
+    any other unrecognized/failed value (see _classify_judge_state):
+    rag_status="success" means judge_failed, not blocked_before_evaluation.
+    Documented as current behavior."""
     row = {
         "app_trace_id": "trace-unknown-judge-status",
         "timestamp_utc": _NOW,
@@ -322,15 +322,13 @@ async def test_traces_list_unknown_judge_status_falls_back_to_blocked() -> None:
     }
     with patch(
         "finsentry.dashboard.app._fetch_all",
-        AsyncMock(
-            side_effect=lambda sql, params=(): [row] if "LEFT JOIN judge_verdicts" in sql else []
-        ),
+        AsyncMock(side_effect=lambda sql, params=(): [row] if "LEFT JOIN (" in sql else []),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/traces")
 
     traces = resp.json()["traces"]
-    assert traces[0]["judge_state"] == "blocked_before_evaluation"
+    assert traces[0]["judge_state"] == "judge_failed"
 
 
 async def test_calibration_health_insufficient_data_when_no_reading_persisted() -> None:
@@ -367,7 +365,7 @@ async def test_traces_list_q_param_adds_ilike_condition_on_query_and_trace_id() 
     captured: dict[str, Any] = {}
 
     async def _capture(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-        if "LEFT JOIN judge_verdicts" in sql:
+        if "LEFT JOIN (" in sql:
             captured["sql"] = sql
             captured["params"] = params
             return []
@@ -386,7 +384,7 @@ async def test_traces_list_judge_state_param_filters_on_raw_status() -> None:
     captured: dict[str, Any] = {}
 
     async def _capture(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-        if "LEFT JOIN judge_verdicts" in sql:
+        if "LEFT JOIN (" in sql:
             captured["sql"] = sql
             return []
         return []
@@ -413,7 +411,7 @@ async def test_traces_list_frontier_sampled_true_filters_to_sampled_ids() -> Non
             resp = await client.get("/traces", params={"frontier_sampled": "true"})
 
     assert resp.status_code == 200
-    main_query_sql = next(sql for sql, _ in calls if "LEFT JOIN judge_verdicts" in sql)
+    main_query_sql = next(sql for sql, _ in calls if "LEFT JOIN (" in sql)
     assert "r.app_trace_id = ANY(%s)" in main_query_sql
 
 

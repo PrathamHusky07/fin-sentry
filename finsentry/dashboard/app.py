@@ -405,24 +405,30 @@ async def metrics_snapshot() -> MetricsSnapshot:
 _REAL_FRONTIER_JUDGE_ID: Literal["gemini-rubric"] = "gemini-rubric"
 
 
-def _classify_judge_state(judge_status: str | None) -> JudgeState:
+def _classify_judge_state(judge_status: str | None, rag_status: str) -> JudgeState:
     if judge_status is None:
         return "never_evaluated"
     if judge_status == "complete":
         return "evaluated"
     if judge_status == "partial":
         return "partially_evaluated"
-    return "blocked_before_evaluation"  # judge_status == "failed"
+    # judge_status == "failed" (or any other unrecognized status): a real
+    # rag_status="success" row with no complete metric is a judge-pipeline
+    # outage, not a guardrail block -- see finsentry/events/trace_api.py.
+    if rag_status == "success":
+        return "judge_failed"
+    return "blocked_before_evaluation"
 
 
-# Translates the public four-state judge_state filter back to the raw
-# judge_verdicts.status condition _classify_judge_state derives it from --
-# the dashboard never stores judge_state itself, only judge_status.
+# Translates the public five-state judge_state filter back to the raw
+# judge_verdicts.status / rag_events.status condition _classify_judge_state
+# derives it from -- the dashboard never stores judge_state itself.
 _JUDGE_STATE_TO_STATUS_SQL: dict[str, str] = {
     "never_evaluated": "j.status IS NULL",
     "evaluated": "j.status = 'complete'",
     "partially_evaluated": "j.status = 'partial'",
-    "blocked_before_evaluation": "j.status = 'failed'",
+    "blocked_before_evaluation": "j.status = 'failed' AND r.status != 'success'",
+    "judge_failed": "j.status = 'failed' AND r.status = 'success'",
 }
 
 
@@ -468,12 +474,25 @@ async def _fetch_trace_list(
     # planner, not bound parameters -- both are already int-typed by this
     # function's own signature, so inlining is safe (same pattern as
     # finsentry/mcp/tools/traces.py).
+    # Latest-verdict-per-trace, matching _fetch_trace_detail's
+    # ORDER BY timestamp_utc DESC LIMIT 1 rule -- a plain LEFT JOIN fans out
+    # one row per (trace, verdict) pair and silently disagrees with the
+    # detail endpoint once a trace has more than one judge_verdicts row
+    # (retried evaluation, a re-score). DISTINCT would hide the fan-out
+    # without fixing which verdict wins; the window function picks the same
+    # row the detail endpoint would show.
     rows = await _fetch_all(
         f"""
         SELECT r.app_trace_id, r.timestamp_utc, r.endpoint, r.ticker, r.query,
                r.status AS rag_status, r.block_reason, j.status AS judge_status
         FROM rag_events r
-        LEFT JOIN judge_verdicts j ON j.app_trace_id = r.app_trace_id
+        LEFT JOIN (
+            SELECT app_trace_id, status,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY app_trace_id ORDER BY timestamp_utc DESC
+                   ) AS rn
+            FROM judge_verdicts
+        ) j ON j.app_trace_id = r.app_trace_id AND j.rn = 1
         {where_clause}
         ORDER BY r.timestamp_utc DESC
         LIMIT {int(limit)} OFFSET {int(offset)}
@@ -499,7 +518,7 @@ async def _fetch_trace_list(
             "query": r["query"],
             "rag_status": r["rag_status"],
             "block_reason": r["block_reason"],
-            "judge_state": _classify_judge_state(r["judge_status"]),
+            "judge_state": _classify_judge_state(r["judge_status"], r["rag_status"]),
             "frontier_sampled": r["app_trace_id"] in sampled_ids_for_page,
         }
         for r in rows
@@ -541,7 +560,13 @@ async def _fetch_disagreement_trace_ids() -> set[str]:
         SELECT r.app_trace_id, j.faithfulness_score AS flash_score,
                f.per_judge_results, f.evaluation_ts
         FROM rag_events r
-        JOIN judge_verdicts j ON j.app_trace_id = r.app_trace_id
+        JOIN (
+            SELECT app_trace_id, faithfulness_score, faithfulness_status,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY app_trace_id ORDER BY timestamp_utc DESC
+                   ) AS rn
+            FROM judge_verdicts
+        ) j ON j.app_trace_id = r.app_trace_id AND j.rn = 1
         JOIN rag_frontier_verdicts f ON f.app_trace_id = r.app_trace_id
         WHERE j.faithfulness_status = 'complete'
         """
@@ -696,7 +721,9 @@ async def _fetch_trace_detail(app_trace_id: str) -> TraceDetailResponse:
         error_kind=rag_row["error_kind"],
         error_detail=rag_row["error_detail"],
         timestamp_utc=rag_row["timestamp_utc"],
-        judge_state=_classify_judge_state(judge_row["status"] if judge_row else None),
+        judge_state=_classify_judge_state(
+            judge_row["status"] if judge_row else None, rag_row["status"]
+        ),
         flash=flash,
         frontier=frontier,
         risingwave_connected=_dao.connected,

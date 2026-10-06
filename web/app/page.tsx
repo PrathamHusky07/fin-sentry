@@ -28,13 +28,19 @@ export default async function OverviewPage() {
     fetchCalibrationHealth(),
   ]);
 
-  const evaluatedCount = overview
+  // Completion (did the judge finish running) and quality are different
+  // questions -- see docs/internal/day9-frontend-data-contract.md's "No
+  // quality %" note. "Complete" and "partial" are also never collapsed
+  // into one number below: a partial evaluation (some of the three RAGAS
+  // metrics skipped) is not the same claim as a complete one, even though
+  // both count toward "evaluation completion."
+  const completedOrPartialCount = overview
     ? overview.judgeStateCounts.evaluated +
       overview.judgeStateCounts.partially_evaluated
     : null;
   const evaluationCompletionPct =
-    overview && overview.totalRequests > 0 && evaluatedCount !== null
-      ? ((evaluatedCount / overview.totalRequests) * 100).toFixed(1)
+    overview && overview.totalRequests > 0 && completedOrPartialCount !== null
+      ? ((completedOrPartialCount / overview.totalRequests) * 100).toFixed(1)
       : null;
 
   return (
@@ -110,7 +116,8 @@ export default async function OverviewPage() {
         {overview ? (
           <ReliabilityPipeline
             blockedByReason={overview.blockedByReason}
-            flashEvaluatedCount={evaluatedCount ?? 0}
+            flashCompleteCount={overview.judgeStateCounts.evaluated}
+            flashPartialCount={overview.judgeStateCounts.partially_evaluated}
             flashNeverRanCount={overview.judgeStateCounts.never_evaluated}
             frontierSampledCount={overview.frontierSampledCount}
           />

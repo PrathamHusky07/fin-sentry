@@ -8,6 +8,7 @@ export type JudgeState =
   | "evaluated"
   | "partially_evaluated"
   | "blocked_before_evaluation"
+  | "judge_failed"
   | "never_evaluated";
 
 export interface TraceListItem {

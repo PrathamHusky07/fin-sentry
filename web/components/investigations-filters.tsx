@@ -12,6 +12,7 @@ const JUDGE_STATE_OPTIONS = [
   { value: "evaluated", label: "Evaluated" },
   { value: "partially_evaluated", label: "Partially evaluated" },
   { value: "blocked_before_evaluation", label: "Blocked before evaluation" },
+  { value: "judge_failed", label: "Judge pipeline error" },
   { value: "never_evaluated", label: "Not yet evaluated" },
 ] as const;
 

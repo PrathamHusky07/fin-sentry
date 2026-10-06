@@ -17,12 +17,14 @@ interface Stage {
  */
 export function ReliabilityPipeline({
   blockedByReason,
-  flashEvaluatedCount,
+  flashCompleteCount,
+  flashPartialCount,
   flashNeverRanCount,
   frontierSampledCount,
 }: {
   blockedByReason: { reason: string; count: number }[];
-  flashEvaluatedCount: number;
+  flashCompleteCount: number;
+  flashPartialCount: number;
   flashNeverRanCount: number;
   frontierSampledCount: number;
 }) {
@@ -58,7 +60,7 @@ export function ReliabilityPipeline({
     {
       label: "Flash evaluation",
       detail: "Gemini 2.5 Flash, 3 RAGAS metrics",
-      sublabel: `${flashEvaluatedCount} evaluated, ${flashNeverRanCount} not yet`,
+      sublabel: `${flashCompleteCount} complete, ${flashPartialCount} partial, ${flashNeverRanCount} not yet`,
     },
     {
       label: "Frontier evaluation",

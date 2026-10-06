@@ -69,6 +69,11 @@ _GATEWAY_INSTANCE_ID: str = os.getenv("GATEWAY_INSTANCE_ID") or f"gateway-{uuid.
 # Empty default is intentional: a missing env var logs a WARNING at startup rather
 # than silently sending a stale model name (e.g. "gemini-2.5-flash") to an Ollama server.
 _DOWNSTREAM_MODEL_ROUTING_ID: str = os.getenv("DOWNSTREAM_MODEL", "").strip()
+# Day 9 Session 2B: gates raw downstream-model-output logging on a schema-rail
+# block (see the schema_rail_block warning below). OFF by default and in the
+# demo configuration -- a reliability/compliance platform must not log raw
+# model output, prompts, or retrieved context on the normal request path.
+_DEV_DIAGNOSTIC_LOGS: bool = os.getenv("DEV_DIAGNOSTIC_LOGS", "") == "1"
 
 if _DOWNSTREAM_URL and not _DOWNSTREAM_MODEL_ROUTING_ID:
     log.warning(
@@ -928,27 +933,39 @@ async def _rag_query_inner(
         if _schema_rail is not None:
             schema_decision = _schema_rail.check(answer, retrieved_chunk_ids)
             if schema_decision.outcome == "block":
-                # TODO(d5a-m1): remove or gate behind DEV_DIAGNOSTIC_LOGS=1 before M1.
-                # Raw model output should not be logged in any production code path.
-                # No log Formatter in this codebase renders `extra` fields into the
-                # output text (default uvicorn/logging formatters ignore them), so
-                # the diagnostic values are also placed directly in the message
-                # string to guarantee they show up in plain log output under grep.
-                log.warning(
-                    "schema_rail_block reason=%s raw_response_length=%d "
-                    "raw_ollama_response_snippet=%r app_trace_id=%s",
-                    schema_decision.reason,
-                    len(raw_downstream_body),
-                    raw_downstream_body[:500],
-                    app_trace_id,
-                    extra={
-                        "rail": "schema-enforcement",
-                        "reason": schema_decision.reason,
-                        "raw_ollama_response_snippet": raw_downstream_body[:500],
-                        "raw_response_length": len(raw_downstream_body),
-                        "app_trace_id": app_trace_id,
-                    },
-                )
+                # Raw model output is never logged on the default path -- only
+                # the non-sensitive diagnostic (reason, length, trace id). The
+                # raw snippet is only added when DEV_DIAGNOSTIC_LOGS=1 is set
+                # explicitly (local debugging), never in the demo configuration.
+                if _DEV_DIAGNOSTIC_LOGS:
+                    log.warning(
+                        "schema_rail_block reason=%s raw_response_length=%d "
+                        "raw_ollama_response_snippet=%r app_trace_id=%s",
+                        schema_decision.reason,
+                        len(raw_downstream_body),
+                        raw_downstream_body[:500],
+                        app_trace_id,
+                        extra={
+                            "rail": "schema-enforcement",
+                            "reason": schema_decision.reason,
+                            "raw_ollama_response_snippet": raw_downstream_body[:500],
+                            "raw_response_length": len(raw_downstream_body),
+                            "app_trace_id": app_trace_id,
+                        },
+                    )
+                else:
+                    log.warning(
+                        "schema_rail_block reason=%s raw_response_length=%d app_trace_id=%s",
+                        schema_decision.reason,
+                        len(raw_downstream_body),
+                        app_trace_id,
+                        extra={
+                            "rail": "schema-enforcement",
+                            "reason": schema_decision.reason,
+                            "raw_response_length": len(raw_downstream_body),
+                            "app_trace_id": app_trace_id,
+                        },
+                    )
                 if _rag_event_producer is not None:
                     asyncio.create_task(
                         _rag_event_producer.emit(

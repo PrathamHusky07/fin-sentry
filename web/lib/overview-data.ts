@@ -19,6 +19,7 @@ export interface JudgeStateCounts {
   evaluated: number;
   partially_evaluated: number;
   blocked_before_evaluation: number;
+  judge_failed: number;
   never_evaluated: number;
 }
 
@@ -95,6 +96,7 @@ export async function fetchOverviewData(): Promise<OverviewData | null> {
     evaluated: 0,
     partially_evaluated: 0,
     blocked_before_evaluation: 0,
+    judge_failed: 0,
     never_evaluated: 0,
   };
   const blockReasonTally = new Map<string, number>();

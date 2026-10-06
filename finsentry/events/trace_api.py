@@ -5,15 +5,27 @@ between the dashboard (which queries RisingWave and disk artifacts to build
 these) and the gateway (which only ever sees the resulting JSON over
 httpx) -- same Option C boundary as finsentry/events/metrics_snapshot.py.
 
-judge_state is the four-state model confirmed against real persisted data
+judge_state is the five-state model confirmed against real persisted data
 (see docs/build-log.md): a judge_verdicts row with status="complete" is
 "evaluated"; status="partial" is "partially_evaluated" (some of the three
-RAGAS metrics completed, others skipped for a judge-side reason); a
-judge_verdicts row with status="failed" is "blocked_before_evaluation" --
-confirmed this always pairs with a non-success rag_events row, i.e. there
-was nothing to judge, never a judge error; no judge_verdicts row at all
-(a success rag_events row the async consumer never produced a verdict for)
-is "never_evaluated". Never collapse these into three or fewer states.
+RAGAS metrics completed, others skipped for a judge-side reason); no
+judge_verdicts row at all (a success rag_events row the async consumer
+never produced a verdict for) is "never_evaluated".
+
+A judge_verdicts row with status="failed" splits on the paired rag_events
+row's status (Day 9 Session 2B -- Phase 0 found the two-state version of
+this conflated two different things):
+
+- rag_status != "success" (blocked/error): "blocked_before_evaluation" --
+  there was nothing to judge, never a judge error.
+- rag_status == "success": "judge_failed" -- the RAG request succeeded but
+  FlashJudge.evaluate's complete_count==0 branch (finsentry/judges/
+  flash_judge.py) means all three RAGAS metrics errored out or were
+  skipped (a Gemini outage, a missing API key) on a request that had a
+  real answer to judge. This is a judge-pipeline outage, not a guardrail
+  decision -- surface it as an operational event, not a security block.
+
+Never collapse these into fewer states.
 """
 
 from __future__ import annotations
@@ -24,7 +36,11 @@ from typing import Literal
 from pydantic import BaseModel
 
 JudgeState = Literal[
-    "evaluated", "partially_evaluated", "blocked_before_evaluation", "never_evaluated"
+    "evaluated",
+    "partially_evaluated",
+    "blocked_before_evaluation",
+    "judge_failed",
+    "never_evaluated",
 ]
 
 
