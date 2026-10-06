@@ -1,136 +1,33 @@
 import type { Metadata } from "next";
-import { AttentionRequired } from "@/components/attention-required";
-import { JudgeStateDistribution } from "@/components/judge-state-distribution";
-import { LiveMetricTiles } from "@/components/live-metric-tiles";
-import { Panel } from "@/components/panel";
-import { RecentTraces } from "@/components/recent-traces";
-import { ReliabilityPipeline } from "@/components/reliability-pipeline";
-import { StatusDot } from "@/components/status-dot";
-import { fetchCalibrationHealth, fetchOverviewData } from "@/lib/overview-data";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Overview — Fin-Sentry",
+  title: "Fin-Sentry",
 };
 
-const CALIBRATION_STATE_COLOR: Record<
-  string,
-  "positive" | "warning" | "failure"
-> = {
-  healthy: "positive",
-  degraded: "warning",
-  drifted: "failure",
-  unavailable: "failure",
-};
-
-export default async function OverviewPage() {
-  const [overview, calibration] = await Promise.all([
-    fetchOverviewData(),
-    fetchCalibrationHealth(),
-  ]);
-
-  // Completion (did the judge finish running) and quality are different
-  // questions -- see docs/internal/day9-frontend-data-contract.md's "No
-  // quality %" note. "Complete" and "partial" are also never collapsed
-  // into one number below: a partial evaluation (some of the three RAGAS
-  // metrics skipped) is not the same claim as a complete one, even though
-  // both count toward "evaluation completion."
-  const completedOrPartialCount = overview
-    ? overview.judgeStateCounts.evaluated +
-      overview.judgeStateCounts.partially_evaluated
-    : null;
-  const evaluationCompletionPct =
-    overview && overview.totalRequests > 0 && completedOrPartialCount !== null
-      ? ((completedOrPartialCount / overview.totalRequests) * 100).toFixed(1)
-      : null;
-
+/**
+ * Day 9 Phase 4: information-architecture placeholder. The presentation
+ * layer (hero, architecture visualization, project narrative) is built in
+ * Phase 5 -- this exists only so the route split (operations tool moves to
+ * /overview) lands as its own reviewable step, per web/CLAUDE.md's
+ * application-vs-presentation split.
+ */
+export default function LandingPage() {
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-      <h1 className="text-text-primary text-2xl font-semibold tracking-tight">
-        Overview
+    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-start justify-center px-4 py-16 sm:px-6">
+      <h1 className="text-text-primary text-3xl font-semibold tracking-tight">
+        Fin-Sentry
       </h1>
-      <p className="text-text-secondary mt-1 text-sm">
-        Is the platform healthy, what needs attention, and why.
+      <p className="text-text-secondary mt-3 max-w-xl text-base">
+        An AI reliability and evaluation platform for financial RAG. The
+        presentation layer for this project is under construction.
       </p>
-
-      <section
-        aria-label="System status"
-        className="border-border bg-background-elevated mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border p-4 text-sm"
+      <Link
+        href="/overview"
+        className="focus-visible:outline-accent border-border bg-background-elevated text-text-primary mt-6 inline-flex min-h-11 items-center rounded-md border px-4 text-sm font-medium hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
       >
-        <span className="font-semibold">System status</span>
-        <span className="flex items-center gap-2">
-          <StatusDot
-            color={
-              calibration
-                ? (CALIBRATION_STATE_COLOR[calibration.state ?? ""] ??
-                  "warning")
-                : "failure"
-            }
-          />
-          Calibration:{" "}
-          {calibration
-            ? (calibration.state ?? "no reading persisted")
-            : "unavailable"}
-        </span>
-        <span className="text-text-secondary">
-          Evaluation completion:{" "}
-          {evaluationCompletionPct !== null ? (
-            <span className="tabular-metric text-text-primary">
-              {evaluationCompletionPct}%
-            </span>
-          ) : (
-            "not available"
-          )}{" "}
-          <span className="text-xs">
-            (share of real traces the flash judge has evaluated, not a quality
-            score)
-          </span>
-        </span>
-      </section>
-
-      <section aria-label="Live metrics" className="mt-6">
-        <LiveMetricTiles showConnectionRow />
-      </section>
-
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <AttentionRequired
-          calibration={calibration}
-          disagreementTraces={overview?.disagreementTraces ?? []}
-          blockedTotal={overview?.blockedTotal ?? 0}
-          blockedByReason={overview?.blockedByReason ?? []}
-        />
-        {overview ? (
-          <JudgeStateDistribution counts={overview.judgeStateCounts} />
-        ) : (
-          <Panel className="p-4">
-            <h2 className="text-text-primary text-sm font-semibold">
-              Judge-state distribution
-            </h2>
-            <p className="text-failure mt-3 text-sm">
-              Trace service unavailable -- counts could not be loaded.
-            </p>
-          </Panel>
-        )}
-      </div>
-
-      <div className="mt-6">
-        {overview ? (
-          <ReliabilityPipeline
-            blockedByReason={overview.blockedByReason}
-            flashCompleteCount={overview.judgeStateCounts.evaluated}
-            flashPartialCount={overview.judgeStateCounts.partially_evaluated}
-            flashNeverRanCount={overview.judgeStateCounts.never_evaluated}
-            frontierSampledCount={overview.frontierSampledCount}
-          />
-        ) : null}
-      </div>
-
-      <div className="mt-6">
-        <RecentTraces
-          title="Recent investigations"
-          description="Frontier/flash disagreements and blocked requests surfaced first, over routine traffic."
-          traces={overview?.recentInvestigations ?? []}
-        />
-      </div>
+        Open the operations console
+      </Link>
     </div>
   );
 }
