@@ -1,5 +1,38 @@
 # Build Log
 
+## 2026-10-05 — d9 Session 2B Phase 3: data-contract v2
+
+Re-derived the frontend data contract from the real post-corpus platform
+state (237 `rag_events` total), not from Session 2A's assumptions.
+Appended a "Contract v2" section to the gitignored
+`docs/internal/day9-frontend-data-contract.md` (same file, not a new
+one) covering: the real five-state judge distribution (`evaluated` 90,
+`blocked_before_evaluation` 95, `never_evaluated` 47,
+`partially_evaluated` 5, `judge_failed` 0 -- real code, zero rows hit it
+yet); the real block-reason breakdown (96 blocked total, `malformed_json`
+57, `no_trustworthy_sources` 21, `low_faithfulness` 7,
+`hallucinated_citation` 5, `schema_violation` 4 -- new this session,
+`input_rail_blocked` 2 -- now two real sub-cases via `block_rail`) plus 6
+real `error`/`downstream_unavailable` rows Overview/Live-Ops have never
+surfaced; 39 of 237 traces frontier-sampled.
+
+Narrowed Session 2A's blanket "no trend charts, ever" conclusion: full-
+history `mv_request_throughput_1m` (69 buckets, 2026-09-14 to now) is
+still too sparse/bursty for a long-range chart, but Phase 2's corpus run
+produced a genuinely dense 12-consecutive-minute stretch of real 1-minute
+buckets. A Recharts line explicitly scoped to the last 30-60 minutes,
+rendering real zero-request buckets as zero (never interpolated), is now
+honestly supportable as "recent activity" -- not a long-term trend, and
+not on Overview (which stays current-state tiles). Documented the
+representative-aggregation rule for Overview/Live-Ops summary rows: exact
+`(ticker, query)` grouping (the real repeat pattern in live data, not
+fuzzy matching), showing real executions/latest/disagreement counts per
+group, linking into Investigations' real ungrouped rows. Every chart
+planned for Phase 5 is mapped to a real source table in the contract
+before any UI work starts.
+
+No code changes this phase -- contract/documentation only.
+
 ## 2026-10-05 — d9 Session 2B Phase 1-2: correctness fixes + real demonstration corpus
 
 **Phase 1 (five verified correctness fixes, each with a regression test).**
