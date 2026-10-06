@@ -1,5 +1,92 @@
 # Build Log
 
+## 2026-10-05 — d9 Session 2B Phase 4-5: information architecture + visual redesign
+
+**Phase 4.** Split the operations tool from the presentation layer per
+web/CLAUDE.md: the real Overview command center moved from `/` to
+`/overview`; `/` is now the presentation layer entry point (built out in
+Phase 5). Nav updated to point at `/overview`; the Fin-Sentry wordmark
+still links to `/`; `/judges` keeps redirecting to `/investigations`. No
+other route needed a redirect -- `/`'s meaning change is the intended
+architecture change, not a broken link.
+
+**Phase 5.** `frontend-design` (the skill the session prompt named as the
+construction methodology) is not in this installation's skill list --
+only `web-design-guidelines` is. Proceeded with direct design judgment
+for construction and used `web-design-guidelines` for the Phase 6 audit
+as instructed; noted honestly rather than claiming a skill that wasn't
+available.
+
+Added a fourth signal color, `--disagreement`, distinct from `--failure`
+-- a flash/frontier disagreement is a real finding the platform exists to
+surface, not a system failure (see web/CLAUDE.md's judge/frontier data
+section). Used on the Overview attention banner, the Investigations
+disagreement-lens button, and a new disagreement callout on Trace Detail.
+
+Built `/` as the real presentation layer: a hero with an original
+architecture visualization (nine real stages read off the module layout,
+explicitly structural -- no live counts, no fake traffic), three real
+screenshots of the running application (Overview, Investigations, the
+Amazon disagreement trace, captured via Playwright against the live
+redesigned UI and saved to `web/public/screenshots/`), and a factual
+engineering-notes section. No marketing language, no customer logos, no
+fabricated metrics, no videos.
+
+Investigations: the sticky-header table became a generic `DataTable`
+component (row hover/selected/keyboard states, bounded horizontal scroll)
+-- building it surfaced a real bug, the previous table had no `overflow-x`
+handling and was pushing the page itself wider than the viewport at
+1440px; fixed by scoping the scroll to the table's own container.
+Investigations' filter state now reads `q`/`ticker`/`judge_state`/
+`frontier_sampled` from the URL on mount, not just `status`/
+`disagreement`/`trace` -- needed for the new representative-aggregation
+deep links below.
+
+Overview's "Recent Investigations" and Live Operations' "Recent activity"
+now apply the representative-aggregation rule from the Phase 3 contract:
+real executions sharing the exact same `(ticker, query)` collapse to one
+summary row ("N executions, latest Xm ago, M disagreements") linking into
+Investigations, where every execution is still an individual, never-
+deduplicated row. Building this surfaced a second real bug: `malformed_
+json` and the new `schema_violation` reason (from Phase 2's corpus) both
+mapped to the label "schema violation" in the Attention Required panel,
+making two different real reasons look identical in the breakdown;
+relabeled distinctly.
+
+Trace Detail: when flash and frontier faithfulness scores differ by the
+same >=0.5 threshold the disagreement lens uses, a banner now renders
+first, before the query section -- large Flash-vs-Frontier numbers plus
+the real `gemini-rubric` reasoning. Verified against the live Amazon
+trace: the comparison and reasoning are visible within the first
+screenful of the dialog.
+
+Live Operations gained a real Recharts time series (requests/minute,
+avg/p95 latency) fed by a client-side rolling buffer of real SSE
+`MetricsSnapshot` pushes, deduped by `window_end`, capped at 60 points.
+Deliberately not backed by a new backend history route: every existing
+metrics query (`finsentry/dashboard/app.py`'s `_fetch_metrics()`) is
+`ORDER BY window_end DESC LIMIT 1`, so serving historical buckets would
+mean a new route, and the root `CLAUDE.md` requires asking before
+changing the API surface. The chart instead starts empty on page load and
+fills in only with buckets that arrive live -- `LIVE` provenance, never
+backfilled, never a fabricated line. Documented this revision in
+`docs/internal/day9-frontend-data-contract.md` before building it.
+
+Reliability pipeline (Overview): each stage now labels its kind (request
+path / guardrail / judge), shows a focus/hover-revealed detail line with
+real finer-grained breakdowns (e.g. the four distinct output-rail block
+reasons), and gets a visible warning ring when its real blocked count is
+above zero.
+
+Verification: `npx tsc --noEmit`, `npm run lint`, `npm run build`, and
+`npx prettier --check` all clean on every touched file. Manually checked
+375/768/1440px on `/`, `/overview`, `/investigations`, and the Amazon
+trace dialog with a real browser (Playwright) -- zero horizontal overflow
+at any width (the DataTable fix above was found this way, not assumed),
+zero console errors.
+
+Commits: `8315394` (Phase 4), `472b873` (Phase 5).
+
 ## 2026-10-05 — d9 Session 2B Phase 3: data-contract v2
 
 Re-derived the frontend data contract from the real post-corpus platform
