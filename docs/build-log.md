@@ -1,5 +1,54 @@
 # Build Log
 
+## 2026-10-06 — d9 Session 2B Phase 6: verification, close session 2B
+
+Backend: `pytest -x -q` 559 passed, `ruff check .` clean, `mypy
+finsentry/ --strict` clean (86 files). Frontend: `npx tsc --noEmit`,
+`npm run lint`, `npm run build`, `npx prettier --check` all clean.
+
+Added four Playwright spec files (`e2e/landing.spec.ts`,
+`e2e/overview.spec.ts`, `e2e/investigations.spec.ts`,
+`e2e/trace-detail.spec.ts`) covering the landing hero and architecture
+visualization, Overview's active-nav state, Investigations' search/
+disagreement-lens/pagination/sticky-header/dialog-accessibility contract,
+and the Amazon trace's real Flash 1.000 vs Frontier 0.000 scores with
+reasoning. Deterministic assertions throughout. All 10 tests (the four
+new files plus the existing SSE snapshot test) pass against the live
+stack.
+
+Hit a real infrastructure failure mid-run: RisingWave self-evicted its
+workers and exited under the session's resource load (five parallel
+Playwright workers alongside the rest of the stack). Diagnosed via
+`docker logs` (worker-lease-expiry errors, not an application bug),
+restarted the container, and confirmed zero data loss by row count and
+by the Amazon trace's continued presence -- Redpanda, the real source of
+truth for RisingWave's Kafka-backed sources, was untouched throughout.
+
+Verified zero horizontal overflow, zero console errors, and zero failed
+requests across `/`, `/overview`, `/operations`, `/investigations` at
+375/768/1440px (captured screenshots at all three widths for all four
+routes plus the Amazon trace dialog).
+
+Fetched the current Vercel Web Interface Guidelines and audited every
+file changed this session. Three real, specific findings fixed: missing
+`autoComplete`/`spellCheck` on the Investigations filter inputs, a
+straight-apostrophe HTML entity where the guideline wants curly, and a
+keyboard-focused table row that could land behind the sticky header
+(fixed with `scroll-margin-top`). Added `text-balance`/`text-pretty` to
+the landing page's headings and hero paragraph. Everything else audited
+(ARIA labels, focus-visible states, keyboard handlers, image dimensions,
+date/number formatting, hover states, URL-reflects-state, reduced-motion
+handling) was already compliant.
+
+Commits: `4ffb6e8` (Playwright suite), `39aa432` (audit fixes). Working
+tree clean, nothing pushed.
+
+Status: DAY 9 SESSION 2B COMPLETE -- correctness fixes, real demo
+corpus, data-contract v2, information-architecture split, presentation
+layer, and the full operations-tool visual redesign. Reliability
+experiments and adaptive sampling deferred, as planned, to the
+day-10/day-9-experiment work still ahead.
+
 ## 2026-10-05 — d9 Session 2B Phase 4-5: information architecture + visual redesign
 
 **Phase 4.** Split the operations tool from the presentation layer per
