@@ -1,5 +1,98 @@
 # Build Log
 
+## 2026-10-05 — d9 Session 2B Phase 1-2: correctness fixes + real demonstration corpus
+
+**Phase 1 (five verified correctness fixes, each with a regression test).**
+(1) `/traces` and the disagreement-lens query fanned out on a plain
+`LEFT JOIN judge_verdicts` with no latest-row guard -- a trace with two
+verdict rows (a retry, a re-score) would duplicate in the list and could
+disagree with the detail endpoint on which verdict represents it. Fixed
+with a `ROW_NUMBER() OVER (PARTITION BY app_trace_id ORDER BY
+timestamp_utc DESC)` window in both places, matching the detail
+endpoint's own rule -- not a `DISTINCT` band-aid. Live regression test
+publishes two real `judge_verdicts` Kafka events for one trace and proves
+exactly one row comes back, carrying the later verdict's state. (2) The
+Phase 0-documented gap: `judge_status="failed"` was classified identically
+whether the RAG request was blocked (nothing to judge) or succeeded and
+the judge pipeline itself errored out (`flash_judge.py`'s
+`complete_count==0` branch on a Gemini outage or missing key). Added a
+fifth `judge_state`, `judge_failed`, derived from `judge_status="failed"
+AND rag_status="success"`, threaded through the dashboard classifier, the
+`trace_api` contract, and the frontend (badge with its own accent-colored
+non-alarming treatment, filter options, distribution panel). Zero rows in
+live data fall into it today (confirmed by direct query) -- it starts
+mattering once a judge failure happens on a successful request, which
+Phase 2's corpus did not naturally produce. (3) The schema-rail-block log
+unconditionally logged the first 500 raw characters of downstream model
+output, in both the message and `extra` -- a standing TODO. Gated behind
+`DEV_DIAGNOSTIC_LOGS=1` (unset/off by default and in the demo config);
+two new tests prove the raw snippet is absent by default and present only
+when the flag is set. (4) Overview's pipeline diagram summed
+`evaluated + partially_evaluated` into one "N evaluated" label, conflating
+a complete judgment with a partial one -- split into separate
+complete/partial counts (`ReliabilityPipeline`'s `flashCompleteCount` /
+`flashPartialCount`). (5) The two live SQL regression tests used `all(...)`
+checks that pass vacuously on an empty result set; added non-empty
+assertions (documented as snapshot assertions, not structural invariants)
+so the filters are proven to return the right population, not just
+nothing. `pytest -x -q`: 559 passed. `ruff check .` and `mypy finsentry/
+--strict` clean. Frontend `tsc`/`lint`/`prettier`/`build` clean on touched
+files. Commit `6307b15`.
+
+Found and noted, not fixed (out of this session's scope): the whole
+repo's `ruff format --check .` fails on 82 pre-existing files due to a
+ruff-version formatting difference (installed `0.16.6` vs whatever
+generated the current formatting; `requirements.txt` only pins
+`ruff>=0.5.0`) -- confirmed via `git show HEAD:<file> | ruff format
+--check` that this predates this session's changes. Also noticed while
+reading the Phase 2 corpus's `malformed_json` error bodies:
+`SchemaEnforcementRail`'s `details.raw_snippet` field echoes a truncated
+raw downstream-output snippet back to the API *caller* in the 422
+response body -- a different code path from the Phase 1 logging fix
+(which only gated the server-side log line). Not touched; worth a look in
+a future session.
+
+**Phase 2 (real demonstration corpus, run through the real pipeline, no
+synthetic inserts).** 40 questions across 5 well-covered real tickers
+(AAPL, MSFT, AMZN, NVDA, JPM -- coverage verified against the live
+`corpus` table before writing a single question), 8 per company spanning
+the full diversity rubric (direct factual, a different metric, YoY,
+segment/product, multi-hop, temporal, derived/calculated,
+citation-sensitive). One manual end-to-end validation call plus one
+legitimate retry round of 5 questions that hit a transient
+`downstream_unavailable` (504) on the first pass (an infrastructure
+timeout, not a guardrail decision) -- 46 real executions total, all
+verified by direct RisingWave query against `rag_events`/`judge_verdicts`,
+never from the HTTP responses. Hit and resolved the same stale
+`--reload`-worker hang Session 2A's Phase 0 already diagnosed (this
+session's own Phase 1 edit to `finsentry/gateway/main.py` triggered it);
+restarted the gateway cleanly before running the corpus.
+
+Real resulting distribution: 12 success, 29 blocked (`malformed_json` 19,
+`schema_violation` 4 -- a new real reason not seen before, `low_faithfulness`
+4, `hallucinated_citation` 1, `input_rail_blocked` 1 -- a real
+hazard-taxonomy false positive on a legitimate credit-risk question,
+adding a second real `block_rail` value beyond the existing
+prompt-injection one), 5 `downstream_unavailable` errors (first pass
+only; all five resolved to a real block on retry). 1 of 46 was
+frontier-sampled (the manual AAPL validation trace: flash 1.0, real
+gemini-rubric 1.0, no new disagreement -- the Amazon FY2024 trace stays
+the sole showcase). Zero rows landed in the new `judge_failed` state and
+zero duplicate `judge_verdicts` rows were produced (nothing in this
+pipeline retries evaluation) -- both Phase 1 fixes are proven correct by
+their own regression tests, not exercised by this corpus. The real ~74%
+block rate is a genuine, unplanned finding about the local CPU
+llama3.1:8b's reliability on longer/derived answers (JPM's single-figure
+lookups succeeded 75% of the time; segment/YoY/multi-hop questions for
+the other four tickers mostly didn't) -- not shaped to look a particular
+way, and an honest demonstration of why the guardrail layer exists.
+
+Full per-question inventory (company, question, archetype, result,
+scores) written to `docs/internal/day9-demo-corpus.md` -- per this file's
+own rule, `docs/internal/` is gitignored and not committed (same
+precedent as Session 2A's `day9-frontend-data-contract.md`); the summary
+above is the durable, committed record.
+
 ## 2026-10-05 — d9 Session 2A: product shell, Overview command center, Investigations
 
 The make-or-break frontend session: turned the working-but-primitive Session 1
