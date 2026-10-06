@@ -3,8 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { AsyncState, type AsyncStatus } from "@/components/async-state";
 import { ExecutionPath } from "@/components/execution-path";
+import { StatusDot } from "@/components/status-dot";
 import { GATEWAY_URL } from "@/lib/config";
 import type { TraceDetailResponse } from "@/lib/trace-api";
+
+// Mirrors _DISAGREEMENT_SCORE_DELTA in finsentry/dashboard/app.py -- a
+// display threshold for highlighting, not re-derived independently.
+const DISAGREEMENT_SCORE_DELTA = 0.5;
+
+function detectDisagreement(
+  detail: TraceDetailResponse,
+): { flashScore: number; frontierScore: number } | null {
+  const flashScore = detail.flash?.faithfulness_score;
+  const frontierScore = detail.frontier.evidence?.faithfulness_score;
+  if (flashScore == null || frontierScore == null) return null;
+  if (Math.abs(flashScore - frontierScore) < DISAGREEMENT_SCORE_DELTA) {
+    return null;
+  }
+  return { flashScore, frontierScore };
+}
 
 interface ScoreRowProps {
   label: string;
@@ -163,6 +180,48 @@ export function TraceDrilldown({
               </p>
             ) : (
               <div className="space-y-5">
+                {(() => {
+                  const disagreement = detectDisagreement(detail);
+                  if (!disagreement) return null;
+                  return (
+                    <section
+                      aria-label="Flash and frontier disagree"
+                      className="border-disagreement/40 bg-disagreement/5 rounded-md border p-3.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <StatusDot color="disagreement" />
+                        <span className="text-disagreement text-sm font-semibold">
+                          Flash and frontier disagree on faithfulness
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center gap-6">
+                        <div>
+                          <p className="text-text-secondary text-[11px] tracking-wide uppercase">
+                            Flash
+                          </p>
+                          <p className="tabular-metric text-text-primary text-3xl font-semibold">
+                            {disagreement.flashScore.toFixed(3)}
+                          </p>
+                        </div>
+                        <span className="text-text-secondary text-xl">vs</span>
+                        <div>
+                          <p className="text-text-secondary text-[11px] tracking-wide uppercase">
+                            Frontier (gemini-rubric)
+                          </p>
+                          <p className="tabular-metric text-text-primary text-3xl font-semibold">
+                            {disagreement.frontierScore.toFixed(3)}
+                          </p>
+                        </div>
+                      </div>
+                      {detail.frontier.evidence?.rubric_reasoning ? (
+                        <p className="text-text-primary mt-3 text-sm leading-relaxed">
+                          {detail.frontier.evidence.rubric_reasoning}
+                        </p>
+                      ) : null}
+                    </section>
+                  );
+                })()}
+
                 <section>
                   <h2 className="text-text-primary text-lg font-semibold">
                     {detail.query}

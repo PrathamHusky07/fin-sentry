@@ -52,7 +52,11 @@ export function Investigations() {
 
   const [filters, setFilters] = useState<InvestigationsFilterState>(() => ({
     ...EMPTY_FILTERS,
+    q: searchParams.get("q") ?? "",
+    ticker: searchParams.get("ticker") ?? "",
     ragStatus: searchParams.get("status") ?? "",
+    judgeState: searchParams.get("judge_state") ?? "",
+    frontierSampled: searchParams.get("frontier_sampled") ?? "",
     disagreement: searchParams.get("disagreement") === "true",
   }));
   const [offset, setOffset] = useState(0);
@@ -113,12 +117,13 @@ export function Investigations() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-      <h1 className="text-text-primary text-2xl font-semibold tracking-tight">
+      <h1 className="text-text-primary text-3xl font-semibold tracking-tight">
         Investigations
       </h1>
-      <p className="text-text-secondary mt-1 text-sm">
-        Search and filter every persisted request. Click a row for the full
-        trace.
+      <p className="text-text-secondary mt-1.5 max-w-2xl text-sm">
+        Every persisted request, individually -- never grouped or deduplicated.
+        Search, filter, or open the disagreement lens below, then select a row
+        for the full trace evidence.
       </p>
 
       <div className="mt-6">
@@ -150,6 +155,7 @@ export function Investigations() {
               <InvestigationsTable
                 traces={data.traces}
                 onSelect={setSelected}
+                selectedTraceId={selected}
               />
               <div className="mt-3 flex items-center gap-2">
                 <button

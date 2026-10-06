@@ -1,5 +1,11 @@
 type StatusColor =
-  "positive" | "warning" | "failure" | "info" | "accent" | "neutral";
+  | "positive"
+  | "warning"
+  | "failure"
+  | "info"
+  | "accent"
+  | "disagreement"
+  | "neutral";
 
 const COLOR_CLASS: Record<StatusColor, string> = {
   positive: "bg-positive",
@@ -7,6 +13,7 @@ const COLOR_CLASS: Record<StatusColor, string> = {
   failure: "bg-failure",
   info: "bg-info",
   accent: "bg-accent",
+  disagreement: "bg-disagreement",
   neutral: "bg-text-secondary",
 };
 

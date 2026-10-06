@@ -89,9 +89,9 @@ export function InvestigationsFilters({
         onClick={() =>
           onChange({ ...filters, disagreement: !filters.disagreement })
         }
-        className={`focus-visible:outline-accent min-h-11 rounded-md border px-3 text-sm focus-visible:outline focus-visible:outline-2 ${
+        className={`focus-visible:outline-accent min-h-11 rounded-md border px-3 text-sm transition-colors focus-visible:outline focus-visible:outline-2 ${
           filters.disagreement
-            ? "border-failure bg-failure/10 text-failure"
+            ? "border-disagreement bg-disagreement/10 text-disagreement"
             : "border-border hover:bg-surface text-text-secondary"
         }`}
       >

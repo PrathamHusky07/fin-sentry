@@ -16,6 +16,11 @@
   --warning: #c98a1e;
   --failure: #c4493d;
   --info: #4a7fb5;
+  /* A fourth signal, distinct from failure -- a flash/frontier disagreement
+     is a real finding the platform is supposed to surface, not a system
+     failure. Never reuse --failure for it (see web/CLAUDE.md, judge /
+     frontier data section). */
+  --disagreement: #8451c4;
 }
 
 @theme inline {
@@ -30,6 +35,7 @@
   --color-warning: var(--warning);
   --color-failure: var(--failure);
   --color-info: var(--info);
+  --color-disagreement: var(--disagreement);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -47,6 +53,7 @@
     --warning: #f5a623;
     --failure: #f2645a;
     --info: #7daedc;
+    --disagreement: #b48af0;
   }
 }
 

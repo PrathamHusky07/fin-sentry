@@ -1,8 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { MetricTile } from "@/components/metric-tile";
 import { StatusDot } from "@/components/status-dot";
-import { useMetricsSnapshot } from "@/lib/use-metrics-snapshot";
+import {
+  useMetricsSnapshot,
+  type ThroughputHistoryPoint,
+} from "@/lib/use-metrics-snapshot";
 
 /**
  * The real snapshot metrics (throughput, latency, tokens, cost) over SSE --
@@ -10,13 +14,20 @@ import { useMetricsSnapshot } from "@/lib/use-metrics-snapshot";
  * snapshot proxy on the gateway (Option C: RisingWave access stays in the
  * dashboard process, the gateway only relays the poller's SSE stream).
  * Shared with Live Operations so both read the same live connection logic.
+ *
+ * `children`, when provided, renders below the tile grid with the same
+ * hook's `throughputHistory` -- lets Live Operations add its recent-
+ * activity chart from this one SSE connection instead of opening a second.
+ * Overview does not pass children (no chart there, see the data contract).
  */
 export function LiveMetricTiles({
   showConnectionRow = false,
+  children,
 }: {
   showConnectionRow?: boolean;
+  children?: (history: ThroughputHistoryPoint[]) => ReactNode;
 }) {
-  const { snapshot, connectionState } = useMetricsSnapshot();
+  const { snapshot, connectionState, throughputHistory } = useMetricsSnapshot();
   const throughput = snapshot?.throughput ?? null;
   const tokens = snapshot?.tokens ?? null;
   const cost = snapshot?.cost ?? null;
@@ -94,6 +105,8 @@ export function LiveMetricTiles({
           asOf={cost?.window_end ?? null}
         />
       </div>
+
+      {children ? children(throughputHistory) : null}
     </div>
   );
 }

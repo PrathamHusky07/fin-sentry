@@ -6,15 +6,23 @@ import type { CalibrationHealthResponse, TraceListItem } from "@/lib/trace-api";
 
 interface AttentionItem {
   key: string;
-  color: "warning" | "failure" | "info";
+  color: "warning" | "failure" | "info" | "disagreement";
   text: string;
   href: string;
 }
 
+// Day 9 Session 2B: malformed_json and schema_violation are two distinct
+// real block reasons (unparseable JSON vs. valid JSON in the wrong shape --
+// see docs/internal/day9-frontend-data-contract.md's Contract v2). They
+// used to collapse to the same "schema violation" label before
+// schema_violation existed as its own reason; kept distinct here so the
+// breakdown never shows two different-looking entries that are actually
+// the same mapped label.
 const BLOCK_REASON_LABEL: Record<string, string> = {
   input_rail_blocked: "prompt injection (input rail)",
   no_trustworthy_sources: "untrusted retrieval source",
-  malformed_json: "schema violation",
+  malformed_json: "malformed JSON",
+  schema_violation: "schema violation (valid JSON, wrong shape)",
   hallucinated_citation: "hallucinated citation",
   low_faithfulness: "low faithfulness",
 };
@@ -57,7 +65,7 @@ export function AttentionRequired({
   if (disagreementTraces.length > 0) {
     items.push({
       key: "disagreement",
-      color: "failure",
+      color: "disagreement",
       text: `Flash/frontier disagreement: ${disagreementTraces.length} trace${disagreementTraces.length === 1 ? "" : "s"} where the frontier judge contradicted the flash tier`,
       href: "/investigations?disagreement=true",
     });

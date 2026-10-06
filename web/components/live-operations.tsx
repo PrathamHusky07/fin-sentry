@@ -6,6 +6,7 @@ import { CalibrationHealthPanel } from "@/components/calibration-health-panel";
 import { JudgeStateDistribution } from "@/components/judge-state-distribution";
 import { LiveMetricTiles } from "@/components/live-metric-tiles";
 import { Panel } from "@/components/panel";
+import { RecentActivityChart } from "@/components/recent-activity-chart";
 import { RecentTraces } from "@/components/recent-traces";
 import { StatusDot } from "@/components/status-dot";
 import { GATEWAY_URL } from "@/lib/config";
@@ -82,9 +83,18 @@ export function LiveOperations({
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
+      <h1 className="text-text-primary text-3xl font-semibold tracking-tight">
+        Live Operations
+      </h1>
+      <p className="text-text-secondary mt-1.5 max-w-2xl text-sm">
+        What is happening right now: real snapshot metrics with staleness,
+        calibration drift, and recent activity. Not the full trace dump -- that
+        is Investigations.
+      </p>
+
       <section
         aria-label="System health"
-        className="border-border bg-background-elevated flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border p-4 text-sm"
+        className="border-border bg-background-elevated mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border p-4 text-sm"
       >
         <span className="font-semibold">System health</span>
         <span className={`flex items-center gap-2`}>
@@ -99,7 +109,9 @@ export function LiveOperations({
       </section>
 
       <div className="mt-6">
-        <LiveMetricTiles showConnectionRow />
+        <LiveMetricTiles showConnectionRow>
+          {(history) => <RecentActivityChart history={history} />}
+        </LiveMetricTiles>
       </div>
 
       <div className="mt-6">
@@ -163,8 +175,8 @@ export function LiveOperations({
       <div className="mt-6">
         <RecentTraces
           title="Recent activity"
-          description="The most recent real traces, in order."
-          traces={overviewData?.recentChronological ?? []}
+          description="The most recent real traces, in order. Repeated questions are grouped; every real execution is still visible in Investigations."
+          groups={overviewData?.recentChronological ?? []}
         />
       </div>
     </div>

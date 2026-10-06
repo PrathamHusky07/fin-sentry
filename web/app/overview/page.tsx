@@ -43,48 +43,53 @@ export default async function OverviewPage() {
       ? ((completedOrPartialCount / overview.totalRequests) * 100).toFixed(1)
       : null;
 
+  const calibrationColor = calibration
+    ? (CALIBRATION_STATE_COLOR[calibration.state ?? ""] ?? "warning")
+    : "failure";
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-      <h1 className="text-text-primary text-2xl font-semibold tracking-tight">
-        Overview
-      </h1>
-      <p className="text-text-secondary mt-1 text-sm">
-        Is the platform healthy, what needs attention, and why.
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h1 className="text-text-primary text-3xl font-semibold tracking-tight">
+          Overview
+        </h1>
+        <p className="text-text-secondary text-sm">
+          Is the platform healthy, what needs attention, and why.
+        </p>
+      </div>
 
       <section
         aria-label="System status"
-        className="border-border bg-background-elevated mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border p-4 text-sm"
+        className="border-border bg-background-elevated mt-6 flex flex-col gap-4 rounded-md border p-5 sm:flex-row sm:items-center sm:gap-8"
       >
-        <span className="font-semibold">System status</span>
-        <span className="flex items-center gap-2">
-          <StatusDot
-            color={
-              calibration
-                ? (CALIBRATION_STATE_COLOR[calibration.state ?? ""] ??
-                  "warning")
-                : "failure"
-            }
-          />
-          Calibration:{" "}
-          {calibration
-            ? (calibration.state ?? "no reading persisted")
-            : "unavailable"}
-        </span>
-        <span className="text-text-secondary">
-          Evaluation completion:{" "}
-          {evaluationCompletionPct !== null ? (
-            <span className="tabular-metric text-text-primary">
-              {evaluationCompletionPct}%
-            </span>
-          ) : (
-            "not available"
-          )}{" "}
-          <span className="text-xs">
-            (share of real traces the flash judge has evaluated, not a quality
-            score)
-          </span>
-        </span>
+        <div className="flex items-center gap-3">
+          <StatusDot color={calibrationColor} />
+          <div>
+            <p className="text-text-secondary text-xs tracking-wide uppercase">
+              Calibration
+            </p>
+            <p className="text-text-primary text-xl font-semibold">
+              {calibration
+                ? (calibration.state ?? "no reading persisted")
+                : "unavailable"}
+            </p>
+          </div>
+        </div>
+        <div className="bg-border hidden h-10 w-px sm:block" />
+        <div>
+          <p className="text-text-secondary text-xs tracking-wide uppercase">
+            Evaluation completion
+          </p>
+          <p className="tabular-metric text-text-primary text-xl font-semibold">
+            {evaluationCompletionPct !== null
+              ? `${evaluationCompletionPct}%`
+              : "not available"}
+          </p>
+          <p className="text-text-secondary mt-0.5 text-xs">
+            Share of real traces the flash judge has evaluated -- not a quality
+            score.
+          </p>
+        </div>
       </section>
 
       <section aria-label="Live metrics" className="mt-6">
@@ -127,8 +132,8 @@ export default async function OverviewPage() {
       <div className="mt-6">
         <RecentTraces
           title="Recent investigations"
-          description="Frontier/flash disagreements and blocked requests surfaced first, over routine traffic."
-          traces={overview?.recentInvestigations ?? []}
+          description="Frontier/flash disagreements and blocked requests surfaced first, over routine traffic. Repeated questions are grouped; every real execution is still visible in Investigations."
+          groups={overview?.recentInvestigations ?? []}
         />
       </div>
     </div>
