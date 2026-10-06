@@ -35,6 +35,7 @@ export function InvestigationsFilters({
         onChange={(e) => onChange({ ...filters, q: e.target.value })}
         placeholder="Search query text or trace ID"
         aria-label="Search query text or trace ID"
+        autoComplete="off"
         className={`${INPUT_CLASS} min-w-0 flex-1 basis-56`}
       />
       <input
@@ -43,6 +44,8 @@ export function InvestigationsFilters({
         onChange={(e) => onChange({ ...filters, ticker: e.target.value })}
         placeholder="Ticker"
         aria-label="Filter by ticker"
+        autoComplete="off"
+        spellCheck={false}
         className={`${INPUT_CLASS} w-24`}
       />
       <select

@@ -75,7 +75,7 @@ export function DataTable<T>({
                 role={interactive ? "button" : undefined}
                 aria-label={interactive ? getRowLabel?.(row) : undefined}
                 aria-current={selected ? "true" : undefined}
-                className={`border-border bg-background-elevated border-b outline-none last:border-b-0 ${
+                className={`border-border bg-background-elevated scroll-mt-10 border-b outline-none last:border-b-0 ${
                   interactive
                     ? "hover:bg-surface focus-visible:outline-accent cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2"
                     : ""

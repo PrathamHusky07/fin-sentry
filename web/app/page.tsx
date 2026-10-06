@@ -22,7 +22,7 @@ const SCREENSHOTS = [
   },
   {
     src: "/screenshots/trace-detail.png",
-    alt: "A trace detail view showing a real disagreement: the flash judge scored an answer 1.000 and the frontier judge scored it 0.000, with the frontier judge's written reasoning.",
+    alt: "A trace detail view showing a real disagreement: the flash judge scored an answer 1.000 and the frontier judge scored it 0.000, with the frontier judge’s written reasoning.",
     caption:
       "A real disagreement the platform caught. The flash judge scored this Amazon answer fully faithful. The frontier judge scored it zero and explained why.",
   },
@@ -32,10 +32,10 @@ export default function LandingPage() {
   return (
     <div className="flex flex-col">
       <section className="mx-auto w-full max-w-5xl px-4 pt-16 pb-12 sm:px-6 sm:pt-24">
-        <h1 className="text-text-primary text-4xl font-semibold tracking-tight sm:text-5xl">
+        <h1 className="text-text-primary text-4xl font-semibold text-balance tracking-tight sm:text-5xl">
           Fin-Sentry
         </h1>
-        <p className="text-text-secondary mt-4 max-w-2xl text-lg leading-relaxed">
+        <p className="text-text-secondary mt-4 max-w-2xl text-lg text-pretty leading-relaxed">
           An AI reliability and evaluation platform for financial RAG. It
           catches unsafe, unsupported, and mis-evaluated answers before they
           reach a user.
@@ -68,7 +68,7 @@ export default function LandingPage() {
 
       <section className="border-border bg-background-elevated border-t">
         <div className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6">
-          <h2 className="text-text-primary text-2xl font-semibold tracking-tight">
+          <h2 className="text-text-primary text-2xl font-semibold text-balance tracking-tight">
             What the platform actually looks like
           </h2>
           <p className="text-text-secondary mt-2 max-w-2xl text-sm leading-relaxed">
@@ -99,7 +99,7 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6">
-        <h2 className="text-text-primary text-2xl font-semibold tracking-tight">
+        <h2 className="text-text-primary text-2xl font-semibold text-balance tracking-tight">
           Engineering choices
         </h2>
         <dl className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -128,7 +128,7 @@ export default function LandingPage() {
             </dt>
             <dd className="text-text-secondary mt-1 text-sm leading-relaxed">
               Both judge tiers are checked against a human-labeled financial
-              golden set using Cohen&apos;s kappa, with explicit drift
+              golden set using Cohen&rsquo;s kappa, with explicit drift
               thresholds.
             </dd>
           </div>
