@@ -14,12 +14,14 @@ describe("calibration edge direction", () => {
     ).toBe(false);
   });
 
-  it("draws the arrow from the frontier box edge to the calibration box edge", () => {
+  it("draws the arrow from the frontier marker to the calibration marker", () => {
     const path = EDGE_PATH[edgeKey("frontier", "calibration")];
     const [, startX] = /^M(\d+),/.exec(path) ?? [];
     const [, endX] = /H(\d+)$/.exec(path) ?? [];
-    expect(Number(startX)).toBe(BOX.frontier.cx + BOX.frontier.w / 2);
-    expect(Number(endX)).toBe(BOX.calibration.cx - BOX.calibration.w / 2);
+    expect(Number(startX)).toBeGreaterThan(BOX.frontier.cx);
+    expect(Number(startX)).toBeLessThan(BOX.calibration.cx);
+    expect(Number(endX)).toBeGreaterThan(Number(startX));
+    expect(Number(endX)).toBeLessThan(BOX.calibration.cx);
   });
 
   it("has a drawn path for every edge", () => {

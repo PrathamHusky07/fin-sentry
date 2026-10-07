@@ -1,115 +1,72 @@
 import type { EdgeKind, NodeId, Plane } from "@/lib/architecture-data";
 
 /**
- * Hand-placed coordinates for the landing topology, in a 1200 x 756
- * viewBox. The request path runs left to right across the top. The event
- * stream is a horizontal bus beneath it, so evaluation reads as consumers
- * hanging off a log rather than as another step in the request. The
- * evidence plane sits at the bottom and is fed by the verdicts and by the
- * stream itself.
+ * Hand-placed coordinates for the landing system map, in a 1200 x 720
+ * viewBox. The map reads like a transit diagram: stations sit on lines, the
+ * request path runs left to right along the top, the event stream is a bar
+ * beneath it, evaluation stations hang off that bar, and the evidence store
+ * is a second bar at the bottom that the verdicts drain into.
  */
 export const VIEW_W = 1200;
-export const VIEW_H = 756;
-export const NODE_W = 136;
-export const NODE_H = 84;
+export const VIEW_H = 720;
+
+/** Station marker radius. */
+export const R = 9;
 
 export interface NodeBox {
+  kind: "station" | "bar";
   cx: number;
   cy: number;
+  /** Width and height of the pointer target (stations) or the bar itself. */
   w: number;
   h: number;
-  /** Lines of sub-label text drawn under the node’s name. */
+  /** Lines of sub-label under a station’s name. Bars draw one line inside. */
   lines: string[];
+  /** Where a station’s label sits, so connectors never run through text. */
+  placement: "below" | "above" | "right";
+}
+
+function station(
+  cx: number,
+  cy: number,
+  lines: string[],
+  placement: NodeBox["placement"] = "below",
+): NodeBox {
+  return { kind: "station", cx, cy, w: 150, h: 96, lines, placement };
 }
 
 export const BOX: Record<NodeId, NodeBox> = {
-  client: {
-    cx: 90,
-    cy: 142,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["POST /v1/rag/query"],
-  },
-  gateway: { cx: 255, cy: 142, w: NODE_W, h: NODE_H, lines: ["FastAPI"] },
-  input: { cx: 420, cy: 142, w: NODE_W, h: NODE_H, lines: ["NeMo Guardrails"] },
-  retrieval: {
-    cx: 585,
-    cy: 142,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["pgvector + rail"],
-  },
-  generation: {
-    cx: 750,
-    cy: 142,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["Ollama, local"],
-  },
-  output: {
-    cx: 915,
-    cy: 142,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["schema, phrases,", "faithfulness"],
-  },
-  response: {
-    cx: 1080,
-    cy: 142,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["answer or", "named block"],
-  },
+  client: station(80, 100, ["a question", "about a filing"]),
+  gateway: station(240, 100, ["the single", "front door"], "above"),
+  input: station(400, 100, ["injection, PII,", "hazard checks"]),
+  retrieval: station(560, 100, ["vector search,", "chunk checks"]),
+  generation: station(720, 100, ["local model,", "bounded call"]),
+  output: station(880, 100, ["schema, citations,", "faithfulness"]),
+  response: station(1040, 100, ["an answer or", "a named block"]),
   stream: {
-    cx: 685,
-    cy: 288,
-    w: 990,
+    kind: "bar",
+    cx: 660,
+    cy: 250,
+    w: 920,
     h: 52,
-    lines: ["Redpanda: rag-responses, judge-verdicts, rag-frontier-verdicts"],
+    lines: ["Redpanda: responses, flash verdicts, frontier verdicts"],
+    placement: "below",
   },
-  flash: {
-    cx: 330,
-    cy: 472,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["gemini-3.6-flash,", "hosted"],
-  },
-  sampler: {
-    cx: 560,
-    cy: 472,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["sha256(trace id)", "mod 10"],
-  },
-  frontier: {
-    cx: 770,
-    cy: 472,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["gemini-rubric,", "hosted"],
-  },
-  calibration: {
-    cx: 1010,
-    cy: 472,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["Cohen’s kappa,", "global"],
-  },
+  flash: station(330, 380, ["gemini-3.6-flash,", "every answer"], "right"),
+  sampler: station(560, 380, ["1 in 10 reviewed"]),
+  frontier: station(780, 380, ["a second opinion,", "hosted Gemini"], "above"),
+  calibration: station(1010, 380, ["measured against", "labeled data"]),
   store: {
-    cx: 550,
-    cy: 668,
-    w: 160,
-    h: NODE_H,
-    lines: ["sources +", "materialized views"],
+    kind: "bar",
+    cx: 660,
+    cy: 540,
+    w: 920,
+    h: 52,
+    lines: ["live views over the event stream"],
+    placement: "below",
   },
-  investigation: {
-    cx: 800,
-    cy: 668,
-    w: NODE_W,
-    h: NODE_H,
-    lines: ["one row per", "execution"],
-  },
-  mcp: { cx: 1010, cy: 668, w: NODE_W, h: NODE_H, lines: ["five read tools"] },
+  investigation: station(760, 650, ["one row per", "execution"]),
+  mcp: station(1000, 650, ["five read tools"]),
 };
 
 export interface PlaneBand {
@@ -117,46 +74,53 @@ export interface PlaneBand {
   y: number;
   h: number;
   title: string;
-  timing: string;
+  note: string;
 }
 
 export const BANDS: PlaneBand[] = [
   {
     plane: "request",
     y: 14,
-    h: 200,
-    title: "REQUEST PATH",
-    timing: "synchronous",
+    h: 178,
+    title: "Request path",
+    note: "the user waits for this",
   },
   {
     plane: "evaluation",
-    y: 346,
-    h: 220,
-    title: "EVALUATION PLANE",
-    timing: "asynchronous",
+    y: 318,
+    h: 174,
+    title: "Evaluation plane",
+    note: "runs after the answer is sent",
   },
-  { plane: "evidence", y: 590, h: 150, title: "EVIDENCE", timing: "persisted" },
+  {
+    plane: "evidence",
+    y: 500,
+    h: 206,
+    title: "Evidence",
+    note: "persisted and queryable",
+  },
 ];
 
-/** SVG path per edge, keyed "from>to". Elbows are explicit so connectors
- * never cross a node. */
+/** SVG path per edge, keyed "from>to". Each starts at the source marker’s
+ * edge and ends a few units short of the target so the arrowhead lands on
+ * the marker, never inside it. */
 export const EDGE_PATH: Record<string, string> = {
-  "client>gateway": "M158,142 H187",
-  "gateway>input": "M323,142 H352",
-  "input>retrieval": "M488,142 H517",
-  "retrieval>generation": "M653,142 H682",
-  "generation>output": "M818,142 H847",
-  "output>response": "M983,142 H1012",
-  "gateway>stream": "M255,184 V262",
-  "stream>flash": "M330,314 V430",
-  "stream>sampler": "M560,314 V430",
-  "sampler>frontier": "M628,472 H702",
-  "frontier>calibration": "M838,472 H942",
-  "flash>store": "M330,514 V574 H515 V626",
-  "frontier>store": "M770,514 V574 H585 V626",
-  "stream>store": "M212,314 V668 H470",
-  "store>investigation": "M630,668 H732",
-  "store>mcp": "M550,710 V732 H1010 V710",
+  "client>gateway": "M91,100 H227",
+  "gateway>input": "M251,100 H387",
+  "input>retrieval": "M411,100 H547",
+  "retrieval>generation": "M571,100 H707",
+  "generation>output": "M731,100 H867",
+  "output>response": "M891,100 H1027",
+  "gateway>stream": "M240,111 V221",
+  "stream>flash": "M330,276 V367",
+  "stream>sampler": "M560,276 V367",
+  "sampler>frontier": "M571,380 H767",
+  "frontier>calibration": "M791,380 H997",
+  "flash>store": "M330,391 V511",
+  "frontier>store": "M780,391 V511",
+  "stream>store": "M218,276 V511",
+  "store>investigation": "M760,566 V637",
+  "store>mcp": "M1000,566 V637",
 };
 
 export function edgeKey(from: NodeId, to: NodeId): string {
@@ -167,9 +131,9 @@ export const EDGE_STYLE: Record<
   EdgeKind,
   { stroke: string; width: number; dash?: string }
 > = {
-  sync: { stroke: "var(--accent)", width: 1.75 },
-  async: { stroke: "var(--signal)", width: 1.5 },
-  measure: { stroke: "var(--text-secondary)", width: 1.25, dash: "2 5" },
+  sync: { stroke: "var(--accent)", width: 3 },
+  async: { stroke: "var(--signal)", width: 2, dash: "6 6" },
+  measure: { stroke: "var(--text-secondary)", width: 1.5, dash: "2 5" },
 };
 
 export const PLANE_STROKE: Record<Plane, string> = {

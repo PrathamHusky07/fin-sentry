@@ -65,7 +65,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "client",
     plane: "request",
     label: "Client",
-    sub: "POST /v1/rag/query",
+    sub: "a question about a filing",
     summary:
       "Asks a question about one of ten SEC filers. The corpus is 10-K, 10-Q and 8-K filings for those ten companies.",
     why: "This is the only synchronous caller. Every number the platform reports starts as one of these requests.",
@@ -75,7 +75,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "gateway",
     plane: "request",
     label: "Gateway",
-    sub: "FastAPI",
+    sub: "the single front door",
     summary:
       "Owns the request from arrival to response, and emits one event per request when the decision is made.",
     why: "A single front door means every request is guarded, bounded and recorded the same way, whatever model sits behind it.",
@@ -85,7 +85,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "input",
     plane: "request",
     label: "Input rails",
-    sub: "NeMo Guardrails",
+    sub: "injection, PII, hazard checks",
     summary:
       "NeMo Guardrails runs three checks: Prompt Guard 2 for prompt injection, Presidio to redact PII, and Llama Guard 3 for the hazard taxonomy.",
     why: "Hostile or unsafe input should never reach retrieval or the model. These rails fail closed, so a rail that errors blocks the request instead of waving it through.",
@@ -95,7 +95,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "retrieval",
     plane: "request",
     label: "Retrieval",
-    sub: "pgvector + rail",
+    sub: "vector search, chunk checks",
     summary:
       "Embeds the query, pulls the closest filing chunks from pgvector, then checks each chunk for source trust, injection and PII.",
     why: "Retrieved text is untrusted input too. A bad chunk is dropped before it reaches the prompt. If no chunk survives, the request stops with no trustworthy sources.",
@@ -105,7 +105,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "generation",
     plane: "request",
     label: "Generation",
-    sub: "Ollama, local",
+    sub: "local model, bounded call",
     summary:
       "A local llama3.1:8b model answers in JSON mode. The call has a 20 second budget, a 15 second cap per attempt, and a circuit breaker.",
     why: "A slow or failing model must not hold the gateway open. After five failures the breaker opens for 30 seconds and callers get an immediate 503. The breaker guards this call only.",
@@ -115,7 +115,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "output",
     plane: "request",
     label: "Output rails",
-    sub: "schema, phrases, faithfulness",
+    sub: "schema, citations, faithfulness",
     summary:
       "Checks the model’s answer before it is returned: output schema and citations, regulated phrases, and a request-time faithfulness score when Gemini is enabled.",
     why: "Valid JSON is not a grounded answer. These rails reject malformed output, citations to chunks that were never retrieved, and answers scored below 0.7 for faithfulness.",
@@ -125,7 +125,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "response",
     plane: "request",
     label: "Response",
-    sub: "answer or named block",
+    sub: "an answer or a named block",
     summary:
       "Returns an answer with citations, or a block that names the rail that stopped it.",
     why: "A block is a recorded result, not a silent failure. Its reason and rail are persisted so the execution can be investigated later.",
@@ -135,7 +135,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "stream",
     plane: "stream",
     label: "Event stream",
-    sub: "Redpanda: rag-responses, judge-verdicts, rag-frontier-verdicts",
+    sub: "Redpanda: responses, flash verdicts, frontier verdicts",
     summary:
       "After the decision, the gateway publishes one event and does not wait for delivery. Judges read it from the stream and write their verdicts back to it.",
     why: "Evaluation is slow and can fail, so it stays off the request path. The tradeoff is at-most-once delivery: an event can be lost, and the platform treats its evaluation data as telemetry, not a ledger.",
@@ -145,7 +145,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "flash",
     plane: "evaluation",
     label: "Flash judge",
-    sub: "gemini-3.6-flash, hosted",
+    sub: "gemini-3.6-flash, every answer",
     summary:
       "A consumer scores every successful answer on faithfulness, answer relevance and context relevance with a hosted Gemini model.",
     why: "Broad, inexpensive coverage. Every delivered answer gets a verdict. A verdict can be partial when one metric times out, and the platform keeps that distinction.",
@@ -154,8 +154,8 @@ export const NODES: Record<NodeId, ArchNode> = {
   sampler: {
     id: "sampler",
     plane: "evaluation",
-    label: "Sampler",
-    sub: "sha256(trace id) mod 10",
+    label: "Deterministic sampler",
+    sub: "1 in 10 reviewed",
     summary:
       "Selects about one trace in ten for frontier review by hashing the trace id.",
     why: "The decision depends only on the trace id, so a retry or a replay never changes whether a trace is reviewed. The rate is fixed at one in ten with no backpressure control.",
@@ -165,7 +165,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "frontier",
     plane: "evaluation",
     label: "Frontier judge",
-    sub: "gemini-rubric, hosted",
+    sub: "a second opinion, hosted Gemini",
     summary:
       "A hosted Gemini judge scores sampled answers against a rubric and records its reasoning and the chunks it relied on.",
     why: "A slower second opinion on a sample. It is the judge that caught the Amazon net income answer the flash tier scored as fully faithful. It runs on hosted Gemini, not locally.",
@@ -175,7 +175,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "calibration",
     plane: "evaluation",
     label: "Calibration",
-    sub: "Cohen’s kappa, global",
+    sub: "measured against labeled data",
     summary:
       "Compares the frontier judge with labels from the FinQA hallucination benchmark using Cohen’s kappa, then reads the result against drift thresholds.",
     why: "A judge is a model that can be wrong. Calibration reports on the judge, not on any request. Today it is one manual canary run saved to disk, so it is a last known reading and not a live monitor.",
@@ -185,7 +185,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "store",
     plane: "evidence",
     label: "RisingWave",
-    sub: "sources + materialized views",
+    sub: "live views over the event stream",
     summary:
       "Reads the three Redpanda topics as sources and maintains materialized views for throughput, latency, tokens and cost.",
     why: "Persisted events and verdicts are the evidence. A streaming database keeps the views current without a batch job, and only the dashboard service queries it.",
