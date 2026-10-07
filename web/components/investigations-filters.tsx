@@ -100,7 +100,7 @@ export function InvestigationsFilters({
                 type="button"
                 aria-pressed={filters.ragStatus === o.value}
                 onClick={() => onChange({ ...filters, ragStatus: o.value })}
-                className={`min-h-10 rounded-md px-3.5 text-sm transition-colors ${
+                className={`min-h-11 rounded-md px-3.5 text-sm transition-colors ${
                   filters.ragStatus === o.value
                     ? "bg-surface-high text-text-primary font-medium"
                     : "text-text-secondary hover:text-text-primary"

@@ -126,7 +126,7 @@ export default function LandingPage() {
               <BrowserFrame
                 src="/screenshots/overview.png"
                 route="/overview"
-                alt="The Overview command center, showing system state, the attention required list, evaluation coverage and the reliability pipeline."
+                alt="The Overview command center: the system state with the frontier judge’s agreement drawn against its thresholds, and the Amazon disagreement featured with its returned answer and both scores."
               />
               <figcaption className="text-text-secondary mt-4 text-base leading-relaxed">
                 <span className="text-text-primary font-medium">Overview.</span>{" "}
