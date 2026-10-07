@@ -104,6 +104,13 @@ html {
   scroll-padding-top: calc(var(--nav-h) + 1rem);
 }
 
+/* A second sticky rail under the nav (the layer rail, the freshness strip)
+   must not cover a focused element or an anchor target, so the page reserves
+   its height as well. */
+html:has([data-sticky-rail]) {
+  scroll-padding-top: calc(var(--nav-h) + 4.25rem);
+}
+
 body {
   background: var(--background);
   color: var(--text-primary);

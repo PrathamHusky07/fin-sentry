@@ -135,7 +135,7 @@ function DecisionLine() {
   return (
     <span
       aria-hidden="true"
-      className={`border-signal/60 absolute top-0 -bottom-2 left-[calc((100%-4.5rem)*6/7+4.125rem)] border-l border-dashed transition-all duration-[var(--dur-base)] ${lit ? "border-signal border-l-2 shadow-[0_0_14px_var(--glow-signal)]" : ""} ${model?.kind === "sync" ? "opacity-30" : ""}`}
+      className={`border-signal/60 absolute top-0 -bottom-2 left-[calc((100%-4.5rem)*6/7+4.125rem)] border-l border-dashed transition-[opacity,box-shadow,border-color] duration-[var(--dur-base)] ${lit ? "border-signal border-l-2 shadow-[0_0_14px_var(--glow-signal)]" : ""} ${model?.kind === "sync" ? "opacity-30" : ""}`}
     />
   );
 }

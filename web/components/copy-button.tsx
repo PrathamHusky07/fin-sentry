@@ -31,12 +31,13 @@ export function CopyButton({
       type="button"
       onClick={copy}
       aria-label={copied ? "Copied" : label}
+      aria-live="polite"
       className={`text-text-tertiary hover:text-text-primary hover:bg-surface-high inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition-colors ${className}`}
     >
       {copied ? (
         <svg
           viewBox="0 0 20 20"
-          className="text-positive h-4 w-4"
+          className="text-positive swap-in h-4 w-4"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"

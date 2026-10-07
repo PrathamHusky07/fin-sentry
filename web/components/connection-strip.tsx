@@ -88,7 +88,10 @@ export function ConnectionStrip({
   ];
 
   return (
-    <div className="border-border bg-background/90 sticky top-[var(--nav-h)] z-30 border-b backdrop-blur">
+    <div
+      data-sticky-rail
+      className="border-border bg-background/90 sticky top-[var(--nav-h)] z-30 border-b backdrop-blur"
+    >
       <dl
         aria-label="Connection and freshness"
         className="mx-auto grid max-w-7xl grid-cols-2 gap-x-6 gap-y-1 px-4 py-2.5 sm:px-8 lg:grid-cols-4"

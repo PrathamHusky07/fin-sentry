@@ -53,6 +53,7 @@ export default function LandingPage() {
             <HeroConstellation />
           </div>
           <div className="mt-8">
+            <h2 className="sr-only">An answer’s life in five stages</h2>
             <StageCards />
           </div>
         </div>

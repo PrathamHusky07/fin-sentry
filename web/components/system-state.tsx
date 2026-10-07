@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { CalibrationScale } from "@/components/calibration-scale";
 import { StatusDot, type StatusColor } from "@/components/status-dot";
+import { Tip } from "@/components/tip";
 import { formatUtc, relativeTime } from "@/lib/format";
 import type { AttentionItem, AttentionTone } from "@/lib/attention";
 import {
@@ -201,7 +202,12 @@ export function SystemState({
         <dl className="border-line grid grid-cols-2 gap-x-6 rounded-xl border px-6 py-5">
           <div>
             <dt className="text-text-secondary text-sm">
-              Delivered answers judged
+              <Tip
+                label="Delivered answers judged"
+                definition="Delivered answers that have a complete or partial flash verdict, out of every delivered answer. Completion says nothing about whether the answers were right."
+              >
+                Delivered answers judged
+              </Tip>
             </dt>
             <dd className="tabular-metric text-text-primary mt-1 text-2xl font-semibold">
               {overview
@@ -214,7 +220,12 @@ export function SystemState({
           </div>
           <div>
             <dt className="text-text-secondary text-sm">
-              Judge tiers in disagreement
+              <Tip
+                label="Judge tiers in disagreement"
+                definition="Executions where the flash and frontier faithfulness scores differ by 0.5 or more. Only sampled answers have a frontier score."
+              >
+                Judge tiers in disagreement
+              </Tip>
             </dt>
             <dd className="tabular-metric text-disagreement mt-1 text-2xl font-semibold">
               {overview

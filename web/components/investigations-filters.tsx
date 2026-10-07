@@ -1,3 +1,5 @@
+import { Tip } from "@/components/tip";
+
 export interface InvestigationsFilterState {
   q: string;
   ticker: string;
@@ -110,20 +112,26 @@ export function InvestigationsFilters({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            aria-pressed={filters.disagreement}
-            onClick={() =>
-              onChange({ ...filters, disagreement: !filters.disagreement })
-            }
-            className={`min-h-11 rounded-lg border px-3.5 text-sm font-medium transition-colors ${
-              filters.disagreement
-                ? "border-disagreement bg-disagreement/10 text-disagreement"
-                : "border-border-strong text-text-secondary hover:border-disagreement/60 hover:text-disagreement"
-            }`}
+          <Tip
+            label="Flash/frontier disagreement"
+            definition="Executions where the flash and frontier faithfulness scores differ by 0.5 or more. Only sampled answers have a frontier score."
+            focusable={false}
           >
-            Flash/frontier disagreement
-          </button>
+            <button
+              type="button"
+              aria-pressed={filters.disagreement}
+              onClick={() =>
+                onChange({ ...filters, disagreement: !filters.disagreement })
+              }
+              className={`min-h-11 rounded-lg border px-3.5 text-sm font-medium transition-colors ${
+                filters.disagreement
+                  ? "border-disagreement bg-disagreement/10 text-disagreement"
+                  : "border-border-strong text-text-secondary hover:border-disagreement/60 hover:text-disagreement"
+              }`}
+            >
+              Flash/frontier disagreement
+            </button>
+          </Tip>
         </div>
 
         <div className="flex flex-1 flex-wrap items-center gap-2 sm:flex-none">

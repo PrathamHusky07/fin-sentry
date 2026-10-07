@@ -115,7 +115,7 @@ export function TopNav() {
       {menuOpen ? (
         <div
           id="mobile-nav"
-          className="border-border bg-background-elevated/95 border-t backdrop-blur-xl lg:hidden"
+          className="modal-in border-border bg-background-elevated/95 origin-top border-t backdrop-blur-xl lg:hidden"
         >
           <ul className="mx-auto flex max-w-7xl flex-col px-2 py-2 sm:px-6">
             {ROUTES.map((route) => {

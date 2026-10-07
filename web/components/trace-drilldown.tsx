@@ -6,9 +6,12 @@ import { AsyncState, type AsyncStatus } from "@/components/async-state";
 import { CopyButton } from "@/components/copy-button";
 import { JudgeStateBadge } from "@/components/judge-state-badge";
 import { OutcomeBadge } from "@/components/outcome-badge";
+import { Tip } from "@/components/tip";
 import { TraceCaseFile } from "@/components/trace-case-file";
 import { detectDisagreement } from "@/components/trace-sections";
 import { GATEWAY_URL } from "@/lib/config";
+import { JUDGE_STATE_MEANING } from "@/lib/labels";
+import { JUDGE_STATE_LABEL } from "@/components/judge-state-badge";
 import type { TraceDetailResponse } from "@/lib/trace-api";
 
 const FOCUSABLE_SELECTOR =
@@ -169,7 +172,12 @@ export function TraceDrilldown({
                 blockRail={detail.block_rail}
                 errorKind={detail.error_kind}
               />
-              <JudgeStateBadge state={detail.judge_state} />
+              <Tip
+                label={JUDGE_STATE_LABEL[detail.judge_state]}
+                definition={JUDGE_STATE_MEANING[detail.judge_state]}
+              >
+                <JudgeStateBadge state={detail.judge_state} />
+              </Tip>
               {scores ? (
                 <span className="border-disagreement/40 bg-disagreement/10 text-disagreement inline-flex rounded-md border px-2 py-0.5 text-xs font-medium">
                   Judges disagree: flash {scores.flashScore.toFixed(3)},
@@ -177,9 +185,14 @@ export function TraceDrilldown({
                 </span>
               ) : null}
               {detail.frontier.sampled ? (
-                <span className="border-signal/30 bg-signal/10 text-signal inline-flex rounded-md border px-2 py-0.5 text-xs font-medium">
-                  Frontier sampled
-                </span>
+                <Tip
+                  label="Frontier sampled"
+                  definition="A deterministic hash of the trace id selected this execution, about one in ten, for a second review by the frontier judge."
+                >
+                  <span className="border-signal/30 bg-signal/10 text-signal inline-flex rounded-md border px-2 py-0.5 text-xs font-medium">
+                    Frontier sampled
+                  </span>
+                </Tip>
               ) : null}
             </div>
           ) : null}

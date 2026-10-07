@@ -99,6 +99,7 @@ export function LayerRail() {
   return (
     <nav
       aria-label="Jump to a layer"
+      data-sticky-rail
       className="border-border bg-background/80 sticky top-[var(--nav-h)] z-30 border-b backdrop-blur-xl"
     >
       <ul className="thin-scroll mx-auto flex max-w-7xl gap-1 overflow-x-auto px-2 sm:px-6">
