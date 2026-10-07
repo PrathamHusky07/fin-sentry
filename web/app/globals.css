@@ -544,6 +544,9 @@ svg :focus-visible {
 .ctx {
   position: relative;
   isolation: isolate;
+  /* Soft glows may reach past the column. Clipping, unlike hiding, makes no
+     scroll container, so sticky rails inside still stick. */
+  overflow-x: clip;
 }
 
 .ctx::before,

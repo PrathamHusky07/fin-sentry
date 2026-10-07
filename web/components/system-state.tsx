@@ -202,10 +202,7 @@ export function SystemState({
         <dl className="border-line grid grid-cols-2 gap-x-6 rounded-xl border px-6 py-5">
           <div>
             <dt className="text-text-secondary text-sm">
-              <Tip
-                label="Delivered answers judged"
-                definition="Delivered answers that have a complete or partial flash verdict, out of every delivered answer. Completion says nothing about whether the answers were right."
-              >
+              <Tip definition="Delivered answers that have a complete or partial flash verdict, out of every delivered answer. Completion says nothing about whether the answers were right.">
                 Delivered answers judged
               </Tip>
             </dt>
@@ -220,10 +217,7 @@ export function SystemState({
           </div>
           <div>
             <dt className="text-text-secondary text-sm">
-              <Tip
-                label="Judge tiers in disagreement"
-                definition="Executions where the flash and frontier faithfulness scores differ by 0.5 or more. Only sampled answers have a frontier score."
-              >
+              <Tip definition="Executions where the flash and frontier faithfulness scores differ by 0.5 or more. Only sampled answers have a frontier score.">
                 Judge tiers in disagreement
               </Tip>
             </dt>

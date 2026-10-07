@@ -223,7 +223,7 @@ export function FeaturedDisagreement({
 
       {flash !== null && frontier !== null ? (
         <div className="mt-8">
-          <div className="grid grid-cols-2 gap-2 sm:gap-6">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-6">
             <ScoreButton
               side="flash"
               score={flash}

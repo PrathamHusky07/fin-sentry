@@ -130,7 +130,7 @@ function DisagreementDuel({
               {cell.label}
             </span>
             <span
-              className={`tabular-metric mt-1 block text-5xl font-semibold tracking-tight ${cell.color}`}
+              className={`tabular-metric mt-1 block text-4xl font-semibold tracking-tight sm:text-5xl ${cell.color}`}
             >
               {cell.value.toFixed(3)}
             </span>

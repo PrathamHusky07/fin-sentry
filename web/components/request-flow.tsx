@@ -25,6 +25,8 @@ interface Placed extends Segment {
   flip: boolean;
   /** Which of the two bars the segment sits on. */
   bar: "top" | "bottom";
+  /** Horizontal extent of the leader and label, for the pointer target. */
+  hit: [number, number];
 }
 
 const BAR_W = 1000;
@@ -59,7 +61,11 @@ function place(segments: Segment[], bar: Placed["bar"]): Placed[] {
     );
     if (level === -1) level = levels.push([]) - 1;
     levels[level].push(span);
-    const placed = { ...s, x, w, level, leaderX, flip, bar };
+    const hit: [number, number] = [
+      Math.min(span[0], leaderX - 4),
+      Math.max(span[1], leaderX + 4),
+    ];
+    const placed = { ...s, x, w, level, leaderX, flip, bar, hit };
     x += w + GAP;
     return placed;
   });
@@ -116,7 +122,14 @@ function Bar({
               x={s.x - 2}
               y={y - 4}
               width={s.w + 4}
-              height={34 + 62 + s.level * 26}
+              height={42}
+              fill="transparent"
+            />
+            <rect
+              x={s.hit[0]}
+              y={y + 34}
+              width={s.hit[1] - s.hit[0]}
+              height={34 + s.level * 26}
               fill="transparent"
             />
             <rect

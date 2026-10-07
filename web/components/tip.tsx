@@ -24,7 +24,9 @@ export function Tip({
   className = "",
   focusable = true,
 }: {
-  label: string;
+  /** A heading for the tooltip. Leave it out when the trigger already says
+   * what is being defined, so the term is not repeated. */
+  label?: string;
   definition: string;
   children: ReactNode;
   className?: string;
@@ -34,6 +36,8 @@ export function Tip({
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
+  const host = useRef<HTMLSpanElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -45,7 +49,13 @@ export function Tip({
 
   function show(delay: number) {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setOpen(true), delay);
+    timer.current = setTimeout(() => {
+      // Open toward the side of the trigger that has room, so the tooltip
+      // never runs past the viewport.
+      const rect = host.current?.getBoundingClientRect();
+      setAlignRight(rect ? rect.left + 256 > window.innerWidth - 16 : false);
+      setOpen(true);
+    }, delay);
   }
 
   function hide() {
@@ -55,6 +65,7 @@ export function Tip({
 
   return (
     <span
+      ref={host}
       className={`relative inline-flex ${className}`}
       onPointerEnter={(e) => {
         if (e.pointerType === "mouse") show(260);
@@ -80,13 +91,16 @@ export function Tip({
       <span
         id={id}
         role="tooltip"
-        data-open={open}
-        className="tip floating bottom-full left-0 mb-2 w-max max-w-64 rounded-lg px-3 py-2"
+        className={`floating pointer-events-none absolute bottom-full z-30 mb-2 w-max max-w-64 rounded-lg px-3 py-2 ${alignRight ? "right-0" : "left-0"} ${open ? "swap-in block" : "hidden"}`}
       >
-        <span className="text-text-primary block text-sm font-semibold">
-          {label}
-        </span>
-        <span className="text-text-secondary mt-0.5 block text-sm leading-snug font-normal">
+        {label ? (
+          <span className="text-text-primary block text-sm font-semibold">
+            {label}
+          </span>
+        ) : null}
+        <span
+          className={`text-text-secondary block text-sm leading-snug font-normal ${label ? "mt-0.5" : ""}`}
+        >
           {definition}
         </span>
       </span>

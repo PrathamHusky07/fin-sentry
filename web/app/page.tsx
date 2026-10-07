@@ -13,10 +13,10 @@ export const metadata: Metadata = {
 // Pixel size of each capture in public/screenshots, so the frame reserves
 // the right space and scrolls the real, full-length screen.
 const SHOT = {
-  traceDetail: { width: 1440, height: 900 },
-  overview: { width: 1440, height: 900 },
-  operations: { width: 1440, height: 900 },
-  investigations: { width: 1440, height: 900 },
+  traceDetail: { width: 1440, height: 2000 },
+  overview: { width: 1440, height: 3200 },
+  operations: { width: 1440, height: 2400 },
+  investigations: { width: 1440, height: 2200 },
 } as const;
 
 export default function LandingPage() {
