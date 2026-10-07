@@ -4,7 +4,8 @@ import { EvaluationTopology } from "@/components/arch/evaluation-topology";
 import { EventLanes } from "@/components/arch/event-lanes";
 import { InterfaceHub } from "@/components/arch/interface-hub";
 import { RequestPipeline } from "@/components/arch/request-pipeline";
-import { ArchLegend } from "@/components/arch/svg-parts";
+import { LayerCards, LayerRail } from "@/components/arch/layer-nav";
+import { ReasonList } from "@/components/arch/reason-list";
 import { LAYERS, type Layer } from "@/lib/architecture-layers";
 
 export const metadata: Metadata = {
@@ -12,14 +13,7 @@ export const metadata: Metadata = {
 };
 
 const DIAGRAM: Record<Layer["id"], React.ReactNode> = {
-  "request-path": (
-    <>
-      <RequestPipeline />
-      <div className="hidden lg:block">
-        <ArchLegend items={["sync", "async"]} />
-      </div>
-    </>
-  ),
+  "request-path": <RequestPipeline />,
   "evaluation-plane": <EvaluationTopology />,
   "event-infrastructure": <EventLanes />,
   "operational-interface": <InterfaceHub />,
@@ -27,7 +21,7 @@ const DIAGRAM: Record<Layer["id"], React.ReactNode> = {
 
 export default function ArchitecturePage() {
   return (
-    <div className="flex flex-col">
+    <div className="ctx ctx-blueprint flex flex-1 flex-col">
       <header className="border-border border-b">
         <div className="mx-auto w-full max-w-7xl px-4 pt-14 pb-12 sm:px-8 sm:pt-16">
           <p className="text-text-tertiary text-sm">Architecture</p>
@@ -35,41 +29,24 @@ export default function ArchitecturePage() {
             How Fin-Sentry is built, and why
           </h1>
           <p className="text-text-secondary mt-6 max-w-2xl text-lg leading-relaxed text-pretty">
-            Four layers, from the request that arrives to the tools an engineer
-            uses afterward. Each one is drawn the way its data actually moves.
+            Four layers, from the request that arrives to the MCP server an
+            engineer or an agent uses afterward. The read tools exist today, and
+            the tool that would run Red Team scenarios is not registered yet.
+            Each layer is drawn the way its data actually moves.
           </p>
 
-          <nav aria-label="Architecture layers" className="mt-10">
-            <ul className="border-border-strong grid border-t sm:grid-cols-2 lg:grid-cols-4">
-              {LAYERS.map((layer) => (
-                <li
-                  key={layer.id}
-                  className="border-border border-b lg:border-r lg:border-b-0 lg:last:border-r-0"
-                >
-                  <a
-                    href={`#${layer.id}`}
-                    className="hover:bg-surface/60 flex min-h-11 flex-col gap-1.5 px-1 py-5 transition-colors lg:px-5 lg:first:pl-0"
-                  >
-                    <span className="text-text-primary text-lg font-semibold tracking-tight">
-                      {layer.name}
-                    </span>
-                    <span className="text-text-secondary text-sm leading-snug">
-                      {layer.question}
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <LayerCards />
         </div>
       </header>
+
+      <LayerRail />
 
       {LAYERS.map((layer) => (
         <section
           key={layer.id}
           id={layer.id}
           aria-labelledby={`${layer.id}-heading`}
-          className="border-border border-b"
+          className="border-border scroll-mt-[calc(var(--nav-h)+3rem)] border-b"
         >
           <div className="mx-auto w-full max-w-7xl px-4 py-20 sm:px-8">
             <div className="max-w-3xl">
@@ -86,18 +63,10 @@ export default function ArchitecturePage() {
 
             <div className="mt-12">{DIAGRAM[layer.id]}</div>
 
-            <dl className="mt-14 grid gap-x-12 gap-y-8 md:grid-cols-2">
-              {layer.reasons.map((reason) => (
-                <div key={reason.term} className="border-border border-t pt-5">
-                  <dt className="text-text-primary text-base font-semibold">
-                    {reason.term}
-                  </dt>
-                  <dd className="text-text-secondary mt-2 text-base leading-relaxed">
-                    {reason.body}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <div className="ctx ctx-quiet border-line bg-background-elevated/40 mt-14 overflow-hidden rounded-2xl border p-6 sm:p-8">
+              <p className="eyebrow mb-2">Why it is built this way</p>
+              <ReasonList reasons={layer.reasons} layerId={layer.id} />
+            </div>
           </div>
         </section>
       ))}

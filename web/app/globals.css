@@ -923,3 +923,71 @@ svg :focus-visible {
 .trace-row:focus-within .trace-badges {
   filter: brightness(1.25);
 }
+
+/* ---------- Architecture node model ----------
+
+   States come from components/arch/node-model.tsx: rest, active (the node
+   under the pointer, focus or selection), related (shares an edge with it)
+   and dim (unrelated). Opacity and fill only. */
+.arch-node {
+  cursor: pointer;
+  outline: none;
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+
+.arch-node[data-state="dim"] {
+  opacity: 0.28;
+}
+
+.arch-halo {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+
+.arch-node[data-state="active"] .arch-halo {
+  opacity: 1;
+}
+
+.arch-node[data-state="related"] .arch-halo {
+  opacity: 0.45;
+}
+
+.arch-body {
+  transition:
+    fill var(--dur-base) var(--ease-soft),
+    stroke-opacity var(--dur-base) var(--ease-soft);
+}
+
+.arch-node[data-state="active"] .arch-body {
+  fill: var(--surface-high);
+  stroke-opacity: 1;
+}
+
+.arch-node[data-state="related"] .arch-body {
+  stroke-opacity: 0.9;
+}
+
+.arch-ring {
+  opacity: 0;
+}
+
+.arch-node:focus-visible .arch-ring {
+  opacity: 1;
+}
+
+.arch-edge {
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+
+.arch-edge[data-state="dim"] {
+  opacity: 0.12;
+}
+
+.arch-edge-halo {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+
+.arch-edge[data-state="lit"] .arch-edge-halo {
+  opacity: 0.16;
+}

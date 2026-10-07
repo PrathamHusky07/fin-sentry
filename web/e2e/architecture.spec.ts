@@ -81,3 +81,103 @@ test("the global navigation stays pinned while scrolling", async ({ page }) => {
     await expect(nav.getByRole("link", { name })).toBeVisible();
   }
 });
+
+test.describe("Architecture interactions", () => {
+  test("pointing at a diagram node lights its edges, dims the rest and explains it", async ({
+    page,
+  }) => {
+    await page.goto("/architecture");
+    const diagram = page.getByRole("img", {
+      name: /evaluation plane\. A response event forks/i,
+    });
+    await diagram.scrollIntoViewIfNeeded();
+    const flash = diagram.getByRole("button", { name: /^Flash judge\./ });
+    await flash.hover();
+    await expect(flash).toHaveAttribute("data-state", "active");
+    await expect(
+      diagram.getByRole("button", { name: /^Flash verdict\./ }),
+    ).toHaveAttribute("data-state", "related");
+    await expect(
+      diagram.getByRole("button", { name: /^Frontier judge\./ }),
+    ).toHaveAttribute("data-state", "dim");
+    expect(await diagram.locator('.arch-edge[data-state="lit"]').count()).toBe(
+      2,
+    );
+    expect(
+      await diagram.locator('.arch-edge[data-state="dim"]').count(),
+    ).toBeGreaterThan(3);
+    const strip = page
+      .locator("section#evaluation-plane")
+      .locator('[aria-live="polite"]');
+    await expect(strip).toContainText("Flash judge");
+    await expect(strip).toContainText("Connects to");
+  });
+
+  test("keyboard focus explains a node, Enter pins it and Escape clears", async ({
+    page,
+  }) => {
+    await page.goto("/architecture");
+    const diagram = page.getByRole("img", { name: /two lanes around a log/i });
+    await diagram.scrollIntoViewIfNeeded();
+    const browserNode = diagram.getByRole("button", { name: /^Browser\./ });
+    await browserNode.focus();
+    await page.keyboard.press("Tab");
+    await browserNode.focus();
+    await page.keyboard.press("Enter");
+    await expect(browserNode).toHaveAttribute("aria-pressed", "true");
+    const strip = page
+      .locator("section#event-infrastructure")
+      .locator('[aria-live="polite"]');
+    await expect(strip).toContainText("Server-Sent Events");
+    await page.keyboard.press("Escape");
+    await expect(browserNode).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the legend lights every edge of one kind", async ({ page }) => {
+    await page.goto("/architecture");
+    const section = page.locator("section#event-infrastructure");
+    await section.scrollIntoViewIfNeeded();
+    await section
+      .getByRole("button", { name: /Read of persisted data/ })
+      .hover();
+    const diagram = section.getByRole("img", {
+      name: /two lanes around a log/i,
+    });
+    expect(await diagram.locator('.arch-edge[data-state="lit"]').count()).toBe(
+      4,
+    );
+  });
+
+  test("the MCP layer leads with MCP, and the reasons open and close", async ({
+    page,
+  }) => {
+    await page.goto("/architecture");
+    await expect(
+      page.getByRole("heading", {
+        name: "MCP & operational interface",
+        level: 2,
+      }),
+    ).toBeVisible();
+    await expect(page.locator("#main-content header").first()).toContainText(
+      /the tool that would run Red Team scenarios is not registered/i,
+    );
+    await page
+      .getByRole("link", { name: /MCP & operational interface/ })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/#operational-interface$/);
+
+    const second = page
+      .locator("section#operational-interface")
+      .getByRole("button", { name: /Why the gateway emits OpenTelemetry/ });
+    const first = page
+      .locator("section#operational-interface")
+      .getByRole("button", { name: /Why MCP/ });
+    await expect(first).toHaveAttribute("aria-expanded", "true");
+    await expect(second).toHaveAttribute("aria-expanded", "false");
+    await second.click();
+    await expect(second).toHaveAttribute("aria-expanded", "true");
+    await first.click();
+    await expect(first).toHaveAttribute("aria-expanded", "false");
+  });
+});

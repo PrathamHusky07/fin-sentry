@@ -1,4 +1,13 @@
+"use client";
+
 import type { ReactNode } from "react";
+import {
+  useDiagramModel,
+  useEdgeState,
+  useLabelVisible,
+  useNodeHandlers,
+  useNodeState,
+} from "@/components/arch/node-model";
 
 export type Tone = "request" | "stream" | "evaluation" | "evidence" | "muted";
 
@@ -39,9 +48,11 @@ export function ArrowDefs({ prefix }: { prefix: string }) {
   );
 }
 
-/** A node. The box brightens on hover or focus, and `lines` are the
+/** A node. It joins the diagram's interaction model when it has an `id`:
+ * the box brightens on hover, focus or selection, and `lines` are the
  * plain-language sub-labels under the title. */
 export function Box({
+  id,
   x,
   y,
   w,
@@ -51,6 +62,7 @@ export function Box({
   tone,
   dashed = false,
 }: {
+  id?: string;
   x: number;
   y: number;
   w: number;
@@ -62,10 +74,41 @@ export function Box({
 }) {
   const stroke = TONE_STROKE[tone];
   const top = y + (h - (22 + lines.length * 16)) / 2 + 15;
+  const label = [title, ...lines].join(". ");
+  const state = useNodeState(id);
+  const handlers = useNodeHandlers(id, label);
   return (
-    <g className="group/node">
-      <title>{[title, ...lines].join(". ")}</title>
+    <g
+      {...handlers}
+      data-state={state}
+      className={id ? "arch-node" : undefined}
+    >
+      <title>{label}</title>
       <rect
+        className="arch-halo"
+        x={x - 7}
+        y={y - 7}
+        width={w + 14}
+        height={h + 14}
+        rx={15}
+        fill={stroke}
+        fillOpacity={0.12}
+        stroke={stroke}
+        strokeOpacity={0.35}
+      />
+      <rect
+        className="arch-ring"
+        x={x - 4}
+        y={y - 4}
+        width={w + 8}
+        height={h + 8}
+        rx={13}
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth={2}
+      />
+      <rect
+        className="arch-body"
         x={x}
         y={y}
         width={w}
@@ -76,7 +119,6 @@ export function Box({
         strokeOpacity={0.55}
         strokeWidth={1.5}
         strokeDasharray={dashed ? "5 4" : undefined}
-        className="transition-[stroke-opacity,fill] duration-200 group-hover/node:fill-[var(--surface-high)] group-hover/node:[stroke-opacity:1]"
       />
       <text
         x={x + w / 2}
@@ -172,24 +214,40 @@ export function Edge({
   d,
   kind,
   prefix,
+  from,
+  to,
   arrow = true,
 }: {
   d: string;
   kind: EdgeStyle;
   prefix: string;
+  /** The node ids the edge joins, so the model can light it. */
+  from?: string;
+  to?: string;
   arrow?: boolean;
 }) {
   const style = EDGE[kind];
+  const state = useEdgeState(from, to, kind);
   return (
-    <path
-      d={d}
-      fill="none"
-      stroke={style.stroke}
-      strokeWidth={style.width}
-      strokeDasharray={style.dash}
-      strokeLinejoin="round"
-      markerEnd={arrow ? `url(#${prefix}-${style.marker})` : undefined}
-    />
+    <g data-state={state} className="arch-edge">
+      <path
+        className="arch-edge-halo"
+        d={d}
+        fill="none"
+        stroke={style.stroke}
+        strokeWidth={style.width + 7}
+        strokeLinejoin="round"
+      />
+      <path
+        d={d}
+        fill="none"
+        stroke={style.stroke}
+        strokeWidth={state === "lit" ? style.width + 1 : style.width}
+        strokeDasharray={style.dash}
+        strokeLinejoin="round"
+        markerEnd={arrow ? `url(#${prefix}-${style.marker})` : undefined}
+      />
+    </g>
   );
 }
 
@@ -198,27 +256,34 @@ export function Label({
   y,
   children,
   anchor = "middle",
+  edge,
 }: {
   x: number;
   y: number;
   children: ReactNode;
   anchor?: "start" | "middle" | "end";
+  /** The connection this label belongs to; it recedes when unrelated. */
+  edge?: [string, string];
 }) {
+  const visible = useLabelVisible(edge);
   return (
     <text
       x={x}
       y={y}
       textAnchor={anchor}
       fontSize={12}
-      className="fill-text-secondary"
+      className="fill-text-secondary topo-fade"
+      opacity={visible ? 1 : 0.15}
     >
       {children}
     </text>
   );
 }
 
-/** The key that makes the arrows mean something. */
+/** The key that makes the arrows mean something. Pointing at or focusing an
+ * entry lights every edge of that kind in the diagram above it. */
 export function ArchLegend({ items }: { items: EdgeStyle[] }) {
+  const model = useDiagramModel();
   const text: Record<EdgeStyle, string> = {
     sync: "Synchronous call, the user waits",
     async: "Asynchronous hand-off",
@@ -226,18 +291,33 @@ export function ArchLegend({ items }: { items: EdgeStyle[] }) {
     muted: "Not built or not connected",
   };
   return (
-    <ul className="text-text-secondary mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+    <ul className="mt-4 flex flex-wrap items-center gap-2">
       {items.map((kind) => (
-        <li key={kind} className="flex items-center gap-2">
-          <svg width="28" height="8" aria-hidden="true">
-            <path
-              d="M0 4H28"
-              stroke={EDGE[kind].stroke}
-              strokeWidth={EDGE[kind].width}
-              strokeDasharray={EDGE[kind].dash}
-            />
-          </svg>
-          {text[kind]}
+        <li key={kind}>
+          <button
+            type="button"
+            aria-pressed={model?.kind === kind}
+            onPointerEnter={(e) => {
+              if (e.pointerType === "mouse") model?.setKind(kind);
+            }}
+            onPointerLeave={(e) => {
+              if (e.pointerType === "mouse") model?.setKind(null);
+            }}
+            onFocus={() => model?.setKind(kind)}
+            onBlur={() => model?.setKind(null)}
+            onClick={() => model?.setKind(model.kind === kind ? null : kind)}
+            className={`border-line text-text-secondary hover:text-text-primary hover:bg-surface-hover flex min-h-11 items-center gap-2.5 rounded-lg border px-3.5 text-sm transition-colors ${model?.kind === kind ? "bg-surface-hover border-line-active text-text-primary" : "bg-background-elevated/60"}`}
+          >
+            <svg width="28" height="8" aria-hidden="true">
+              <path
+                d="M0 4H28"
+                stroke={EDGE[kind].stroke}
+                strokeWidth={EDGE[kind].width}
+                strokeDasharray={EDGE[kind].dash}
+              />
+            </svg>
+            {text[kind]}
+          </button>
         </li>
       ))}
     </ul>

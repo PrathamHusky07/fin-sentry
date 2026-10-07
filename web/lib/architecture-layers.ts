@@ -209,10 +209,11 @@ export const LAYERS: Layer[] = [
   },
   {
     id: "operational-interface",
-    name: "Operational interface",
-    question: "How does an engineer ask the platform what went wrong?",
+    name: "MCP & operational interface",
+    question:
+      "How does an engineer or an agent ask the platform what went wrong?",
     intro:
-      "The same persisted evidence is exposed twice: as screens for people and as an MCP server for tools. Both read what was recorded and neither changes it.",
+      "The same persisted evidence is exposed twice: through an MCP server for tools and agents, and as screens for people. Both read what was recorded and neither changes it. The read tools exist today. The tool that would run Red Team scenarios is not registered yet.",
     outline: [
       {
         caption: "Read paths over the persisted evidence",
