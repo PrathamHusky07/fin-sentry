@@ -1,22 +1,25 @@
+import { CalibrationScale } from "@/components/calibration-scale";
 import { formatUtc, relativeTime } from "@/lib/format";
 import type { AttentionItem, AttentionTone } from "@/lib/attention";
 import type { OverviewData } from "@/lib/overview-data";
 import type { CalibrationHealthResponse } from "@/lib/trace-api";
 
-const TONE_RING: Record<AttentionTone | "clear" | "unknown", string> = {
-  failure: "border-failure text-failure",
-  disagreement: "border-disagreement text-disagreement",
-  warning: "border-warning text-warning",
-  info: "border-info text-info",
-  clear: "border-positive text-positive",
-  unknown: "border-text-tertiary text-text-secondary",
+const TONE_TEXT: Record<AttentionTone | "clear" | "unknown", string> = {
+  failure: "text-failure",
+  disagreement: "text-disagreement",
+  warning: "text-warning",
+  info: "text-info",
+  clear: "text-positive",
+  unknown: "text-text-secondary",
 };
 
 /**
- * The top of the command center: one sentence that answers "is something
- * wrong", sized to be read from across a room, with the three readings
- * that back it up. Nothing here is a live number; each line says what it
- * was derived from.
+ * The top of the command center. The headline is the most severe signal in
+ * plain words, then three instruments say what the system state rests on:
+ * where the frontier judge’s agreement sits against its thresholds, how
+ * much of the delivered output a judge has scored, and how many answers the
+ * two judge tiers split on. Nothing here is a live number; each reading
+ * names its source.
  */
 export function SystemState({
   overview,
@@ -37,84 +40,77 @@ export function SystemState({
     ? "The trace service is unavailable"
     : items.length === 0
       ? "No conditions need attention"
-      : `${items.length} ${items.length === 1 ? "condition needs" : "conditions need"} attention`;
+      : items[0].title;
 
   const subline = !overview
     ? "Counts could not be loaded from the gateway, so nothing is shown instead of a guess."
-    : `Derived from ${overview.scanIsWindow ? "the latest " : ""}${overview.totalRequests} persisted executions${overview.latestTimestamp ? `. The newest ran ${relativeTime(overview.latestTimestamp)}.` : "."}`;
+    : items.length === 0
+      ? `Derived from ${overview.scanIsWindow ? "the latest " : ""}${overview.totalRequests} persisted executions. Every source loaded and no rule fired.`
+      : `${items.length === 1 ? "The only condition" : `One of ${items.length} conditions`}, ranked by severity. Derived from ${overview.scanIsWindow ? "the latest " : ""}${overview.totalRequests} persisted executions${overview.latestTimestamp ? `, the newest ${relativeTime(overview.latestTimestamp)}` : ""}.`;
 
   return (
     <section
       aria-label="System state"
-      className="grid gap-10 lg:grid-cols-[1fr_26rem] lg:items-end"
+      className="grid gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
     >
-      <div className="flex items-start gap-6">
-        <div
-          aria-hidden="true"
-          className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-2 font-mono text-3xl font-semibold tabular-nums ${TONE_RING[tone]}`}
-        >
-          {overview ? items.length : "?"}
-        </div>
-        <div>
-          <p className="eyebrow">System state</p>
-          <h2 className="text-text-primary mt-2 text-3xl leading-tight font-semibold tracking-tight text-balance sm:text-4xl">
-            {headline}
-          </h2>
-          <p className="text-text-secondary mt-3 max-w-xl text-base leading-relaxed">
-            {subline}
-          </p>
-        </div>
+      <div className="self-center">
+        <p className={`text-sm font-medium ${TONE_TEXT[tone]}`}>System state</p>
+        <h2 className="text-text-primary mt-3 text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
+          {headline}
+        </h2>
+        <p className="text-text-secondary mt-5 max-w-xl text-base leading-relaxed">
+          {subline}
+        </p>
       </div>
 
-      <dl className="divide-border border-border divide-y border-y text-sm">
-        <div className="flex items-baseline justify-between gap-4 py-3">
-          <dt className="text-text-secondary">Frontier calibration</dt>
-          <dd className="text-right">
-            <span className="text-text-primary font-medium">
-              {calibration
-                ? `${calibration.state ?? "no state"}${calibration.kappa !== null ? ` · κ ${calibration.kappa.toFixed(3)}` : ""}`
-                : "unavailable"}
-            </span>
-            {calibration?.state_as_of ? (
-              <span className="text-text-tertiary block text-xs">
-                Manual reading, {formatUtc(calibration.state_as_of)}
-              </span>
-            ) : null}
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-4 py-3">
-          <dt className="text-text-secondary">Delivered answers judged</dt>
-          <dd className="text-right">
-            {overview ? (
-              <>
-                <span className="text-text-primary tabular-metric font-medium">
-                  {overview.flow.deliveredComplete +
-                    overview.flow.deliveredPartial}{" "}
-                  of {overview.flow.delivered}
-                </span>
-                <span className="text-text-tertiary block text-xs">
-                  Complete or partial flash verdict
-                </span>
-              </>
-            ) : (
-              <span className="text-text-primary font-medium">
-                not available
-              </span>
-            )}
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-4 py-3">
-          <dt className="text-text-secondary">Cross-tier disagreements</dt>
-          <dd className="text-right">
-            <span className="text-text-primary tabular-metric font-medium">
+      <div className="border-border-strong bg-background-elevated rounded-xl border p-6">
+        <h3 className="text-text-primary text-base font-semibold">
+          Frontier judge agreement
+        </h3>
+        {calibration ? (
+          <>
+            <p className="text-text-tertiary mt-0.5 text-sm">
+              {calibration.state ?? "no state"}
+              {calibration.state_as_of
+                ? `, manual reading ${formatUtc(calibration.state_as_of)}`
+                : ""}
+            </p>
+            <CalibrationScale calibration={calibration} />
+          </>
+        ) : (
+          <p className="text-text-secondary mt-3 text-base">
+            Calibration unavailable. The reading could not be loaded, so the
+            frontier judge’s agreement is unknown.
+          </p>
+        )}
+
+        <dl className="border-border mt-2 grid grid-cols-2 gap-x-6 border-t pt-5">
+          <div>
+            <dt className="text-text-secondary text-sm">
+              Delivered answers judged
+            </dt>
+            <dd className="tabular-metric text-text-primary mt-1 text-2xl font-semibold">
+              {overview
+                ? `${overview.flow.deliveredComplete + overview.flow.deliveredPartial} of ${overview.flow.delivered}`
+                : "not available"}
+            </dd>
+            <dd className="text-text-tertiary mt-0.5 text-xs">
+              complete or partial flash verdict
+            </dd>
+          </div>
+          <div>
+            <dt className="text-text-secondary text-sm">
+              Judge tiers in disagreement
+            </dt>
+            <dd className="tabular-metric text-disagreement mt-1 text-2xl font-semibold">
               {overview ? overview.disagreementTraces.length : "not available"}
-            </span>
-            <span className="text-text-tertiary block text-xs">
-              Flash and frontier scores 0.5 apart or more
-            </span>
-          </dd>
-        </div>
-      </dl>
+            </dd>
+            <dd className="text-text-tertiary mt-0.5 text-xs">
+              scores 0.5 apart or more
+            </dd>
+          </div>
+        </dl>
+      </div>
     </section>
   );
 }

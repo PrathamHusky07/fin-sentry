@@ -1,22 +1,103 @@
 import Link from "next/link";
 import type { RequestFlow as RequestFlowData } from "@/lib/overview-data";
 
-interface Row {
+interface Segment {
+  key: string;
   label: string;
-  note?: string;
   count: number;
-  bar: string;
-  indent: 0 | 1 | 2;
-  href?: string;
+  fill: string;
+  href: string;
+}
+
+interface Placed extends Segment {
+  x: number;
+  w: number;
+  level: number;
+  /** x of the leader line that joins the bar to its label. */
+  leaderX: number;
+  /** True when the label would run past the bar, so it is right-aligned. */
+  flip: boolean;
+}
+
+const BAR_W = 1000;
+const GAP = 2;
+const MIN_W = 4;
+const CHAR_W = 7.4;
+
+/** Proportional widths with a visible minimum, normalized to the bar. Each
+ * segment gets a label under the bar, joined by a leader line. Labels that
+ * would run off the right edge flip to end at their leader, and labels are
+ * stacked into levels so neighbors never overlap. */
+function place(segments: Segment[]): Placed[] {
+  const total = segments.reduce((sum, s) => sum + s.count, 0);
+  const visible = segments.filter((s) => s.count > 0);
+  const room = BAR_W - GAP * Math.max(0, visible.length - 1);
+  const natural = visible.map((s) => Math.max(MIN_W, (s.count / total) * room));
+  const over = natural.reduce((a, b) => a + b, 0) - room;
+  const big = natural.reduce((a, b) => Math.max(a, b), 0);
+  const widths = natural.map((w) => (w === big ? w - over : w));
+  const levels: [number, number][][] = [];
+  let x = 0;
+  return visible.map((s, i) => {
+    const w = widths[i];
+    const leaderX = x + Math.min(w / 2, 8);
+    const labelW = (String(s.count).length + 1 + s.label.length) * CHAR_W;
+    const flip = leaderX + 8 + labelW > BAR_W;
+    const span: [number, number] = flip
+      ? [leaderX - 8 - labelW, leaderX]
+      : [leaderX, leaderX + 8 + labelW];
+    let level = levels.findIndex((taken) =>
+      taken.every(([from, to]) => span[1] + 10 < from || span[0] - 10 > to),
+    );
+    if (level === -1) level = levels.push([]) - 1;
+    levels[level].push(span);
+    const placed = { ...s, x, w, level, leaderX, flip };
+    x += w + GAP;
+    return placed;
+  });
+}
+
+function Bar({ y, segments }: { y: number; segments: Placed[] }) {
+  return (
+    <g>
+      {segments.map((s) => (
+        <g key={s.key}>
+          <rect x={s.x} y={y} width={s.w} height={34} rx={3} fill={s.fill} />
+          <line
+            x1={s.leaderX}
+            x2={s.leaderX}
+            y1={y + 34}
+            y2={y + 46 + s.level * 26}
+            stroke="var(--border-strong)"
+          />
+          <text
+            x={s.flip ? s.leaderX - 8 : s.leaderX + 8}
+            y={y + 58 + s.level * 26}
+            textAnchor={s.flip ? "end" : "start"}
+            fontSize={13}
+            className="fill-text-secondary"
+          >
+            <tspan
+              fontSize={15}
+              fontWeight={600}
+              className="fill-text-primary tabular-metric"
+            >
+              {s.count}
+            </tspan>{" "}
+            {s.label}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
 }
 
 /**
- * The reliability pipeline as a measured funnel: every persisted request,
- * where the rails and the model path stopped some of them, and how the
- * delivered remainder stands with the flash judge. Bar width is the count
- * over all requests, so the shape is honest. A complete verdict (all three
- * metrics) and a partial one (one or two) stay separate rows because they
- * are not the same claim.
+ * The reliability pipeline as a two-stage flow. The top bar is every
+ * persisted request split by where it ended, with the delivered part
+ * highlighted. A ribbon carries the delivered part down to the second bar,
+ * which splits those delivered answers by what the flash judge did with
+ * them. Widths are counts over the stage total, so the shape is honest.
  */
 export function RequestFlow({
   flow,
@@ -25,86 +106,81 @@ export function RequestFlow({
   flow: RequestFlowData;
   frontierCount: number;
 }) {
-  const rows: Row[] = [
+  const outcomes = place([
     {
-      label: "Requests received",
-      count: flow.total,
-      bar: "bg-text-secondary",
-      indent: 0,
-      href: "/investigations",
-    },
-    {
-      label: "Stopped by input rails",
-      note: "Prompt injection, hazard taxonomy or a failing input rail",
-      count: flow.stoppedAt.input,
-      bar: "bg-warning",
-      indent: 1,
-      href: "/investigations?status=blocked",
-    },
-    {
-      label: "Stopped by the retrieval rail",
-      note: "No trustworthy sources",
-      count: flow.stoppedAt.retrieval,
-      bar: "bg-warning",
-      indent: 1,
-      href: "/investigations?status=blocked",
-    },
-    {
-      label: "Stopped by output rails",
-      note: "Schema, citations, regulated phrases or faithfulness",
-      count: flow.stoppedAt.output,
-      bar: "bg-warning",
-      indent: 1,
-      href: "/investigations?status=blocked",
-    },
-    {
-      label: "Ended in an error",
-      note: "A dependency failed before an answer existed",
-      count: flow.errored,
-      bar: "bg-failure",
-      indent: 1,
-      href: "/investigations?status=error",
-    },
-    {
+      key: "delivered",
       label: "Delivered",
-      note: "An answer was returned",
       count: flow.delivered,
-      bar: "bg-positive",
-      indent: 0,
+      fill: "var(--positive)",
       href: "/investigations?status=success",
     },
     {
-      label: "Flash verdict complete",
-      note: "All three metrics scored",
+      key: "output",
+      label: "Stopped by output rails",
+      count: flow.stoppedAt.output,
+      fill: "var(--warning)",
+      href: "/investigations?status=blocked",
+    },
+    {
+      key: "retrieval",
+      label: "Retrieval rail",
+      count: flow.stoppedAt.retrieval,
+      fill: "var(--warning)",
+      href: "/investigations?status=blocked",
+    },
+    {
+      key: "error",
+      label: "Errored",
+      count: flow.errored,
+      fill: "var(--failure)",
+      href: "/investigations?status=error",
+    },
+    {
+      key: "input",
+      label: "Input rails",
+      count: flow.stoppedAt.input,
+      fill: "var(--warning)",
+      href: "/investigations?status=blocked",
+    },
+  ]);
+  const verdicts = place([
+    {
+      key: "complete",
+      label: "Complete verdict",
       count: flow.deliveredComplete,
-      bar: "bg-positive",
-      indent: 1,
+      fill: "var(--positive)",
       href: "/investigations?judge_state=evaluated",
     },
     {
-      label: "Flash verdict partial",
-      note: "One or two metrics were skipped",
+      key: "partial",
+      label: "Partial",
       count: flow.deliveredPartial,
-      bar: "bg-warning",
-      indent: 1,
+      fill: "var(--warning)",
       href: "/investigations?judge_state=partially_evaluated",
     },
     {
-      label: "No flash verdict",
-      note: "None persisted for a delivered answer",
+      key: "none",
+      label: "No verdict",
       count: flow.deliveredUnjudged,
-      bar: "bg-text-tertiary",
-      indent: 1,
+      fill: "var(--text-tertiary)",
       href: "/investigations?judge_state=never_evaluated",
     },
     {
-      label: "Judge pipeline error",
+      key: "judge-error",
+      label: "Judge error",
       count: flow.deliveredJudgeFailed,
-      bar: "bg-accent",
-      indent: 1,
+      fill: "var(--accent)",
       href: "/investigations?judge_state=judge_failed",
     },
-  ];
+  ]);
+  const delivered = outcomes.find((s) => s.key === "delivered");
+  const outcomeLevels = Math.max(0, ...outcomes.map((s) => s.level)) + 1;
+  const topBarY = 30;
+  const bottomBarY = topBarY + 46 + outcomeLevels * 26 + 44;
+  const verdictLevels = Math.max(0, ...verdicts.map((s) => s.level)) + 1;
+  const height = bottomBarY + 46 + verdictLevels * 26 + 10;
+
+  const links = [...outcomes, ...verdicts];
 
   return (
     <section aria-labelledby="flow-heading">
@@ -116,46 +192,58 @@ export function RequestFlow({
           Reliability pipeline
         </h2>
         <p className="text-text-tertiary text-sm">
-          All-time counts. Bar width is the share of all requests.
+          {flow.total} persisted requests. Width is the count over the stage
+          total.
         </p>
       </div>
 
-      <ul className="border-border mt-6 border-t">
-        {rows.map((row) => (
-          <li key={row.label} className="border-border border-b">
+      <div className="mt-8 hidden lg:block">
+        <svg
+          viewBox={`0 0 ${BAR_W} ${height}`}
+          role="img"
+          aria-label={`Of ${flow.total} requests, ${flow.delivered} were delivered. Of those, ${flow.deliveredComplete} have a complete flash verdict, ${flow.deliveredPartial} a partial one, ${flow.deliveredUnjudged} none and ${flow.deliveredJudgeFailed} a judge error.`}
+          className="h-auto w-full"
+        >
+          <text x={0} y={16} fontSize={13} className="fill-text-tertiary">
+            Every request, by where it ended
+          </text>
+          <Bar y={topBarY} segments={outcomes} />
+          {delivered ? (
+            <path
+              d={`M${delivered.x},${topBarY + 34} L${delivered.x + delivered.w},${topBarY + 34} L${BAR_W},${bottomBarY} L0,${bottomBarY} Z`}
+              fill="var(--positive)"
+              opacity={0.1}
+            />
+          ) : null}
+          <text
+            x={0}
+            y={bottomBarY - 10}
+            fontSize={13}
+            className="fill-text-tertiary"
+          >
+            The delivered answers, by what the flash judge did
+          </text>
+          <Bar y={bottomBarY} segments={verdicts} />
+        </svg>
+      </div>
+
+      <ul className="border-border mt-6 grid border-t sm:grid-cols-2 lg:grid-cols-3">
+        {links.map((s) => (
+          <li key={s.key} className="border-border border-b">
             <Link
-              href={row.href ?? "/investigations"}
-              className="hover:bg-surface/60 grid min-h-11 items-center gap-x-6 gap-y-2 px-1 py-3.5 transition-colors sm:grid-cols-[17rem_1fr_3.5rem] sm:px-3"
+              href={s.href}
+              className="hover:bg-surface/60 flex min-h-11 items-center justify-between gap-4 px-1 py-3 transition-colors sm:px-3"
             >
-              <span
-                className="min-w-0"
-                style={{ paddingLeft: `${row.indent * 1.25}rem` }}
-              >
+              <span className="flex items-center gap-2.5 text-base">
                 <span
-                  className={`block text-base ${row.indent === 0 ? "text-text-primary font-semibold" : "text-text-secondary"}`}
-                >
-                  {row.label}
-                </span>
-                {row.note ? (
-                  <span className="text-text-tertiary block text-xs leading-snug">
-                    {row.note}
-                  </span>
-                ) : null}
-              </span>
-              <span
-                aria-hidden="true"
-                className="bg-surface block h-2 overflow-hidden rounded-full"
-              >
-                <span
-                  className={`block h-full rounded-full ${row.bar}`}
-                  style={{
-                    width: `${flow.total > 0 ? (row.count / flow.total) * 100 : 0}%`,
-                    minWidth: row.count > 0 ? 3 : 0,
-                  }}
+                  aria-hidden="true"
+                  className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style={{ background: s.fill }}
                 />
+                <span className="text-text-secondary">{s.label}</span>
               </span>
-              <span className="tabular-metric text-text-primary text-base sm:text-right">
-                {row.count}
+              <span className="tabular-metric text-text-primary text-base">
+                {s.count}
               </span>
             </Link>
           </li>

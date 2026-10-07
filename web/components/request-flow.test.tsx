@@ -26,7 +26,7 @@ describe("RequestFlow copy", () => {
   });
 
   it("does not claim a delivered answer carried citations", () => {
-    expect(html).toContain("An answer was returned");
+    expect(html).toContain("Delivered");
     expect(html).not.toContain("with citations");
   });
 });

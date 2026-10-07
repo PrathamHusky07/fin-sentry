@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AttentionList } from "@/components/attention-list";
 import { CoverageLedger } from "@/components/coverage-ledger";
+import { FeaturedDisagreement } from "@/components/featured-disagreement";
 import { PageHeader } from "@/components/page-header";
 import { RecentEvidence } from "@/components/recent-evidence";
 import { RequestFlow } from "@/components/request-flow";
@@ -46,6 +47,9 @@ export default async function OverviewPage() {
     disagreementDetails,
   });
 
+  const signals = items.filter((item) => item.tone !== "disagreement");
+  const featured = overview?.disagreementTraces[0] ?? null;
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-8 sm:py-16">
       <PageHeader
@@ -74,7 +78,14 @@ export default async function OverviewPage() {
 
       {overview ? (
         <div className="divide-border mt-16 flex flex-col gap-16">
-          <AttentionList items={items} />
+          {featured ? (
+            <FeaturedDisagreement
+              trace={featured}
+              detail={disagreementDetails[0] ?? null}
+              others={overview.disagreementTraces.length - 1}
+            />
+          ) : null}
+          <AttentionList items={signals} />
           <div className="border-border border-t pt-16">
             <CoverageLedger counts={overview.judgeStateCounts} />
           </div>
@@ -90,7 +101,7 @@ export default async function OverviewPage() {
         </div>
       ) : (
         <div className="mt-16 space-y-8">
-          {items.length > 0 ? <AttentionList items={items} /> : null}
+          {signals.length > 0 ? <AttentionList items={signals} /> : null}
           <p className="border-failure/40 bg-failure/5 text-text-primary rounded-lg border p-5 text-base">
             The gateway did not return the trace list, so coverage, the request
             funnel and recent investigations are not shown. Check that the

@@ -4,7 +4,7 @@ import { JUDGE_STATE_MEANING } from "@/lib/labels";
 import type { JudgeStateCounts } from "@/lib/overview-data";
 import type { JudgeState } from "@/lib/trace-api";
 
-const ORDER: { key: JudgeState; swatch: string; dashed?: boolean }[] = [
+const ORDER: { key: JudgeState; swatch: string }[] = [
   { key: "evaluated", swatch: "bg-positive" },
   { key: "partially_evaluated", swatch: "bg-warning" },
   { key: "blocked_before_evaluation", swatch: "bg-info" },
@@ -12,12 +12,17 @@ const ORDER: { key: JudgeState; swatch: string; dashed?: boolean }[] = [
   { key: "never_evaluated", swatch: "bg-text-tertiary" },
 ];
 
+/** Columns for a roughly three-to-one block of unit squares. */
+function columnsFor(count: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(count * 3)));
+}
+
 /**
- * How far evaluation reached across every persisted execution. One wide
- * segmented bar carries the shape, and the ledger beneath it says what each
- * state means and links to the executions in it. Completion is not quality:
- * a bar full of "evaluated" would still say nothing about whether the
- * answers were right.
+ * How far evaluation reached, drawn as the data itself: one square per
+ * persisted execution, grouped by judge state, so each group’s area is its
+ * share. Each group is also the link into the executions it counts.
+ * Completion is not quality: a field of "evaluated" squares would still say
+ * nothing about whether the answers were right.
  */
 export function CoverageLedger({ counts }: { counts: JudgeStateCounts }) {
   const total = ORDER.reduce((sum, row) => sum + counts[row.key], 0);
@@ -35,56 +40,49 @@ export function CoverageLedger({ counts }: { counts: JudgeStateCounts }) {
           Evaluation coverage
         </h2>
         <p className="text-text-tertiary text-sm">
-          {total} persisted executions, by judge state.
+          One square is one of {total} persisted executions.
         </p>
       </div>
 
-      <div
-        role="img"
+      <ul
         aria-label={`Judge state across ${total} executions: ${summary}.`}
-        className="mt-6 flex h-4 gap-[3px] overflow-hidden rounded-full"
+        className="mt-8 flex flex-wrap gap-x-12 gap-y-10"
       >
-        {ORDER.map((row) =>
-          counts[row.key] > 0 ? (
-            <span
-              key={row.key}
-              className={`${row.swatch} h-full first:rounded-l-full last:rounded-r-full`}
-              style={{
-                width: `${(counts[row.key] / total) * 100}%`,
-                minWidth: 4,
-              }}
-            />
-          ) : null,
-        )}
-      </div>
-
-      <ul className="border-border mt-6 border-t">
         {ORDER.map((row) => {
           const count = counts[row.key];
           const share = total > 0 ? (count / total) * 100 : 0;
+          const cols = columnsFor(count);
           return (
-            <li key={row.key} className="border-border border-b">
+            <li key={row.key} className="max-w-full">
               <Link
                 href={`/investigations?judge_state=${row.key}`}
-                className="hover:bg-surface/60 grid min-h-11 items-baseline gap-x-8 gap-y-1 px-1 py-4 transition-colors sm:grid-cols-[14rem_1fr_6.5rem] sm:px-3"
+                className="group block rounded-lg p-2 -m-2 transition-colors hover:bg-surface/50"
               >
-                <span className="flex items-center gap-2.5">
-                  <span
-                    aria-hidden="true"
-                    className={`h-2.5 w-2.5 shrink-0 rounded-sm ${row.swatch}`}
-                  />
+                <span className="flex items-baseline gap-3">
+                  <span className="tabular-metric text-text-primary text-3xl font-semibold">
+                    {count}
+                  </span>
                   <span className="text-text-primary text-base font-medium">
                     {JUDGE_STATE_LABEL[row.key]}
                   </span>
-                </span>
-                <span className="text-text-secondary text-base leading-snug">
-                  {JUDGE_STATE_MEANING[row.key]}
-                </span>
-                <span className="tabular-metric text-text-primary text-base sm:text-right">
-                  {count}
-                  <span className="text-text-tertiary ml-2 text-xs">
+                  <span className="text-text-tertiary text-xs">
                     {share.toFixed(share > 0 && share < 10 ? 1 : 0)}%
                   </span>
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="mt-3 flex flex-wrap gap-[3px]"
+                  style={{ maxWidth: `${cols * 17}px` }}
+                >
+                  {Array.from({ length: count }, (_, i) => (
+                    <span
+                      key={i}
+                      className={`h-3.5 w-3.5 rounded-[3px] transition-transform group-hover:scale-105 ${row.swatch}`}
+                    />
+                  ))}
+                </span>
+                <span className="text-text-secondary mt-3 block max-w-[17rem] text-sm leading-snug">
+                  {JUDGE_STATE_MEANING[row.key]}
                 </span>
               </Link>
             </li>
