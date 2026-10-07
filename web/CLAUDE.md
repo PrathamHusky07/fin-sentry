@@ -6,7 +6,7 @@ This file governs two distinct surfaces. Read the section that applies before to
 
 **The application** (`/operations`, `/judges`, `/red-team`, and anything else that queries real platform data) is an AI reliability and evaluation **operations tool**, not a SaaS product, not a landing page, not a generic admin-template dashboard, not a shadcn component showcase, and not a university project. It is built to be read by a hiring manager and defended in an interview. Every screen should look like something an on-call engineer would actually use during an incident, not something demoing a component library.
 
-**The presentation layer** (the project landing experience, built separately from the application) explains and showcases the engineering work. It is a project presentation, not a commercial product site. See "The presentation layer" section below for its specific rules. As of this entry no presentation-layer UI has been built yet; this section exists so that work is governed from the start.
+**The presentation layer** (the project landing experience, built separately from the application) explains and showcases the engineering work. It is a project presentation, not a commercial product site. See "The presentation layer" section below for its specific rules. The presentation layer is built: the landing route (`/`) and the architecture route (`/architecture`). Its rules below keep governing any change to them.
 
 Read the root `../CLAUDE.md` first — it governs the whole project (the four principles, prose discipline, zero-spend rule, day-plan discipline). This file adds frontend-specific rules on top of it; it does not replace it.
 
@@ -15,6 +15,7 @@ Read the root `../CLAUDE.md` first — it governs the whole project (the four pr
 Order every screen signal → investigation → provenance → evidence. A viewer should see "is something wrong" before "here are some charts." Status and failure state sit at the top of the page, not buried in a card grid. Drill-downs (modals, detail panes) come after the summary, never instead of it.
 
 Do not build, anywhere in the application surface:
+
 - A hero section, a feature grid, or marketing copy.
 - A sidebar-plus-cards admin template that could belong to any SaaS product.
 - A component purely to demonstrate a library's capabilities.
@@ -78,11 +79,14 @@ Vitest for anything that needs a test. No LLM-graded UI tests — a test that as
 A project presentation surface, built separately from the application above. It explains and showcases the real engineering work so a hiring manager can go from "interesting project" to understanding what was actually built. It is not a SaaS marketing site, and the line is enforced the same way the application's truth boundary is: concretely, not by tone.
 
 Banned, with no exception:
+
 - Commercial-product language: "book a demo," "start free," "trusted by," customer logos, testimonials, adoption numbers, pricing, or any claim implying Fin-Sentry is a product people can buy or that it operates at a scale that was not actually demonstrated.
 - Videos, anywhere. Use high-quality static screenshots of the real application, designed architecture graphics, and interactive charts backed by real data instead.
 - Exaggerated or generic marketing claims ("next-generation," "revolutionary," "enterprise-grade," and the banned-word list in the root `../CLAUDE.md`'s prose discipline section apply here too).
 
 Required:
+
+- Honest absence stays mandatory in the application: Overview, Live Operations and Investigations keep their explicit unavailable, empty, stale and not-persisted states, and never infer "healthy" from missing data. The presentation layer is not required to carry a dedicated "what this does not do" section. It still never overstates what the platform did.
 - Every sentence is a complete, intentional, business-ready sentence. No sentence fragments except deliberate UI labels (nav items, button text, badges).
 - No em-dashes, matching the root `../CLAUDE.md` prose discipline rules.
 - The truth boundary is absolute here too. Every number, chart, screenshot, and claim must be backed by something the platform actually did. A screenshot slot must map to a real application screen that exists at the time it ships, not a mockup standing in for one. Credibility comes from evidence ("replica failure was tested against the live nginx topology"), never from adjectives ("enterprise-grade fault tolerance").

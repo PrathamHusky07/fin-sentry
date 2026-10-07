@@ -1,5 +1,17 @@
 # Build Log
 
+## 2026-10-07 — Frontend overhaul (in progress): contract edits
+
+Two edits to `web/CLAUDE.md`, recorded here so the contract does not drift.
+First, the stale line saying no presentation-layer UI existed was corrected
+(the landing and architecture routes are built). Second, the truth boundary
+now states that honest-absence states remain mandatory in the application
+(Overview, Live Operations, Investigations) while the presentation layer is
+no longer required to carry a dedicated "what this does not do" section. The
+file had no literal requirement for such a section; the "Known limits"
+block on the landing page came from build practice. Everything else in the
+truth boundary is unchanged.
+
 ## 2026-10-06 — Frontend transformation (frontend only)
 
 Rebuilt the frontend around six routes: `/` (presentation), `/overview`
