@@ -18,9 +18,9 @@ import type { TraceDetailResponse } from "@/lib/trace-api";
 function Question({ detail }: { detail: TraceDetailResponse }) {
   return (
     <section aria-labelledby="trace-question">
-      <h3 id="trace-question" className="text-text-tertiary text-sm">
+      <h2 id="trace-question" className="text-text-tertiary text-sm">
         Question asked
-      </h3>
+      </h2>
       <p className="text-text-primary mt-1.5 text-xl leading-snug font-medium text-balance">
         {detail.query}
       </p>
@@ -93,9 +93,9 @@ function Answer({
       className={`bg-surface rounded-xl border-l-4 p-5 sm:p-6 ${disputed ? "border-disagreement" : detail.answer ? "border-accent" : "border-border-strong"}`}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 id="trace-answer" className="text-text-tertiary text-sm">
+        <h2 id="trace-answer" className="text-text-tertiary text-sm">
           {detail.answer ? "Answer returned" : "Outcome"}
-        </h3>
+        </h2>
         {disputed ? (
           <p className="text-disagreement text-sm font-medium">
             The frontier judge disputes this answer

@@ -18,21 +18,18 @@ test("Live Operations receives a real snapshot over SSE and labels every readout
     timeout: 10_000,
   });
 
-  const readouts = page.getByRole("region", { name: "Readouts" });
-  for (const label of [
-    "Throughput",
-    "Average latency",
-    "p95 latency",
-    "Judge tokens",
-    "Judge cost",
-  ]) {
-    await expect(readouts.getByText(label, { exact: true })).toBeVisible();
+  const telemetry = page.getByRole("region", { name: "Request activity" });
+  for (const label of ["Throughput", "Average latency", "p95 latency"]) {
+    await expect(telemetry.getByText(label, { exact: true })).toBeVisible();
+  }
+  for (const label of ["Judge tokens", "Judge cost"]) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
   }
   // Token and cost scope is the flash judge, never "platform" totals.
-  await expect(readouts.getByText(/Flash judge only/).first()).toBeVisible();
+  await expect(page.getByText(/Flash judge only/).first()).toBeVisible();
 
   await expect(
-    page.getByRole("heading", { name: "Request activity" }),
+    page.getByText("Request activity as it arrives", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Calibration" }),

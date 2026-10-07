@@ -66,6 +66,26 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* No fades, growth or reveals for people who ask for none. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* A faint accent flash on tap, set on purpose. */
+html {
+  -webkit-tap-highlight-color: color-mix(
+    in srgb,
+    var(--accent) 18%,
+    transparent
+  );
+}
+
 /* Taps on controls should never wait for a double-tap zoom. */
 a,
 button,
@@ -118,9 +138,7 @@ summary,
   .topo-grow {
     transform-box: fill-box;
     transform-origin: center;
-    transition:
-      transform 200ms ease,
-      fill 200ms ease;
+    transition: transform 200ms ease;
   }
 
   @media (prefers-reduced-motion: no-preference) {

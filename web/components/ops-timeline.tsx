@@ -63,7 +63,7 @@ export function OpsTimeline({ traces }: { traces: TraceListItem[] | null }) {
               ) : null}
               <Link
                 href={`/investigations?trace=${trace.app_trace_id}`}
-                className="hover:bg-surface/60 grid min-h-11 grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-0.5 rounded-md py-2 pr-2 pl-6 transition-colors sm:grid-cols-[5.5rem_14rem_1fr]"
+                className="hover:bg-surface/60 grid min-h-11 scroll-mt-32 grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-0.5 rounded-md py-2 pr-2 pl-6 transition-colors sm:grid-cols-[5.5rem_14rem_1fr]"
               >
                 <span className="bg-background absolute -left-[5px] mt-1.5 rounded-full">
                   <StatusDot color={tone === "neutral" ? "neutral" : tone} />

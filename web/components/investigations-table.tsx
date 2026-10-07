@@ -151,7 +151,7 @@ export function InvestigationsTable({
                     }}
                     onKeyDown={onKeyDown}
                     aria-label={`Open trace: ${t.query}`}
-                    className="flex min-h-11 w-full min-w-0 flex-col items-start justify-center rounded-md text-left"
+                    className="flex min-h-11 w-full min-w-0 scroll-mt-28 scroll-mb-24 flex-col items-start justify-center rounded-md text-left"
                   >
                     <span className="text-text-primary w-full truncate text-sm font-medium">
                       {t.query}
@@ -199,7 +199,7 @@ export function InvestigationsTable({
                 onClick={() => onSelect(t.app_trace_id)}
                 onKeyDown={onKeyDown}
                 aria-label={`Open trace: ${t.query}`}
-                className="hover:bg-surface/70 flex min-h-11 w-full flex-col gap-2 px-1 py-4 text-left"
+                className="hover:bg-surface/70 flex min-h-11 w-full scroll-mt-28 scroll-mb-24 flex-col gap-2 px-1 py-4 text-left"
               >
                 <span className="text-text-primary text-base leading-snug font-medium">
                   {t.query}

@@ -29,9 +29,9 @@ export function Section({
 }) {
   return (
     <section aria-labelledby={id} className="border-border border-t pt-6">
-      <h3 id={id} className="text-text-primary text-base font-semibold">
+      <h2 id={id} className="text-text-primary text-base font-semibold">
         {title}
-      </h3>
+      </h2>
       <div className="mt-4">{children}</div>
     </section>
   );

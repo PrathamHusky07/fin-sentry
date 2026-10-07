@@ -353,7 +353,7 @@ function LaneList({
 }) {
   return (
     <section>
-      <h3 className={`text-sm font-semibold ${tone}`}>{title}</h3>
+      <h2 className={`text-sm font-semibold ${tone}`}>{title}</h2>
       <ol className="border-border-strong mt-3 ml-1 border-l pl-5">
         {ids.map((id) => {
           const s = STATIONS.find((station) => station.id === id)!;

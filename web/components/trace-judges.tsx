@@ -197,7 +197,7 @@ function JudgeBlock({
 }) {
   return (
     <div className="border-border border-t pt-5">
-      <h3 className="text-text-primary text-base font-semibold">{title}</h3>
+      <h2 className="text-text-primary text-base font-semibold">{title}</h2>
       {note ? (
         <p className="text-text-tertiary mt-0.5 text-sm">{note}</p>
       ) : null}

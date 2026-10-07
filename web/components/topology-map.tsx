@@ -178,7 +178,9 @@ function Bar({
         stroke={keyboardFocused ? "var(--accent)" : stroke}
         strokeOpacity={active || keyboardFocused ? 1 : 0.5}
         strokeWidth={active || keyboardFocused ? 2.5 : 1.5}
-        style={{ transition: "all 200ms" }}
+        style={{
+          transition: "fill 200ms, stroke-opacity 200ms, stroke-width 200ms",
+        }}
       />
       <text
         x={box.cx}

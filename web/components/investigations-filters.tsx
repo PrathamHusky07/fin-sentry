@@ -77,6 +77,7 @@ export function InvestigationsFilters({
         </svg>
         <input
           type="search"
+          name="q"
           value={filters.q}
           onChange={(e) => onChange({ ...filters, q: e.target.value })}
           placeholder="Search query text or trace ID…"
@@ -128,6 +129,7 @@ export function InvestigationsFilters({
         <div className="flex flex-1 flex-wrap items-center gap-2 sm:flex-none">
           <input
             type="text"
+            name="ticker"
             value={filters.ticker}
             onChange={(e) => onChange({ ...filters, ticker: e.target.value })}
             placeholder="Ticker…"

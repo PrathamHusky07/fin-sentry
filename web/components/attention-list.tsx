@@ -59,7 +59,7 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
               >
                 <span
                   aria-hidden="true"
-                  className={`absolute top-6 bottom-6 left-0 w-[3px] rounded-full transition-all group-hover:top-4 group-hover:bottom-4 ${TONE_BAR[item.tone]}`}
+                  className={`absolute top-6 bottom-6 left-0 w-[3px] rounded-full origin-center transition-transform group-hover:scale-y-110 ${TONE_BAR[item.tone]}`}
                 />
                 <div>
                   <p className="tabular-metric text-text-primary text-3xl leading-none font-semibold tracking-tight">
