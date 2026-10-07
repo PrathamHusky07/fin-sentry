@@ -2,7 +2,7 @@ import Link from "next/link";
 import { JudgeStateBadge } from "@/components/judge-state-badge";
 import { relativeTime } from "@/lib/format";
 import { outcomeLabel } from "@/lib/labels";
-import type { TraceGroup } from "@/lib/overview-data";
+import { groupKey, type TraceGroup } from "@/lib/overview-data";
 
 function groupHref(group: TraceGroup): string {
   if (group.firstDisagreementId) {
@@ -50,10 +50,7 @@ export function RecentEvidence({ groups }: { groups: TraceGroup[] }) {
             const flagged = group.disagreementCount > 0;
             const failed = trace.rag_status !== "success";
             return (
-              <li
-                key={`${group.ticker ?? ""}-${group.query}`}
-                className="border-border border-b"
-              >
+              <li key={groupKey(group)} className="border-border border-b">
                 <Link
                   href={groupHref(group)}
                   className="hover:bg-surface/60 relative grid min-h-11 gap-x-6 gap-y-2 py-4 pr-2 pl-5 transition-colors lg:grid-cols-[1fr_auto]"

@@ -103,8 +103,13 @@ async function fetchTraces(
   }
 }
 
-function groupKey(trace: TraceListItem): string {
-  return `${trace.ticker ?? ""} ${trace.query}`;
+/** JSON-encoded so a ticker/query pair can never collide with another pair
+ * whose concatenation happens to match. */
+export function groupKey(trace: {
+  ticker: string | null;
+  query: string;
+}): string {
+  return JSON.stringify([trace.ticker, trace.query]);
 }
 
 /** Groups real executions by exact (ticker, query) match. See the
