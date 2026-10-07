@@ -2,22 +2,40 @@
 
 /* Fin-Sentry visual system.
 
-   One dark, ink-toned identity across every route. Elevation is a
-   background-shift scale (background < elevated < surface < surface-high),
-   never a drop shadow. Color carries meaning, so the semantic hues are
-   reserved: positive, warning, failure and disagreement always mean what
-   they say. `accent` marks the synchronous request path and `signal`
-   marks the asynchronous evaluation plane in diagrams. The page is dark by
-   design (no theme toggle), so every contrast pair below was checked
-   against WCAG AA on all four surfaces. */
+   One dark, ink-toned identity across every route. Depth comes from four
+   layers: a contextual backdrop per section (see "Contextual backdrops"),
+   a background-shift surface scale, alpha hairline borders that brighten
+   with intent, and glow that is reserved for live, selected or flagged
+   state. Color carries meaning, so the semantic hues are reserved:
+   positive, warning, failure and disagreement always mean what they say.
+   `accent` marks the synchronous request path and `signal` marks the
+   asynchronous evaluation plane in diagrams. The page is dark by design
+   (no theme toggle), so every contrast pair below was checked against
+   WCAG AA on the surfaces it sits on.
+
+   Motion has one language. Three durations (fast for micro state, base for
+   components, slow for the one-shot hero and major reveals) share two
+   easings. Only transform and opacity animate on interaction. */
 :root {
   color-scheme: dark;
   --background: #07090c;
   --background-elevated: #0c1015;
   --surface: #11161d;
   --surface-high: #171d26;
+  /* Interaction surfaces: what a surface becomes under the pointer, when
+     pressed, and when it floats above the page (menus, tooltips). */
+  --surface-hover: #151b24;
+  --surface-active: #1a222d;
+  --surface-floating: #161d27;
+  --glass: rgb(12 16 21 / 0.78);
   --border: #1c232d;
   --border-strong: #2c3541;
+  /* Alpha hairlines for surfaces that sit on a tinted backdrop. They
+     brighten one step at a time: rest, hover, active. Focus is the accent
+     outline defined below. */
+  --line: rgb(255 255 255 / 0.06);
+  --line-hover: rgb(255 255 255 / 0.1);
+  --line-active: rgb(255 255 255 / 0.15);
   --text-primary: #e9edf2;
   --text-secondary: #9aa4b2;
   --text-tertiary: #7a8596;
@@ -32,6 +50,27 @@
      failure (see web/CLAUDE.md, judge / frontier data section). */
   --disagreement: #b794f4;
   --nav-h: 3.5rem;
+
+  /* Motion tokens. */
+  --dur-fast: 140ms;
+  --dur-base: 280ms;
+  --dur-slow: 720ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Elevation tokens. Soft and short on purpose: depth, not drama. */
+  --elev-1: inset 0 1px 0 rgb(255 255 255 / 0.03), 0 1px 2px rgb(0 0 0 / 0.4);
+  --elev-2: 0 10px 28px -14px rgb(0 0 0 / 0.75);
+  --elev-3: 0 20px 44px -18px rgb(0 0 0 / 0.85);
+
+  /* Glow tokens. Reserved for genuine active, live, selected or flagged
+     state. Never used as decoration on a resting surface. */
+  --glow-accent: rgb(106 168 255 / 0.4);
+  --glow-signal: rgb(92 212 230 / 0.36);
+  --glow-positive: rgb(70 217 130 / 0.3);
+  --glow-warning: rgb(240 169 59 / 0.32);
+  --glow-failure: rgb(242 107 94 / 0.34);
+  --glow-disagreement: rgb(183 148 244 / 0.4);
 }
 
 @theme inline {
@@ -39,8 +78,14 @@
   --color-background-elevated: var(--background-elevated);
   --color-surface: var(--surface);
   --color-surface-high: var(--surface-high);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-surface-floating: var(--surface-floating);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  --color-line: var(--line);
+  --color-line-hover: var(--line-hover);
+  --color-line-active: var(--line-active);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
@@ -102,11 +147,46 @@ summary,
 }
 
 /* One focus treatment for every interactive element, so a keyboard user
-   never loses their place. Components may adjust the offset, never remove
-   the outline. */
+   never loses their place: a crisp accent outline plus a soft halo. Components
+   may adjust the offset, never remove the outline. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* SVG focus targets draw their own ring; a box-shadow would not apply. */
+svg :focus-visible {
+  box-shadow: none;
+}
+
+/* Quiet scrollbars everywhere. The thumb is a border-colored pill that
+   brightens under the pointer. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+  background-clip: content-box;
+  border: 3px solid transparent;
 }
 
 @layer components {
@@ -132,27 +212,209 @@ summary,
    read as a station coming forward. Static dashes mark asynchronous
    hand-offs; nothing here moves with traffic. */
   .topo-fade {
-    transition: opacity 200ms ease;
+    transition: opacity var(--dur-base) var(--ease-soft);
   }
 
   .topo-grow {
     transform-box: fill-box;
     transform-origin: center;
-    transition: transform 200ms ease;
+    transition: transform var(--dur-base) var(--ease);
   }
 
+  /* ---------- Interaction hierarchy ----------
+
+     Tier 1, `lift`: a surface the reader is meant to pick up. It rises
+     two pixels, its border takes on its tone and a soft tone-colored
+     shadow appears. Used for a few things per page, never for everything.
+     Tier 2, `row-reveal`: a list row. The background shifts, a rail grows
+     and the call to action slides in. Tier 3: plain color transitions on
+     links and buttons, defined where they are used.
+
+     Hover does not exist on touch, so every effect has a focus or press
+     twin, and revealed affordances are simply visible on coarse pointers. */
+  .lift {
+    --tone: var(--accent);
+    transition:
+      transform var(--dur-base) var(--ease),
+      box-shadow var(--dur-base) var(--ease),
+      border-color var(--dur-base) var(--ease),
+      background-color var(--dur-base) var(--ease);
+  }
+
+  .lift:active {
+    transform: translateY(0) scale(0.996);
+    transition-duration: var(--dur-fast);
+  }
+
+  @media (hover: hover) {
+    .lift:hover {
+      transform: translateY(-2px);
+      border-color: color-mix(in srgb, var(--tone) 42%, var(--border-strong));
+      background-color: var(--surface-hover);
+      box-shadow:
+        var(--elev-2),
+        0 0 0 1px color-mix(in srgb, var(--tone) 16%, transparent),
+        0 14px 38px -20px color-mix(in srgb, var(--tone) 70%, transparent);
+    }
+  }
+
+  .lift:has(:focus-visible) {
+    border-color: color-mix(in srgb, var(--tone) 42%, var(--border-strong));
+    background-color: var(--surface-hover);
+  }
+
+  .lift-accent {
+    --tone: var(--accent);
+  }
+  .lift-signal {
+    --tone: var(--signal);
+  }
+  .lift-disagreement {
+    --tone: var(--disagreement);
+  }
+  .lift-warning {
+    --tone: var(--warning);
+  }
+  .lift-failure {
+    --tone: var(--failure);
+  }
+  .lift-positive {
+    --tone: var(--positive);
+  }
+
+  /* A row in a list or table. A rail on the left edge grows to full
+     height on hover and focus; the rail color is the row's severity. */
+  .row-reveal {
+    --tone: var(--accent);
+    position: relative;
+    transition: background-color var(--dur-base) var(--ease-soft);
+  }
+
+  .row-reveal::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 12%;
+    bottom: 12%;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--tone);
+    opacity: 0.55;
+    transform: scaleY(0.35);
+    transform-origin: center;
+    transition:
+      transform var(--dur-base) var(--ease),
+      opacity var(--dur-base) var(--ease-soft);
+  }
+
+  .row-reveal:hover,
+  .row-reveal:focus-within,
+  .row-reveal[data-active="true"] {
+    background-color: color-mix(in srgb, var(--tone) 5%, var(--surface-hover));
+  }
+
+  .row-reveal:hover::before,
+  .row-reveal:focus-within::before,
+  .row-reveal[data-active="true"]::before {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+
+  /* An affordance that slides in beside a row or frame on hover or focus.
+     On coarse pointers it is simply there. */
+  .reveal-on-hover {
+    opacity: 0;
+    transform: translateX(-4px);
+    transition:
+      opacity var(--dur-base) var(--ease-soft),
+      transform var(--dur-base) var(--ease);
+  }
+
+  .reveal-host:hover .reveal-on-hover,
+  .reveal-host:focus-within .reveal-on-hover,
+  .reveal-host[data-active="true"] .reveal-on-hover {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  @media (hover: none) {
+    .reveal-on-hover {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* A 1 to 2 pixel shift for text that should answer the pointer. */
+  .nudge {
+    transition: transform var(--dur-base) var(--ease);
+  }
+
+  .reveal-host:hover .nudge,
+  .reveal-host:focus-within .nudge {
+    transform: translateX(2px);
+  }
+
+  /* Selected state: the only place a persistent glow is allowed. */
+  .glow-selected {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 38%, transparent),
+      0 0 30px -10px var(--tone-glow, var(--glow-accent));
+  }
+
+  /* A floating surface: tooltips, menus, popovers. */
+  .floating {
+    background: var(--surface-floating);
+    border: 1px solid var(--line-active);
+    box-shadow: var(--elev-3);
+  }
+
+  /* Tooltip: a label, a one-line definition, one consistent position. */
+  .tip {
+    position: absolute;
+    z-index: 30;
+    pointer-events: none;
+    max-width: 18rem;
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity var(--dur-fast) var(--ease-soft),
+      transform var(--dur-fast) var(--ease);
+  }
+
+  .tip[data-open="true"] {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 90ms;
+  }
+
+  /* Dimming is how a hover or focus says "this, and what it touches". */
+  .dim-unrelated {
+    transition: opacity var(--dur-base) var(--ease-soft);
+  }
+
+  /* Status dot with a pulse, for states that are genuinely live only. */
+  .pulse-live {
+    position: relative;
+  }
+
+  .pulse-live::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    opacity: 0.5;
+    animation: pulse-live 2.4s var(--ease-soft) infinite;
+  }
+
+  /* ---------- One-shot reveals ----------
+
+     Each runs once on mount and uses `backwards` fill, so after it ends the
+     element returns to its ordinary style and normal transitions take over.
+     All of them sit behind the no-preference query. */
   @media (prefers-reduced-motion: no-preference) {
-    .hero-draw {
-      stroke-dasharray: 1;
-      animation: hero-draw 1.2s cubic-bezier(0.3, 0.6, 0.2, 1) 0.1s both;
-    }
-
-    .hero-fade {
-      animation: hero-fade 0.8s ease 1s both;
-    }
-
     .rise {
-      animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+      animation: rise 0.7s var(--ease) backwards;
     }
 
     .rise-2 {
@@ -162,21 +424,51 @@ summary,
     .rise-3 {
       animation-delay: 0.16s;
     }
-  }
-}
 
-@keyframes hero-draw {
-  from {
-    stroke-dashoffset: 1;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
+    .enter-up {
+      animation: rise var(--dur-slow) var(--ease) backwards;
+      animation-delay: calc(var(--i, 0) * 70ms);
+    }
 
-@keyframes hero-fade {
-  from {
-    opacity: 0;
+    .enter-fade {
+      animation: fade-in var(--dur-slow) var(--ease-soft) backwards;
+      animation-delay: calc(var(--i, 0) * 70ms);
+    }
+
+    .enter-sweep {
+      animation: sweep 1100ms var(--ease) backwards;
+      animation-delay: var(--sweep-delay, 150ms);
+      transform-origin: left center;
+    }
+
+    .modal-in {
+      animation: modal-in var(--dur-base) var(--ease) backwards;
+    }
+
+    /* The constellation: mark, then nodes, then paths, then rings settle. */
+    .cn-mark {
+      animation: cn-pop 760ms var(--ease) backwards;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .cn-node {
+      animation: cn-pop 720ms var(--ease) backwards;
+      animation-delay: calc(480ms + var(--i, 0) * 85ms);
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .cn-path {
+      stroke-dasharray: 1;
+      animation: cn-draw 900ms var(--ease-soft) backwards;
+      animation-delay: calc(1000ms + var(--i, 0) * 60ms);
+    }
+
+    .cn-ring {
+      animation: fade-in 1200ms var(--ease-soft) backwards;
+      animation-delay: 1500ms;
+    }
   }
 }
 
@@ -187,10 +479,355 @@ summary,
   }
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+}
+
+@keyframes cn-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@keyframes cn-draw {
+  from {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pulse-live {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  70%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* ---------- Contextual backdrops ----------
+
+   Each section of the site answers a different question, so each gets its
+   own quiet field. They are static, masked at their edges and kept far
+   below the text contrast floor, so the page has depth without a visible
+   effect. A section is `.ctx` plus exactly one variant. Nothing here
+   animates. Grain is one tiny rasterized SVG, drawn once. */
+.ctx {
+  position: relative;
+  isolation: isolate;
+}
+
+.ctx::before,
+.ctx::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Hero: the richest field. Two tinted lights, a dot lattice that fades
+   out from the center, a vignette and a trace of grain. */
+.ctx-hero::before {
+  background:
+    radial-gradient(
+      ellipse 62% 52% at 50% -4%,
+      rgb(106 168 255 / 0.17),
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 42% 46% at 88% 58%,
+      rgb(92 212 230 / 0.09),
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 38% 40% at 8% 78%,
+      rgb(106 168 255 / 0.06),
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 90% 80% at 50% 40%,
+      transparent 52%,
+      rgb(0 0 0 / 0.42) 100%
+    ),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+.ctx-hero::after {
+  background-image: radial-gradient(
+    rgb(255 255 255 / 0.09) 1px,
+    transparent 1.3px
+  );
+  background-size: 30px 30px;
+  mask-image: radial-gradient(
+    ellipse 64% 70% at 50% 42%,
+    #000 12%,
+    transparent 76%
+  );
+}
+
+/* Topology: technical and structured. A fine rule grid fades at the
+   edges, with a cooler light behind the evaluation plane. */
+.ctx-topology::before {
+  background:
+    linear-gradient(rgb(255 255 255 / 0.028) 1px, transparent 1px) 0 0 / 44px
+      44px,
+    linear-gradient(90deg, rgb(255 255 255 / 0.028) 1px, transparent 1px) 0 0 /
+      44px 44px;
+  mask-image: radial-gradient(
+    ellipse 78% 74% at 50% 52%,
+    #000 18%,
+    transparent 80%
+  );
+}
+
+.ctx-topology::after {
+  background: radial-gradient(
+    ellipse 44% 38% at 70% 58%,
+    rgb(92 212 230 / 0.07),
+    transparent 74%
+  );
+}
+
+/* Overview: a quiet command center. One wide, low light from above and a
+   whisper of a second from the lower left. */
+.ctx-overview::before {
+  background:
+    radial-gradient(
+      ellipse 70% 42% at 50% 0%,
+      rgb(106 168 255 / 0.085),
+      transparent 74%
+    ),
+    radial-gradient(
+      ellipse 40% 36% at 4% 62%,
+      rgb(106 168 255 / 0.04),
+      transparent 74%
+    );
+}
+
+.ctx-overview::after {
+  background-image: radial-gradient(
+    rgb(255 255 255 / 0.05) 1px,
+    transparent 1.2px
+  );
+  background-size: 34px 34px;
+  mask-image: linear-gradient(180deg, #000 0, transparent 38%);
+}
+
+/* Live Operations: telemetry. Fine horizontal scan rules, a cyan light
+   low on the page like a console glow. Static: nothing here implies a feed. */
+.ctx-live::before {
+  background: repeating-linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.022) 0,
+    rgb(255 255 255 / 0.022) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+  mask-image: linear-gradient(180deg, #000 0, transparent 70%);
+}
+
+.ctx-live::after {
+  background:
+    radial-gradient(
+      ellipse 54% 36% at 12% 100%,
+      rgb(92 212 230 / 0.075),
+      transparent 74%
+    ),
+    radial-gradient(
+      ellipse 50% 30% at 50% 0%,
+      rgb(92 212 230 / 0.05),
+      transparent 74%
+    );
+}
+
+/* Investigations: neutral and forensic. No tint, a faint lattice at the
+   top where the filters sit, and a soft vignette that keeps the table the
+   brightest thing on the page. */
+.ctx-forensic::before {
+  background-image: radial-gradient(
+    rgb(255 255 255 / 0.06) 1px,
+    transparent 1.2px
+  );
+  background-size: 18px 18px;
+  mask-image: linear-gradient(180deg, #000 0, transparent 300px);
+}
+
+.ctx-forensic::after {
+  background: radial-gradient(
+    ellipse 80% 50% at 50% 0%,
+    rgb(255 255 255 / 0.03),
+    transparent 74%
+  );
+}
+
+/* Architecture: blueprint. Major and minor grid lines in the info hue and
+   a soft pool of light under the diagrams. */
+.ctx-blueprint::before {
+  background:
+    linear-gradient(rgb(127 176 232 / 0.05) 1px, transparent 1px) 0 0 / 120px
+      120px,
+    linear-gradient(90deg, rgb(127 176 232 / 0.05) 1px, transparent 1px) 0 0 /
+      120px 120px,
+    linear-gradient(rgb(127 176 232 / 0.025) 1px, transparent 1px) 0 0 / 24px
+      24px,
+    linear-gradient(90deg, rgb(127 176 232 / 0.025) 1px, transparent 1px) 0 0 /
+      24px 24px;
+  mask-image: radial-gradient(
+    ellipse 84% 66% at 50% 28%,
+    #000 8%,
+    transparent 78%
+  );
+}
+
+.ctx-blueprint::after {
+  background: radial-gradient(
+    ellipse 60% 34% at 50% 0%,
+    rgb(127 176 232 / 0.085),
+    transparent 74%
+  );
+}
+
+/* Quiet reading surfaces (evidence, footers): a single low light. */
+.ctx-quiet::before {
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 0%,
+    rgb(106 168 255 / 0.06),
+    transparent 74%
+  );
+}
+
+/* A state-colored field behind a single dominant number. `--field` is set
+   by the component from the real state tone. */
+.state-field {
+  position: relative;
+  isolation: isolate;
+}
+
+.state-field::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -30% -20% -30% -30%;
+  background: radial-gradient(
+    ellipse 55% 55% at 28% 50%,
+    color-mix(in srgb, var(--field, var(--accent)) 14%, transparent),
+    transparent 72%
+  );
+  pointer-events: none;
+}
+
 /* Thin, quiet scrollbars inside dense panels. */
 @layer components {
   .thin-scroll {
     scrollbar-width: thin;
     scrollbar-color: var(--border-strong) transparent;
+  }
+}
+
+/* ---------- Landing constellation states ----------
+
+   Driven by data-state on each node and line: rest, active (the concept
+   under the pointer or focus), related (touches the active one), dim
+   (unrelated). Only opacity, transform and stroke width change. */
+.cn-inner {
+  cursor: pointer;
+  outline: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    transform var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease-soft);
+}
+
+.cn-inner[data-state="active"] {
+  transform: translateY(-3px) scale(1.07);
+}
+
+.cn-inner[data-state="dim"] {
+  opacity: 0.28;
+}
+
+.cn-halo {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+
+.cn-inner[data-state="active"] .cn-halo {
+  opacity: 0.55;
+}
+
+.cn-inner[data-state="related"] .cn-halo {
+  opacity: 0.22;
+}
+
+.cn-inner[data-keyboard="true"] .cn-focus-ring {
+  opacity: 1;
+}
+
+.cn-focus-ring {
+  opacity: 0;
+}
+
+.cn-tag {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+
+.cn-inner[data-state="active"] .cn-tag {
+  opacity: 0.95;
+}
+
+.cn-link {
+  opacity: 0.26;
+  transition:
+    opacity var(--dur-base) var(--ease-soft),
+    stroke-width var(--dur-base) var(--ease-soft);
+}
+
+/* Long chords across the ring stay almost invisible until one of their
+   ends is active, so the resting picture is a ring and not a tangle. */
+.cn-link[data-kind="chord"][data-state="rest"] {
+  opacity: 0.08;
+}
+
+.cn-link[data-state="lit"] {
+  opacity: 1;
+}
+
+.cn-link[data-state="soft"] {
+  opacity: 0.55;
+}
+
+.cn-link[data-state="dim"] {
+  opacity: 0.06;
+}
+
+/* A quick swap for caption content that changes on hover or selection. */
+@media (prefers-reduced-motion: no-preference) {
+  .swap-in {
+    animation: fade-in var(--dur-base) var(--ease-soft) backwards;
   }
 }
