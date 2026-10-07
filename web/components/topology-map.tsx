@@ -108,9 +108,17 @@ function Station({
       <circle
         cx={box.cx}
         cy={box.cy}
-        r={R + 7}
+        r={R + 18}
         fill={stroke}
-        opacity={active ? 0.22 : 0}
+        opacity={active ? 0.08 : 0}
+        className="topo-fade"
+      />
+      <circle
+        cx={box.cx}
+        cy={box.cy}
+        r={R + 8}
+        fill={stroke}
+        opacity={active ? 0.26 : 0}
         className="topo-fade"
       />
       <circle
@@ -221,6 +229,7 @@ export function TopologyMap({
   handlers: Handlers;
 }) {
   const related = active ? relatedNodes(active) : null;
+  const activePlane = active ? NODES[active].plane : null;
   const labelOpacity = (ids: NodeId[]) =>
     active === null || ids.some((id) => related?.has(id)) ? 0.95 : 0.15;
 
@@ -252,7 +261,23 @@ export function TopologyMap({
             height={band.h}
             rx={16}
             className="fill-background-elevated"
-            stroke="var(--border)"
+            stroke={
+              activePlane === band.plane
+                ? PLANE_STROKE[band.plane]
+                : "var(--border)"
+            }
+            strokeOpacity={activePlane === band.plane ? 0.5 : 1}
+            style={{ transition: "stroke 280ms, stroke-opacity 280ms" }}
+          />
+          <rect
+            x={8}
+            y={band.y}
+            width={VIEW_W - 16}
+            height={band.h}
+            rx={16}
+            fill={PLANE_STROKE[band.plane]}
+            opacity={activePlane === band.plane ? 0.045 : 0}
+            className="topo-fade"
           />
           <text
             x={28}
@@ -279,18 +304,28 @@ export function TopologyMap({
         const touches =
           active !== null && (edge.from === active || edge.to === active);
         return (
-          <path
-            key={edgeKey(edge.from, edge.to)}
-            d={EDGE_PATH[edgeKey(edge.from, edge.to)]}
-            fill="none"
-            stroke={style.stroke}
-            strokeWidth={touches ? style.width + 1.25 : style.width}
-            strokeDasharray={style.dash}
-            strokeLinejoin="round"
-            markerEnd={`url(#arrow-${edge.kind})`}
-            opacity={active === null ? 0.8 : touches ? 1 : 0.1}
-            className="topo-fade"
-          />
+          <g key={edgeKey(edge.from, edge.to)}>
+            <path
+              d={EDGE_PATH[edgeKey(edge.from, edge.to)]}
+              fill="none"
+              stroke={style.stroke}
+              strokeWidth={style.width + 7}
+              strokeLinejoin="round"
+              opacity={touches ? 0.13 : 0}
+              className="topo-fade"
+            />
+            <path
+              d={EDGE_PATH[edgeKey(edge.from, edge.to)]}
+              fill="none"
+              stroke={style.stroke}
+              strokeWidth={touches ? style.width + 1.25 : style.width}
+              strokeDasharray={style.dash}
+              strokeLinejoin="round"
+              markerEnd={`url(#arrow-${edge.kind})`}
+              opacity={active === null ? 0.8 : touches ? 1 : 0.1}
+              className="topo-fade"
+            />
+          </g>
         );
       })}
 

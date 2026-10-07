@@ -102,9 +102,14 @@ export function Topology() {
         <div
           id="topology-detail"
           aria-live="polite"
-          className="border-border-strong bg-background-elevated mt-4 grid min-h-40 gap-x-10 gap-y-4 rounded-xl border p-6 md:grid-cols-[14rem_1fr_1fr]"
+          className="border-line-hover bg-background-elevated/80 relative mt-4 grid min-h-40 gap-x-10 gap-y-4 overflow-hidden rounded-xl border p-6 md:grid-cols-[14rem_1fr_1fr]"
         >
-          <div>
+          <span
+            aria-hidden="true"
+            className="absolute inset-y-0 left-0 w-0.5"
+            style={{ background: PLANE_STROKE[detail.plane] }}
+          />
+          <div key={`${detail.id}-a`} className="swap-in">
             <p className={`text-sm ${PLANE_TEXT[detail.plane]}`}>
               {PLANE_LABEL[detail.plane]}, {PLANE_TIMING[detail.plane]}
             </p>
@@ -113,13 +118,13 @@ export function Topology() {
             </p>
             <p className="text-text-tertiary mt-1 text-sm">{detail.sub}</p>
           </div>
-          <div>
+          <div key={`${detail.id}-b`} className="swap-in">
             <p className="text-text-tertiary text-sm">What it does</p>
             <p className="text-text-secondary mt-1.5 text-[15px] leading-relaxed">
               {detail.summary}
             </p>
           </div>
-          <div>
+          <div key={`${detail.id}-c`} className="swap-in">
             <p className="text-text-tertiary text-sm">Why it exists</p>
             <p className="text-text-secondary mt-1.5 text-[15px] leading-relaxed">
               {detail.why}

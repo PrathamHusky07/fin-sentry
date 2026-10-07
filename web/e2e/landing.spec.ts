@@ -2,12 +2,12 @@ import { expect, test } from "@playwright/test";
 
 /**
  * The presentation layer (/). Needs only the web app: nothing on this page
- * reads the gateway. Deterministic structural assertions: the hero, the
- * interactive system map, the decision ledger, the evidence frames, the
- * truth-boundary copy rules, and the CTAs.
+ * reads the gateway. Deterministic structural assertions: the constellation
+ * hero, the interactive system map, the decision navigator, the evidence
+ * frames, the truth-boundary copy rules, and the CTAs.
  */
 test.describe("Landing page", () => {
-  test("renders the hero, the system map, the ledger and the evidence frames", async ({
+  test("renders the hero, the system map, the navigator and the evidence frames", async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -22,7 +22,7 @@ test.describe("Landing page", () => {
       page.getByRole("heading", { name: /Guard every answer/, level: 1 }),
     ).toBeVisible();
     await expect(
-      page.getByRole("img", { name: /Fin-Sentry in one picture/ }),
+      page.getByRole("group", { name: /Fin-Sentry system constellation/ }),
     ).toBeVisible();
 
     const map = page.getByRole("group", { name: /Fin-Sentry system map/ });
@@ -62,18 +62,84 @@ test.describe("Landing page", () => {
     expect(errors).toEqual([]);
   });
 
-  test("the decision ledger has six rows with the four ledger columns and no known-limits section", async ({
+  test("the decision navigator lists six decisions and selecting one changes the panel", async ({
     page,
   }) => {
     await page.goto("/");
-    const ledger = page.getByRole("region", { name: /Six decisions/ });
-    const rows = ledger.locator("ol > li");
-    await expect(rows).toHaveCount(6);
-    for (const column of ["Problem", "Decision", "Tradeoff", "Consequence"]) {
-      await expect(rows.first()).toContainText(column);
+    const section = page.getByRole("region", { name: /Six decisions/ });
+    const controls = section.locator("ul button");
+    await expect(controls).toHaveCount(6);
+    const first = section.locator("#decision-panel-0");
+    const third = section.locator("#decision-panel-2");
+    await expect(first).toContainText("Problem");
+    await expect(first).toBeVisible();
+    await expect(third).toHaveCSS("opacity", "0");
+
+    await controls.nth(2).click();
+    await expect(third).toHaveCSS("opacity", "1");
+    for (const part of ["Problem", "Decision", "Tradeoff", "Consequence"]) {
+      await expect(third).toContainText(part);
     }
+    await expect(third).toContainText(/judge pipeline error/i);
+    await expect(first).toHaveCSS("opacity", "0");
+    await expect(controls.nth(2)).toHaveAttribute("aria-current", "true");
+
+    // Arrow keys move the selection along with focus.
+    await controls.nth(2).press("ArrowDown");
+    await expect(controls.nth(3)).toBeFocused();
+    await expect(controls.nth(3)).toHaveAttribute("aria-current", "true");
     await expect(page.getByText(/Known limits/i)).toHaveCount(0);
     await expect(page.getByText(/does not do yet/i)).toHaveCount(0);
+  });
+
+  test("pointing at a constellation node lights what it touches and dims the rest", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const group = page.getByRole("group", {
+      name: /Fin-Sentry system constellation/,
+    });
+    const node = (name: string) =>
+      group.getByRole("button", { name: new RegExp(`^${name}\\.`) });
+    await node("Judge").hover();
+    await expect(node("Generate").locator("xpath=.")).toHaveAttribute(
+      "data-state",
+      "related",
+    );
+    await expect(node("Calibrate")).toHaveAttribute("data-state", "related");
+    await expect(node("Guard")).toHaveAttribute("data-state", "dim");
+    await expect(node("MCP")).toHaveAttribute("data-state", "dim");
+    await expect(node("Judge")).toHaveAttribute("data-state", "active");
+    await expect(page.getByText("Touches", { exact: false })).toContainText(
+      "Generate, Calibrate, Investigate",
+    );
+    await page.mouse.move(5, 5);
+    await expect(node("Guard")).toHaveAttribute("data-state", "rest");
+  });
+
+  test("an evidence frame reveals its action on hover and scrolls the capture", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const action = page.getByRole("link", { name: /Open command center/ });
+    await expect(action).toHaveCSS("opacity", "0");
+    const frame = page
+      .getByRole("region", { name: /Scrollable capture of \/overview/ })
+      .locator("xpath=ancestor::div[contains(@class,'lift')][1]");
+    await frame.scrollIntoViewIfNeeded();
+    await frame.hover();
+    await expect(action).toHaveCSS("opacity", "1");
+    await expect(action).toHaveAttribute("href", "/overview");
+  });
+
+  test("reduced motion removes the hero reveal", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    const nodeWrapper = page
+      .getByRole("group", { name: /Fin-Sentry system constellation/ })
+      .locator(".cn-node")
+      .first();
+    await expect(nodeWrapper).toHaveCSS("animation-name", "none");
   });
 
   test("hovering a station brightens it and fills the caption strip", async ({
@@ -91,8 +157,7 @@ test.describe("Landing page", () => {
     await expect(detail).toContainText("Why it exists");
     // The active station grows; a station far from it recedes.
     const grown = await sampler
-      .locator("circle")
-      .nth(1)
+      .locator("circle.topo-grow")
       .evaluate((el) => getComputedStyle(el).transform);
     expect(grown).not.toBe("none");
     const unrelated = map.getByRole("button", { name: /^MCP server\./ });
