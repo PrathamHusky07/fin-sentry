@@ -155,17 +155,29 @@ summary,
       );
   }
 
-  /* Topology connectors. Solid strokes are the synchronous request path;
-   dashed strokes are asynchronous hand-offs. The dash drift on async edges
-   is decorative: it shows direction, it does not represent any request,
-   rate or live signal. Disabled under prefers-reduced-motion. */
-  .edge-async {
-    stroke-dasharray: 5 6;
+  /* System-map transitions: opacity and scale only, so hover and focus
+   read as a station coming forward. Static dashes mark asynchronous
+   hand-offs; nothing here moves with traffic. */
+  .topo-fade {
+    transition: opacity 200ms ease;
+  }
+
+  .topo-grow {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      transform 200ms ease,
+      fill 200ms ease;
   }
 
   @media (prefers-reduced-motion: no-preference) {
-    .edge-async {
-      animation: edge-drift 1.6s linear infinite;
+    .hero-draw {
+      stroke-dasharray: 1;
+      animation: hero-draw 1.2s cubic-bezier(0.3, 0.6, 0.2, 1) 0.1s both;
+    }
+
+    .hero-fade {
+      animation: hero-fade 0.8s ease 1s both;
     }
 
     .rise {
@@ -182,9 +194,18 @@ summary,
   }
 }
 
-@keyframes edge-drift {
+@keyframes hero-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
   to {
-    stroke-dashoffset: -22;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes hero-fade {
+  from {
+    opacity: 0;
   }
 }
 
