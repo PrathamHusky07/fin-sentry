@@ -30,7 +30,6 @@ const QUIET_OVERVIEW: OverviewData = {
   blockedByReason: [],
   errorCount: 0,
   disagreementTraces: [],
-  recentInvestigations: [],
 };
 
 const HEALTHY_CALIBRATION: CalibrationHealthResponse = {

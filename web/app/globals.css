@@ -831,3 +831,43 @@ svg :focus-visible {
     animation: fade-in var(--dur-base) var(--ease-soft) backwards;
   }
 }
+
+/* ---------- Moving hover plate ----------
+
+   One plate follows the pointer or keyboard focus between the rows of a
+   list, so moving down a list reads as one continuous gesture instead of
+   rows lighting and fading independently. The tone is registered as a
+   color so the plate's hue can glide between severities. */
+@property --plate-tone {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #6aa8ff;
+}
+
+.hover-plate {
+  background:
+    radial-gradient(
+      70% 160% at 0% 50%,
+      color-mix(in srgb, var(--plate-tone) 13%, transparent),
+      transparent 70%
+    ),
+    color-mix(in srgb, var(--plate-tone) 3%, var(--surface-hover));
+  border: 1px solid color-mix(in srgb, var(--plate-tone) 16%, transparent);
+  transition:
+    --plate-tone var(--dur-base) var(--ease-soft),
+    transform var(--dur-base) var(--ease),
+    opacity var(--dur-fast) var(--ease-soft);
+}
+
+.hover-plate[data-instant="true"] {
+  transition:
+    --plate-tone 0ms,
+    transform 0ms,
+    opacity var(--dur-fast) var(--ease-soft);
+}
+
+/* Entrance animations inside a view gate wait, showing their first frame,
+   until the gate has been scrolled into view. */
+.view-gate[data-seen="false"] * {
+  animation-play-state: paused !important;
+}

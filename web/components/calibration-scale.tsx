@@ -10,8 +10,12 @@ import type { CalibrationHealthResponse } from "@/lib/trace-api";
  */
 export function CalibrationScale({
   calibration,
+  compact = false,
 }: {
   calibration: CalibrationHealthResponse;
+  /** A slim bar without tick labels, for the Overview summary. The full
+   * labeled instrument lives on Live Operations. */
+  compact?: boolean;
 }) {
   const { kappa, drift_entry_threshold: entry } = calibration;
   const recovery = calibration.recovery_threshold;
@@ -25,7 +29,7 @@ export function CalibrationScale({
     <div
       role="img"
       aria-label={`Cohen’s kappa ${kappa !== null ? kappa.toFixed(3) : "unavailable"}. Drift begins at ${entry.toFixed(2)}, recovery at ${recovery.toFixed(2)}, healthy baseline ${baseline.toFixed(3)}.`}
-      className="relative mx-2 mt-9 mb-9 h-3"
+      className={`relative mx-2 ${compact ? "mt-5 mb-1 h-2.5" : "mt-9 mb-9 h-3"}`}
     >
       <span
         className="bg-failure/30 absolute inset-y-0 rounded-l-full"
@@ -51,13 +55,15 @@ export function CalibrationScale({
           style={{ left: at(tick.v) }}
         >
           <span
-            className={`bg-text-tertiary absolute h-5 w-px -translate-x-1/2 ${tick.up ? "-top-4" : "-top-1"}`}
+            className={`bg-text-tertiary absolute -translate-x-1/2 ${compact ? "-top-1 h-4.5 w-px" : `h-5 w-px ${tick.up ? "-top-4" : "-top-1"}`}`}
           />
-          <span
-            className={`text-text-tertiary absolute -translate-x-1/2 font-mono text-[11px] whitespace-nowrap ${tick.up ? "-top-9" : "top-5"}`}
-          >
-            {tick.label}
-          </span>
+          {compact ? null : (
+            <span
+              className={`text-text-tertiary absolute -translate-x-1/2 font-mono text-[11px] whitespace-nowrap ${tick.up ? "-top-9" : "top-5"}`}
+            >
+              {tick.label}
+            </span>
+          )}
         </span>
       ))}
 

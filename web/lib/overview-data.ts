@@ -31,31 +31,6 @@ export interface BlockReasonCount {
   count: number;
 }
 
-/**
- * A representative-aggregation group: one or more real executions of the
- * exact same (ticker, query) pair, collapsed to a single summary row for
- * Overview only (see docs/internal/day9-frontend-data-contract.md,
- * "Representative-aggregation rule"). Grouping is exact-string, not fuzzy
- * -- it exists because the live data genuinely repeats literal query text
- * (retried questions, automated "integration test query" traffic), not
- * because of any NLP normalization. Investigations never groups; every
- * trace id in `traceIds` is still one real, individually inspectable row
- * there.
- */
-export interface TraceGroup {
-  ticker: string | null;
-  query: string;
-  executionCount: number;
-  latestTimestamp: string;
-  disagreementCount: number;
-  /** One real disagreement trace in the group, for a direct deep link. */
-  firstDisagreementId: string | null;
-  /** The most recent real execution in the group -- its judge_state/
-   * rag_status drive the summary row's badge and emphasis. */
-  latestTrace: TraceListItem;
-  traceIds: string[];
-}
-
 /** How far requests got, by rag_status and the stage that stopped them. */
 export interface RequestFlow {
   total: number;
@@ -84,7 +59,6 @@ export interface OverviewData {
   blockedByReason: BlockReasonCount[];
   errorCount: number;
   disagreementTraces: TraceListItem[];
-  recentInvestigations: TraceGroup[];
 }
 
 async function fetchTraces(
@@ -107,83 +81,13 @@ async function fetchTraces(
 }
 
 /** JSON-encoded so a ticker/query pair can never collide with another pair
- * whose concatenation happens to match. */
+ * whose concatenation happens to match. Kept with its test: it is the exact
+ * key Overview used to group repeated questions before that list was cut. */
 export function groupKey(trace: {
   ticker: string | null;
   query: string;
 }): string {
   return JSON.stringify([trace.ticker, trace.query]);
-}
-
-/** Groups real executions by exact (ticker, query) match. See the
- * TraceGroup doc comment -- this is the one place that rule is applied. */
-function groupTraces(
-  traces: TraceListItem[],
-  disagreementIds: Set<string>,
-): TraceGroup[] {
-  const byKey = new Map<string, TraceListItem[]>();
-  for (const trace of traces) {
-    const key = groupKey(trace);
-    const existing = byKey.get(key);
-    if (existing) existing.push(trace);
-    else byKey.set(key, [trace]);
-  }
-
-  return [...byKey.values()].map((executions) => {
-    const sorted = [...executions].sort(
-      (a, b) =>
-        new Date(b.timestamp_utc).getTime() -
-        new Date(a.timestamp_utc).getTime(),
-    );
-    const latestTrace = sorted[0];
-    const disagreements = executions.filter((t) =>
-      disagreementIds.has(t.app_trace_id),
-    );
-    return {
-      ticker: latestTrace.ticker,
-      query: latestTrace.query,
-      executionCount: executions.length,
-      latestTimestamp: latestTrace.timestamp_utc,
-      disagreementCount: disagreements.length,
-      firstDisagreementId: disagreements[0]?.app_trace_id ?? null,
-      latestTrace,
-      traceIds: executions.map((t) => t.app_trace_id),
-    };
-  });
-}
-
-function byLatestDesc(a: TraceGroup, b: TraceGroup): number {
-  return (
-    new Date(b.latestTimestamp).getTime() -
-    new Date(a.latestTimestamp).getTime()
-  );
-}
-
-/** Evidence first: groups containing a cross-tier disagreement, then
- * judge pipeline errors, then blocked or errored requests, then everything
- * else, each tier newest first. */
-function pickRecentInvestigations(
-  allTraces: TraceListItem[],
-  disagreementTraces: TraceListItem[],
-  limit = 6,
-): TraceGroup[] {
-  const disagreementIds = new Set(
-    disagreementTraces.map((t) => t.app_trace_id),
-  );
-  const groups = groupTraces(allTraces, disagreementIds);
-  const byId = new Map(allTraces.map((t) => [t.app_trace_id, t]));
-
-  function tier(group: TraceGroup): number {
-    if (group.disagreementCount > 0) return 0;
-    const executions = group.traceIds.map((id) => byId.get(id));
-    if (executions.some((t) => t?.judge_state === "judge_failed")) return 1;
-    if (executions.some((t) => t && t.rag_status !== "success")) return 2;
-    return 3;
-  }
-
-  return groups
-    .sort((a, b) => tier(a) - tier(b) || byLatestDesc(a, b))
-    .slice(0, limit);
 }
 
 /** Null means the aggregate fetch failed -- callers render an honest
@@ -257,10 +161,6 @@ export async function fetchOverviewData(): Promise<OverviewData | null> {
     blockedByReason,
     errorCount: flow.errored,
     disagreementTraces,
-    recentInvestigations: pickRecentInvestigations(
-      allTraces,
-      disagreementTraces,
-    ),
   };
 }
 

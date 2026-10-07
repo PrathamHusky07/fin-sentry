@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RequestFlow } from "@/components/request-flow";
 import type { RequestFlow as RequestFlowData } from "@/lib/overview-data";
+
+// The component navigates with the app router; a static render has none.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
 const FLOW: RequestFlowData = {
   total: 10,

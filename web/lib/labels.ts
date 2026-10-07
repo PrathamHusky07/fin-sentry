@@ -1,4 +1,4 @@
-import type { JudgeState } from "@/lib/trace-api";
+import type { CalibrationPosition, JudgeState } from "@/lib/trace-api";
 
 /**
  * Human-readable labels for the machine codes the gateway persists. User-
@@ -150,3 +150,27 @@ function humanize(code: string): string {
   const spaced = code.replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+
+/** Where the last persisted kappa reading sits against the state machine's
+ * thresholds, in words. Derived from the persisted `position` field. */
+export const CALIBRATION_POSITION_LABEL: Record<CalibrationPosition, string> = {
+  at_or_above_recovery: "At or above the recovery threshold",
+  between_thresholds: "Between the drift and recovery thresholds",
+  at_or_below_entry: "At or below the drift threshold",
+  insufficient_data: "Too few labeled rows to read",
+};
+
+export type CalibrationTone = "positive" | "warning" | "failure" | "info";
+
+/** The tone a position carries. Matches the Overview attention rules: only a
+ * reading at or above recovery is positive, and a missing reading is never
+ * mapped here, because unavailable is not healthy. */
+export const CALIBRATION_POSITION_TONE: Record<
+  CalibrationPosition,
+  CalibrationTone
+> = {
+  at_or_above_recovery: "positive",
+  between_thresholds: "warning",
+  at_or_below_entry: "failure",
+  insufficient_data: "info",
+};

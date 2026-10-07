@@ -19,9 +19,9 @@ export const DECISIONS: Decision[] = [
     problem:
       "A summary can hide the one case that matters. Repeated questions look identical, and a view that groups them loses which run went wrong.",
     decision:
-      "Investigations keeps one row per persisted execution, blocks and errors included, and never groups, samples or deduplicates. Summary pages group only exact repeats of a ticker and question, and every group links to its individual runs.",
+      "Investigations keeps one row per persisted execution, blocks and errors included, and never groups, samples or deduplicates. Every count on a summary page links to the executions behind it.",
     tradeoff:
-      "More rows to scan. The grouping rule is an exact string match, so a reworded question counts as a different one.",
+      "More rows to scan, and no roll-up of repeated questions: ten identical retries are ten rows.",
     consequence:
       "Any number on a summary page can be walked down to the executions behind it.",
   },
