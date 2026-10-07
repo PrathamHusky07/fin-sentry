@@ -82,6 +82,18 @@ export function buildAttentionItems({
     });
   }
 
+  if (!calibration) {
+    items.push({
+      key: "calibration-unavailable",
+      tone: "warning",
+      title: "Calibration unavailable",
+      what: "The calibration reading could not be loaded from the gateway, so the frontier judge’s agreement with labeled data is unknown right now.",
+      why: "An unknown reading is not a healthy reading. Until it loads, the frontier judge’s verdicts are unverified.",
+      href: "/operations#calibration",
+      cta: "Open the calibration instrument",
+    });
+  }
+
   if (calibration && calibration.position !== "at_or_above_recovery") {
     const kappa =
       calibration.kappa !== null ? calibration.kappa.toFixed(3) : "unavailable";

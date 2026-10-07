@@ -44,9 +44,8 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
 
       {items.length === 0 ? (
         <p className="border-border text-text-secondary mt-6 border-y py-8 text-base">
-          No rule fired. Calibration is at or above recovery, no executions
-          errored, the judge tiers agree, and every delivered answer has a
-          verdict.
+          No rule fired over the persisted executions. None errored, the judge
+          tiers agree, and every delivered answer has a verdict.
         </p>
       ) : (
         <ul className="border-border mt-6 border-t">
