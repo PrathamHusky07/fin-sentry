@@ -219,6 +219,8 @@ export interface ArchEdge {
   from: NodeId;
   to: NodeId;
   kind: EdgeKind;
+  /** Reads along the arrow, from the source to the target. */
+  label?: string;
 }
 
 export const EDGES: ArchEdge[] = [
@@ -232,7 +234,12 @@ export const EDGES: ArchEdge[] = [
   { from: "stream", to: "flash", kind: "async" },
   { from: "stream", to: "sampler", kind: "async" },
   { from: "sampler", to: "frontier", kind: "async" },
-  { from: "calibration", to: "frontier", kind: "measure" },
+  {
+    from: "frontier",
+    to: "calibration",
+    kind: "measure",
+    label: "measured by",
+  },
   { from: "stream", to: "store", kind: "async" },
   { from: "flash", to: "store", kind: "async" },
   { from: "frontier", to: "store", kind: "async" },

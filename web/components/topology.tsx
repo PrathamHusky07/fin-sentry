@@ -22,6 +22,8 @@ import {
   edgeKey,
 } from "@/lib/topology-layout";
 
+const MEASURE_EDGE = EDGES.find((edge) => edge.kind === "measure")!;
+
 const PLANE_ORDER: Plane[] = ["request", "stream", "evaluation", "evidence"];
 
 const PLANE_TEXT: Record<Plane, string> = {
@@ -162,7 +164,7 @@ export function Topology() {
               active === null || related?.has("calibration") ? 0.9 : 0.15
             }
           >
-            measures
+            {MEASURE_EDGE.label}
           </text>
 
           {(Object.keys(BOX) as NodeId[]).map((id) => {

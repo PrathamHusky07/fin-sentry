@@ -151,7 +151,7 @@ export const EDGE_PATH: Record<string, string> = {
   "stream>flash": "M330,314 V430",
   "stream>sampler": "M560,314 V430",
   "sampler>frontier": "M628,472 H702",
-  "calibration>frontier": "M942,472 H838",
+  "frontier>calibration": "M838,472 H942",
   "flash>store": "M330,514 V574 H515 V626",
   "frontier>store": "M770,514 V574 H585 V626",
   "stream>store": "M212,314 V668 H470",
