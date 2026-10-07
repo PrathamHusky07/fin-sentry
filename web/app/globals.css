@@ -53,7 +53,6 @@
   --color-disagreement: var(--disagreement);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-display-serif);
 }
 
 html {
@@ -98,61 +97,15 @@ summary,
     font-variant-numeric: tabular-nums;
   }
 
-  /* Small mono labels: section eyebrows, column heads, scope tags. These are
-   labels, not prose; running text elsewhere stays at 16px on mobile. */
+  /* Small mono labels: page eyebrows, scope tags. These are labels, not
+   prose; running text elsewhere stays at 16px on mobile. Sentence case, so
+   they read as words and not as chrome. */
   .eyebrow {
     font-family: var(--font-mono), ui-monospace, monospace;
-    font-size: 0.75rem;
-    line-height: 1rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: 0.8125rem;
+    line-height: 1.1rem;
+    letter-spacing: 0.01em;
     color: var(--text-tertiary);
-  }
-
-  /* Display serif accent used on the presentation and architecture routes
-   for one or two emphasized words per headline. */
-  .display-accent {
-    font-family: var(--font-display), Georgia, serif;
-    font-style: italic;
-    font-weight: 400;
-    letter-spacing: -0.01em;
-  }
-
-  /* Atmospheric field behind the landing hero and the architecture header:
-   a fine grid that fades out toward the edges plus one soft radial glow.
-   Decorative only. */
-  .field-grid {
-    background-image:
-      linear-gradient(
-        to right,
-        color-mix(in srgb, var(--text-primary) 5%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--text-primary) 5%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 48px 48px;
-    mask-image: radial-gradient(
-      ellipse 70% 60% at 50% 30%,
-      #000 30%,
-      transparent 75%
-    );
-  }
-
-  .field-glow {
-    background:
-      radial-gradient(
-        ellipse 50% 40% at 50% 0%,
-        color-mix(in srgb, var(--accent) 16%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        ellipse 35% 30% at 85% 20%,
-        color-mix(in srgb, var(--signal) 10%, transparent),
-        transparent 70%
-      );
   }
 
   /* System-map transitions: opacity and scale only, so hover and focus
