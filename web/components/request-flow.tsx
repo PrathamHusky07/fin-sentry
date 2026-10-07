@@ -67,7 +67,7 @@ export function RequestFlow({
     },
     {
       label: "Delivered",
-      note: "An answer with citations was returned",
+      note: "An answer was returned",
       count: flow.delivered,
       bar: "bg-positive",
       indent: 0,
@@ -166,9 +166,8 @@ export function RequestFlow({
         <span className="text-text-primary font-medium">
           {frontierCount} executions
         </span>{" "}
-        have a persisted frontier verdict. Those come from the sampler, which
-        keeps about one trace in ten by trace id hash, so frontier review is a
-        sample and not coverage.
+        were selected for frontier review. The sampler keeps about one trace in
+        ten by trace id hash, so frontier review is a sample and not coverage.
       </p>
     </section>
   );
