@@ -41,39 +41,52 @@ export function OpsTimeline({ traces }: { traces: TraceListItem[] | null }) {
   }
 
   return (
-    <ol className="border-border-strong relative ml-1 border-l">
-      {traces.map((trace, i) => {
-        const day = utcDay(trace.timestamp_utc);
-        const showDay = i === 0 || day !== utcDay(traces[i - 1].timestamp_utc);
-        const tone = outcomeTone(trace.rag_status);
-        return (
-          <li key={trace.app_trace_id} className="relative">
-            {showDay ? <p className="eyebrow py-3 pl-6">{day}, UTC</p> : null}
-            <Link
-              href={`/investigations?trace=${trace.app_trace_id}`}
-              className="hover:bg-surface/60 grid min-h-11 grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-0.5 rounded-md py-2 pr-2 pl-6 transition-colors sm:grid-cols-[5.5rem_14rem_1fr]"
-            >
-              <span className="bg-background absolute -left-[5px] mt-1.5 rounded-full">
-                <StatusDot color={tone === "neutral" ? "neutral" : tone} />
-              </span>
-              <span className="tabular-metric text-text-tertiary text-sm">
-                {utcClock(trace.timestamp_utc)}
-              </span>
-              <span className="text-text-primary text-sm font-medium">
-                {outcomeLabel(trace.rag_status, trace.block_reason)}
-              </span>
-              <span className="text-text-secondary col-span-2 min-w-0 truncate text-sm sm:col-span-1">
-                {trace.ticker ? (
-                  <span className="text-text-tertiary mr-2 font-mono">
-                    {trace.ticker}
-                  </span>
-                ) : null}
-                {trace.query}
-              </span>
-            </Link>
-          </li>
-        );
-      })}
-    </ol>
+    <div>
+      <div
+        aria-hidden="true"
+        className="border-border bg-background/90 sticky top-[calc(var(--nav-h)+2.75rem)] z-20 hidden border-b py-2 pl-6 backdrop-blur sm:grid sm:grid-cols-[5.5rem_14rem_1fr] sm:gap-x-4"
+      >
+        <span className="text-text-tertiary text-sm">Time, UTC</span>
+        <span className="text-text-tertiary text-sm">Outcome</span>
+        <span className="text-text-tertiary text-sm">Question</span>
+      </div>
+      <ol className="border-border-strong relative ml-1 border-l">
+        {traces.map((trace, i) => {
+          const day = utcDay(trace.timestamp_utc);
+          const showDay =
+            i === 0 || day !== utcDay(traces[i - 1].timestamp_utc);
+          const tone = outcomeTone(trace.rag_status);
+          return (
+            <li key={trace.app_trace_id} className="relative">
+              {showDay ? (
+                <p className="text-text-tertiary py-3 pl-6 text-sm">{day}</p>
+              ) : null}
+              <Link
+                href={`/investigations?trace=${trace.app_trace_id}`}
+                className="hover:bg-surface/60 grid min-h-11 grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-0.5 rounded-md py-2 pr-2 pl-6 transition-colors sm:grid-cols-[5.5rem_14rem_1fr]"
+              >
+                <span className="bg-background absolute -left-[5px] mt-1.5 rounded-full">
+                  <StatusDot color={tone === "neutral" ? "neutral" : tone} />
+                </span>
+                <span className="tabular-metric text-text-tertiary text-sm">
+                  {utcClock(trace.timestamp_utc)}
+                </span>
+                <span className="text-text-primary text-sm font-medium">
+                  {outcomeLabel(trace.rag_status, trace.block_reason)}
+                </span>
+                <span className="text-text-secondary col-span-2 min-w-0 truncate text-sm sm:col-span-1">
+                  {trace.ticker ? (
+                    <span className="text-text-tertiary mr-2 font-mono">
+                      {trace.ticker}
+                    </span>
+                  ) : null}
+                  {trace.query}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }

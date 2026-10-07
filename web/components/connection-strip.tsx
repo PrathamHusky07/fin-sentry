@@ -14,16 +14,16 @@ function age(ms: number | null, now: number | null): string {
 interface Cell {
   label: string;
   value: string;
-  detail: string;
   color: StatusColor;
 }
 
 /**
- * Four freshness readings in one band: is the stream connected, when the
- * last snapshot arrived, whether the gateway can reach RisingWave, and how
- * old the metrics bucket itself is. They are separate facts. A stream can be
- * connected while the underlying bucket is hours old, and the band shows
- * both instead of one green light.
+ * The freshness band. Four separate facts in one pinned line: is the stream
+ * connected, when the last snapshot arrived, whether the gateway can reach
+ * RisingWave, and how old the metrics bucket itself is. A stream can be
+ * connected while the bucket is hours old, and the band shows both instead
+ * of one green light. It stays pinned under the nav so freshness is in view
+ * whatever is scrolled into the page.
  */
 export function ConnectionStrip({
   connectionState,
@@ -48,7 +48,6 @@ export function ConnectionStrip({
           : connectionState === "connecting"
             ? "Connecting"
             : "Reconnecting",
-      detail: "Server-Sent Events from the gateway",
       color:
         connectionState === "open"
           ? "positive"
@@ -59,7 +58,6 @@ export function ConnectionStrip({
     {
       label: "Last snapshot",
       value: age(receivedAt, now),
-      detail: "The gateway pushes full state every 3 seconds",
       color: receivedAt === null ? "neutral" : "positive",
     },
     {
@@ -69,7 +67,6 @@ export function ConnectionStrip({
           ? "Reachable"
           : "Offline"
         : "Waiting",
-      detail: "As seen by the dashboard service",
       color: snapshot
         ? snapshot.risingwave_connected
           ? "positive"
@@ -83,28 +80,26 @@ export function ConnectionStrip({
         : snapshot
           ? "No bucket"
           : "Waiting",
-      detail: "Latest one-minute window in the throughput view",
       color: bucketEnd ? (bucketStale ? "warning" : "positive") : "neutral",
     },
   ];
 
   return (
-    <dl className="divide-border border-border grid grid-cols-1 divide-y border-y sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
-      {cells.map((cell) => (
-        <div
-          key={cell.label}
-          className="px-1 py-4 sm:px-5 sm:first:pl-0 lg:first:pl-0"
-        >
-          <dt className="eyebrow">{cell.label}</dt>
-          <dd className="mt-2 flex items-center gap-2.5">
+    <div className="border-border bg-background/90 sticky top-[var(--nav-h)] z-30 border-b backdrop-blur">
+      <dl
+        aria-label="Connection and freshness"
+        className="mx-auto grid max-w-7xl grid-cols-2 gap-x-6 gap-y-1 px-4 py-2.5 sm:px-8 lg:grid-cols-4"
+      >
+        {cells.map((cell) => (
+          <div key={cell.label} className="flex min-h-9 items-center gap-2.5">
             <StatusDot color={cell.color} />
-            <span className="text-text-primary text-lg font-medium">
+            <dt className="text-text-tertiary text-sm">{cell.label}</dt>
+            <dd className="text-text-primary text-sm font-medium">
               {cell.value}
-            </span>
-          </dd>
-          <dd className="text-text-tertiary mt-1 text-sm">{cell.detail}</dd>
-        </div>
-      ))}
-    </dl>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }

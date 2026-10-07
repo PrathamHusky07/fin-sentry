@@ -109,29 +109,79 @@ export function LiveOperations({
     useMetricsSnapshot();
   const readouts = buildReadouts(snapshot);
 
-  return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-8 sm:py-16">
-      <PageHeader eyebrow="Telemetry" title="Live Operations">
-        What the system is doing right now. Every readout names what it measures
-        and how fresh it is.
-      </PageHeader>
+  const primary = readouts.slice(0, 3);
+  const judge = readouts.slice(3);
+  const bucket = snapshot?.throughput ?? null;
 
-      <div className="mt-12">
-        <ConnectionStrip
-          connectionState={connectionState}
-          snapshot={snapshot}
-          receivedAt={receivedAt}
-          now={now}
-        />
+  return (
+    <div>
+      <div className="mx-auto w-full max-w-7xl px-4 pt-12 pb-8 sm:px-8 sm:pt-16">
+        <PageHeader eyebrow="Telemetry" title="Live Operations">
+          What the system is doing right now. Every readout names what it
+          measures and how fresh it is.
+        </PageHeader>
       </div>
 
-      <section aria-label="Readouts" className="mt-12">
-        <dl className="divide-border border-border grid grid-cols-1 gap-y-8 sm:grid-cols-2 lg:grid-cols-5 lg:divide-x">
-          {readouts.map((readout) => (
-            <div key={readout.label} className="lg:px-5 lg:first:pl-0">
-              <dt className="eyebrow">{readout.label}</dt>
+      <ConnectionStrip
+        connectionState={connectionState}
+        snapshot={snapshot}
+        receivedAt={receivedAt}
+        now={now}
+      />
+
+      <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-8">
+        <section
+          aria-labelledby="activity-heading"
+          className="border-border-strong bg-background-elevated rounded-2xl border"
+        >
+          <h2 id="activity-heading" className="sr-only">
+            Request activity
+          </h2>
+          <dl className="divide-border grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            {primary.map((readout) => (
+              <div key={readout.label} className="px-6 py-6">
+                <dt className="text-text-secondary text-sm">{readout.label}</dt>
+                <dd
+                  className={`tabular-metric mt-2 text-5xl font-semibold tracking-tight ${readout.stale ? "text-text-secondary" : "text-text-primary"}`}
+                >
+                  {readout.value ?? "no data"}
+                  {readout.value && readout.unit ? (
+                    <span className="text-text-tertiary ml-2 text-sm font-normal">
+                      {readout.unit}
+                    </span>
+                  ) : null}
+                </dd>
+                <dd className="text-text-tertiary mt-2 text-sm leading-snug">
+                  {readout.scope}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="border-border text-text-tertiary border-t px-6 py-3 text-sm">
+            {bucket?.window_end
+              ? `${bucket.stale ? "Stale. " : ""}Latest one-minute bucket ended ${formatUtc(bucket.window_end)}.`
+              : snapshot
+                ? "No bucket reported."
+                : "Waiting for the first snapshot."}
+          </p>
+          <div className="border-border border-t px-4 py-6 sm:px-6">
+            <p className="text-text-primary text-lg font-semibold tracking-tight">
+              Request activity as it arrives
+            </p>
+            <p className="text-text-secondary mt-1 mb-5 max-w-2xl text-sm">
+              Buckets that arrived over the stream while this page has been
+              open.
+            </p>
+            <ActivityChart history={throughputHistory} />
+          </div>
+        </section>
+
+        <dl className="text-text-secondary mt-6 grid gap-x-10 gap-y-3 text-sm sm:grid-cols-2">
+          {judge.map((readout) => (
+            <div key={readout.label}>
+              <dt className="text-text-tertiary">{readout.label}</dt>
               <dd
-                className={`tabular-metric mt-3 text-4xl font-semibold tracking-tight ${readout.stale ? "text-text-secondary" : "text-text-primary"}`}
+                className={`tabular-metric text-xl font-medium ${readout.stale ? "text-text-secondary" : "text-text-primary"}`}
               >
                 {readout.value ?? "no data"}
                 {readout.value && readout.unit ? (
@@ -140,69 +190,45 @@ export function LiveOperations({
                   </span>
                 ) : null}
               </dd>
-              <dd className="text-text-secondary mt-2 text-sm leading-snug">
-                {readout.scope}
-              </dd>
-              <dd className="text-text-tertiary mt-2 text-xs">
-                {readout.asOf
-                  ? `${readout.stale ? "Stale. " : ""}Bucket ended ${formatUtc(readout.asOf)}`
-                  : snapshot
-                    ? "No bucket reported"
-                    : "Waiting for the first snapshot"}
-              </dd>
+              <dd className="mt-1 max-w-md leading-snug">{readout.scope}</dd>
             </div>
           ))}
         </dl>
-      </section>
 
-      <section aria-labelledby="activity-heading" className="mt-16">
-        <h2
-          id="activity-heading"
-          className="text-text-primary text-2xl font-semibold tracking-tight"
+        <div className="border-border mt-16 border-t pt-16">
+          <CalibrationInstrument health={calibration} />
+        </div>
+
+        <section
+          aria-labelledby="timeline-heading"
+          className="border-border mt-16 border-t pt-16"
         >
-          Request activity
-        </h2>
-        <p className="text-text-secondary mt-2 max-w-2xl text-base leading-relaxed">
-          Buckets that arrived over the stream while this page has been open.
-        </p>
-        <div className="mt-6">
-          <ActivityChart history={throughputHistory} />
-        </div>
-      </section>
-
-      <div className="border-border mt-16 border-t pt-16">
-        <CalibrationInstrument health={calibration} />
-      </div>
-
-      <section
-        aria-labelledby="timeline-heading"
-        className="border-border mt-16 border-t pt-16"
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <div>
-            <h2
-              id="timeline-heading"
-              className="text-text-primary text-2xl font-semibold tracking-tight"
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <div>
+              <h2
+                id="timeline-heading"
+                className="text-text-primary text-2xl font-semibold tracking-tight"
+              >
+                Recent operational events
+              </h2>
+              <p className="text-text-secondary mt-2 max-w-2xl text-base leading-relaxed">
+                The newest persisted executions as of the last page load. This
+                list does not stream.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="border-border-strong text-text-primary hover:bg-surface inline-flex min-h-11 items-center rounded-lg border px-4 text-sm font-medium transition-colors"
             >
-              Recent operational events
-            </h2>
-            <p className="text-text-secondary mt-2 max-w-2xl text-base leading-relaxed">
-              The newest persisted executions as of the last page load. This
-              list does not stream.
-            </p>
+              Refresh list
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => router.refresh()}
-            className="border-border-strong text-text-primary hover:bg-surface inline-flex min-h-11 items-center rounded-lg border px-4 text-sm font-medium transition-colors"
-          >
-            Refresh list
-          </button>
-        </div>
-        <div className="mt-6">
-          <OpsTimeline traces={recent} />
-        </div>
-      </section>
+          <div className="mt-6">
+            <OpsTimeline traces={recent} />
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

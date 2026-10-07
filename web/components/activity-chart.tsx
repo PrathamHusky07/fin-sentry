@@ -131,17 +131,20 @@ export function ActivityChart({
 
   return (
     <div>
-      <div className="grid gap-x-10 gap-y-8 lg:grid-cols-2">
+      <div className="grid gap-y-2">
         <figure>
-          <figcaption className="eyebrow">Requests per bucket</figcaption>
+          <figcaption className="text-text-secondary text-sm">
+            Requests per bucket
+          </figcaption>
           <div
-            className="mt-3 h-48"
+            className="mt-2 h-44"
             role="img"
             aria-label={`Requests per one-minute bucket. ${history.length} ${history.length === 1 ? "bucket" : "buckets"} received.`}
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={points}
+                syncId="ops-activity"
                 margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
               >
                 {grid}
@@ -150,19 +153,19 @@ export function ActivityChart({
                   tick={AXIS_TICK}
                   tickLine={false}
                   axisLine={false}
-                  width={32}
+                  width={44}
                   allowDecimals={false}
                 />
                 <Tooltip
-                  cursor={{ fill: "var(--surface)" }}
+                  cursor={{ stroke: "var(--text-tertiary)", strokeWidth: 1 }}
                   content={<ChartTooltip unit="requests" />}
                 />
                 <Bar
                   dataKey="requests"
                   name="requests"
                   fill="var(--accent)"
-                  maxBarSize={28}
-                  radius={[3, 3, 0, 0]}
+                  maxBarSize={24}
+                  radius={[4, 4, 0, 0]}
                   isAnimationActive={!reducedMotion}
                 />
               </BarChart>
@@ -170,18 +173,45 @@ export function ActivityChart({
           </div>
         </figure>
 
-        <figure>
-          <figcaption className="eyebrow">
-            Latency, milliseconds (solid average, dashed p95)
+        <figure className="mt-4">
+          <figcaption className="text-text-secondary flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+            <span>Latency per bucket, milliseconds</span>
+            <span className="flex items-center gap-2">
+              <svg width="26" height="10" aria-hidden="true">
+                <path d="M0 5H26" stroke="var(--signal)" strokeWidth="2" />
+                <circle cx="13" cy="5" r="4" fill="var(--signal)" />
+              </svg>
+              Average
+            </span>
+            <span className="flex items-center gap-2">
+              <svg width="26" height="10" aria-hidden="true">
+                <path
+                  d="M0 5H26"
+                  stroke="var(--signal)"
+                  strokeWidth="2"
+                  strokeDasharray="5 4"
+                />
+                <circle
+                  cx="13"
+                  cy="5"
+                  r="3.5"
+                  fill="var(--background)"
+                  stroke="var(--signal)"
+                  strokeWidth="2"
+                />
+              </svg>
+              p95
+            </span>
           </figcaption>
           <div
-            className="mt-3 h-48"
+            className="mt-2 h-52"
             role="img"
             aria-label={`Average and p95 latency per one-minute bucket. ${history.length} ${history.length === 1 ? "bucket" : "buckets"} received.`}
           >
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={points}
+                syncId="ops-activity"
                 margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
               >
                 {grid}
@@ -192,7 +222,10 @@ export function ActivityChart({
                   axisLine={false}
                   width={44}
                 />
-                <Tooltip content={<ChartTooltip unit="ms" />} />
+                <Tooltip
+                  cursor={{ stroke: "var(--text-tertiary)", strokeWidth: 1 }}
+                  content={<ChartTooltip unit="ms" />}
+                />
                 <Line
                   type="linear"
                   dataKey="avg"
@@ -233,6 +266,45 @@ export function ActivityChart({
             : `${history.length} buckets have arrived since this page opened. Missing minutes stay empty and the line breaks across them.`}{" "}
         There is no stored history behind this chart.
       </p>
+
+      {history.length > 0 ? (
+        <details className="mt-3">
+          <summary className="text-accent hover:text-text-primary inline-flex min-h-11 cursor-pointer items-center text-sm underline underline-offset-4">
+            View the buckets as a table
+          </summary>
+          <table className="mt-2 w-full max-w-xl text-left text-sm">
+            <caption className="sr-only">
+              One-minute buckets received over the stream
+            </caption>
+            <thead>
+              <tr className="text-text-tertiary">
+                <th className="py-2 font-normal">Bucket ended (UTC)</th>
+                <th className="py-2 text-right font-normal">Requests</th>
+                <th className="py-2 text-right font-normal">Avg ms</th>
+                <th className="py-2 text-right font-normal">p95 ms</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((h) => (
+                <tr key={h.windowEnd} className="border-border border-t">
+                  <td className="tabular-metric text-text-secondary py-2">
+                    {clock(new Date(h.windowEnd).getTime())}
+                  </td>
+                  <td className="tabular-metric text-text-primary py-2 text-right">
+                    {h.totalRequests ?? "no data"}
+                  </td>
+                  <td className="tabular-metric text-text-primary py-2 text-right">
+                    {h.avgLatencyMs ?? "no data"}
+                  </td>
+                  <td className="tabular-metric text-text-primary py-2 text-right">
+                    {h.p95LatencyMs ?? "no data"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
     </div>
   );
 }

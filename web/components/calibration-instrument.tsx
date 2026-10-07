@@ -51,6 +51,20 @@ function interpretation(health: CalibrationHealthResponse): string {
   }
 }
 
+/** The question an operator is really asking, answered before any statistic. */
+function trustLine(health: CalibrationHealthResponse): string {
+  switch (health.position) {
+    case "at_or_above_recovery":
+      return "Yes. The frontier judge agrees with labeled examples at the level that counts as recovered.";
+    case "between_thresholds":
+      return "Not fully. The frontier judge’s agreement with labeled examples is above the drift line but has not reached the recovery line.";
+    case "at_or_below_entry":
+      return "No. The frontier judge agrees with labeled examples less than it should, so treat its verdicts with caution.";
+    case "insufficient_data":
+      return "Unknown. Too few labeled rows were scored to place a reading.";
+  }
+}
+
 function Marker({
   at,
   label,
@@ -130,9 +144,16 @@ export function CalibrationInstrument({
         </p>
       </div>
 
+      <p className="text-text-primary mt-6 max-w-3xl text-xl leading-snug font-medium text-balance">
+        <span className="text-text-tertiary block text-sm font-normal">
+          Can the frontier judge be trusted as a second opinion?
+        </span>
+        {trustLine(health)}
+      </p>
+
       <div className="mt-8 grid gap-x-16 gap-y-10 lg:grid-cols-[18rem_1fr]">
         <div>
-          <p className="eyebrow">Cohen&rsquo;s kappa</p>
+          <p className="text-text-tertiary text-sm">Cohen&rsquo;s kappa</p>
           <p className="tabular-metric text-text-primary mt-2 text-6xl font-semibold tracking-tight">
             {health.kappa !== null ? health.kappa.toFixed(3) : "n/a"}
           </p>
