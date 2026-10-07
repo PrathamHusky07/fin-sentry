@@ -215,9 +215,9 @@ export function Investigations() {
           ) : (
             <>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-text-secondary text-sm" aria-live="polite">
-                  Showing {offset + 1}–{offset + data.traces.length}
-                  {data.next_offset === null ? " (end of results)" : ""}.
+                <p className="text-text-tertiary text-sm">
+                  Newest first. The left rail marks disagreements, blocks and
+                  errors.
                 </p>
                 {filtered ? (
                   <button
@@ -236,23 +236,29 @@ export function Investigations() {
                 disagreementIds={disagreementIds}
                 busy={fetching}
               />
-              <div className="mt-6 flex items-center gap-3">
-                <button
-                  type="button"
-                  disabled={offset === 0}
-                  onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                  className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={data.next_offset === null}
-                  onClick={() => setOffset(data.next_offset ?? offset)}
-                  className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next
-                </button>
+              <div className="border-border bg-background/90 sticky bottom-0 z-20 mt-4 flex flex-wrap items-center justify-between gap-3 border-t py-3 backdrop-blur">
+                <p className="text-text-secondary text-sm" aria-live="polite">
+                  Showing {offset + 1}–{offset + data.traces.length}
+                  {data.next_offset === null ? ", end of results" : ""}
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={offset === 0}
+                    onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+                    className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={data.next_offset === null}
+                    onClick={() => setOffset(data.next_offset ?? offset)}
+                    className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </>
           )}

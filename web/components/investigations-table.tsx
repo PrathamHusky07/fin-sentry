@@ -14,6 +14,21 @@ interface Props {
   busy: boolean;
 }
 
+/** A left rail that sorts the eye: disagreement first, then blocks and
+ * errors. A delivered, undisputed execution gets no rail at all. */
+function railClass(trace: TraceListItem, flagged: boolean): string {
+  if (flagged) {
+    return "bg-disagreement/[0.05] shadow-[inset_3px_0_0_var(--disagreement)]";
+  }
+  if (trace.rag_status === "blocked") {
+    return "shadow-[inset_3px_0_0_var(--warning)]";
+  }
+  if (trace.rag_status === "error") {
+    return "shadow-[inset_3px_0_0_var(--failure)]";
+  }
+  return "";
+}
+
 function FrontierCell({
   trace,
   flagged,
@@ -93,7 +108,7 @@ export function InvestigationsTable({
         <thead>
           <tr>
             {[
-              "Time (UTC)",
+              "Time, UTC",
               "Execution",
               "Outcome",
               "Judge state",
@@ -102,7 +117,7 @@ export function InvestigationsTable({
               <th
                 key={head}
                 scope="col"
-                className="eyebrow bg-background border-border-strong sticky top-[var(--nav-h)] z-10 border-b px-3 py-3 font-normal"
+                className="text-text-tertiary bg-background border-border-strong first:pl-5 sticky top-[var(--nav-h)] z-10 border-b px-3 py-3 text-sm font-normal"
               >
                 {head}
               </th>
@@ -119,11 +134,11 @@ export function InvestigationsTable({
                 aria-current={selected ? "true" : undefined}
                 className={`border-border hover:bg-surface/70 cursor-pointer border-b transition-colors ${
                   selected
-                    ? "bg-accent/[0.07] shadow-[inset_2px_0_0_var(--accent)]"
-                    : ""
+                    ? "bg-accent/[0.08] shadow-[inset_3px_0_0_var(--accent)]"
+                    : railClass(t, disagreementIds.has(t.app_trace_id))
                 }`}
               >
-                <td className="text-text-tertiary tabular-metric px-3 py-3 align-top text-xs whitespace-nowrap">
+                <td className="text-text-tertiary tabular-metric py-3 pr-3 pl-5 align-top text-xs whitespace-nowrap">
                   {formatUtcSeconds(t.timestamp_utc)}
                 </td>
                 <td className="px-3 py-1.5 align-top">
@@ -176,7 +191,7 @@ export function InvestigationsTable({
           return (
             <li
               key={t.app_trace_id}
-              className={`border-border border-b ${selected ? "bg-accent/[0.07]" : ""}`}
+              className={`border-border border-b ${selected ? "bg-accent/[0.08] shadow-[inset_3px_0_0_var(--accent)]" : railClass(t, disagreementIds.has(t.app_trace_id))}`}
             >
               <button
                 type="button"
