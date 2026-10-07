@@ -173,105 +173,109 @@ export function Investigations() {
   const filtered = hasActiveFilters(filters);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-8 sm:py-16">
-      <PageHeader eyebrow="Forensic workspace" title="Investigations">
-        One row per persisted execution. Nothing here is grouped, sampled or
-        deduplicated. Open a row for the evidence behind it.
-      </PageHeader>
+    <div className="ctx ctx-forensic flex-1">
+      <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-8 sm:py-16">
+        <PageHeader eyebrow="Forensic workspace" title="Investigations">
+          One row per persisted execution. Nothing here is grouped, sampled or
+          deduplicated. Open a row for the evidence behind it.
+        </PageHeader>
 
-      <div className="mt-10">
-        <InvestigationsFilters
-          filters={filters}
-          onChange={handleFiltersChange}
-        />
-      </div>
+        <div className="mt-10">
+          <InvestigationsFilters
+            filters={filters}
+            onChange={handleFiltersChange}
+          />
+        </div>
 
-      <div className="mt-6">
-        <AsyncState
-          status={status}
-          errorMessage={errorMessage}
-          onRetry={() => {
-            setStatus("loading");
-            setRetryToken((n) => n + 1);
-          }}
-        >
-          {!data || data.traces.length === 0 ? (
-            <div className="border-border-strong rounded-xl border border-dashed px-6 py-14 text-center">
-              <p className="text-text-primary text-lg font-medium">
-                {filtered
-                  ? "No executions match these filters."
-                  : "No executions are persisted yet."}
-              </p>
-              {filtered ? (
-                <button
-                  type="button"
-                  onClick={() => handleFiltersChange(EMPTY_FILTERS)}
-                  className="border-border-strong text-text-primary hover:bg-surface mt-5 min-h-11 rounded-lg border px-4 text-sm font-medium"
-                >
-                  Clear all filters
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-text-tertiary text-sm">
-                  Newest first. The left rail marks disagreements, blocks and
-                  errors.
+        <div className="mt-6">
+          <AsyncState
+            status={status}
+            errorMessage={errorMessage}
+            onRetry={() => {
+              setStatus("loading");
+              setRetryToken((n) => n + 1);
+            }}
+          >
+            {!data || data.traces.length === 0 ? (
+              <div className="border-border-strong rounded-xl border border-dashed px-6 py-14 text-center">
+                <p className="text-text-primary text-lg font-medium">
+                  {filtered
+                    ? "No executions match these filters."
+                    : "No executions are persisted yet."}
                 </p>
                 {filtered ? (
                   <button
                     type="button"
                     onClick={() => handleFiltersChange(EMPTY_FILTERS)}
-                    className="text-accent hover:text-text-primary min-h-11 px-2 text-sm underline underline-offset-4"
+                    className="border-border-strong text-text-primary hover:bg-surface mt-5 min-h-11 rounded-lg border px-4 text-sm font-medium"
                   >
                     Clear all filters
                   </button>
                 ) : null}
               </div>
-              <InvestigationsTable
-                traces={data.traces}
-                onSelect={setSelected}
-                selectedTraceId={selected}
-                disagreementIds={disagreementIds}
-                busy={fetching}
-              />
-              <div className="border-border bg-background/90 sticky bottom-0 z-20 mt-4 flex flex-wrap items-center justify-between gap-3 border-t py-3 backdrop-blur">
-                <p className="text-text-secondary text-sm" aria-live="polite">
-                  Showing {offset + 1}–{offset + data.traces.length}
-                  {data.next_offset === null ? ", end of results" : ""}
-                </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={offset === 0}
-                    onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                    className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    disabled={data.next_offset === null}
-                    onClick={() => setOffset(data.next_offset ?? offset)}
-                    className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Next
-                  </button>
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-text-tertiary text-sm">
+                    Newest first. The left rail marks disagreements, blocks and
+                    errors.
+                  </p>
+                  {filtered ? (
+                    <button
+                      type="button"
+                      onClick={() => handleFiltersChange(EMPTY_FILTERS)}
+                      className="text-accent hover:text-text-primary min-h-11 px-2 text-sm underline underline-offset-4"
+                    >
+                      Clear all filters
+                    </button>
+                  ) : null}
                 </div>
-              </div>
-            </>
-          )}
-        </AsyncState>
-      </div>
+                <InvestigationsTable
+                  traces={data.traces}
+                  onSelect={setSelected}
+                  selectedTraceId={selected}
+                  disagreementIds={disagreementIds}
+                  busy={fetching}
+                />
+                <div className="border-border bg-background/90 sticky bottom-0 z-20 mt-4 flex flex-wrap items-center justify-between gap-3 border-t py-3 backdrop-blur">
+                  <p className="text-text-secondary text-sm" aria-live="polite">
+                    Showing {offset + 1}–{offset + data.traces.length}
+                    {data.next_offset === null ? ", end of results" : ""}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={offset === 0}
+                      onClick={() =>
+                        setOffset((o) => Math.max(0, o - PAGE_SIZE))
+                      }
+                      className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={data.next_offset === null}
+                      onClick={() => setOffset(data.next_offset ?? offset)}
+                      className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </AsyncState>
+        </div>
 
-      {selected ? (
-        <TraceDrilldown
-          key={selected}
-          appTraceId={selected}
-          onClose={() => setSelected(null)}
-        />
-      ) : null}
+        {selected ? (
+          <TraceDrilldown
+            key={selected}
+            appTraceId={selected}
+            onClose={() => setSelected(null)}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

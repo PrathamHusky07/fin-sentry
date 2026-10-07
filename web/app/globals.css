@@ -871,3 +871,55 @@ svg :focus-visible {
 .view-gate[data-seen="false"] * {
   animation-play-state: paused !important;
 }
+
+/* ---------- Forensic rows ----------
+
+   One persisted execution per row. A rail on the left edge carries the
+   row's severity, thickens on hover or focus, and the row takes a faint
+   wash of that tone. The trace id and badges brighten, and the action
+   arrow slides in (see .reveal-on-hover). Selected rows keep the accent. */
+.trace-row {
+  --tone: var(--text-tertiary);
+  box-shadow: inset 0 0 0 0 var(--tone);
+  transition:
+    box-shadow var(--dur-base) var(--ease),
+    background-color var(--dur-base) var(--ease-soft);
+}
+
+.trace-row[data-rail="true"] {
+  box-shadow: inset 3px 0 0 0 var(--tone);
+}
+
+.trace-row[data-flagged="true"] {
+  background-color: rgb(183 148 244 / 0.05);
+}
+
+.trace-row:hover,
+.trace-row:focus-within {
+  background-color: color-mix(in srgb, var(--tone) 6%, var(--surface-hover));
+  box-shadow: inset 5px 0 0 0 var(--tone);
+}
+
+.trace-row[aria-current="true"] {
+  --tone: var(--accent);
+  background-color: rgb(106 168 255 / 0.08);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+.trace-row .trace-id {
+  transition: color var(--dur-base) var(--ease-soft);
+}
+
+.trace-row:hover .trace-id,
+.trace-row:focus-within .trace-id {
+  color: var(--text-secondary);
+}
+
+.trace-row .trace-badges {
+  transition: filter var(--dur-base) var(--ease-soft);
+}
+
+.trace-row:hover .trace-badges,
+.trace-row:focus-within .trace-badges {
+  filter: brightness(1.25);
+}

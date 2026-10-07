@@ -31,7 +31,7 @@ const JUDGE_STATE_OPTIONS = [
 ] as const;
 
 const CONTROL =
-  "border-border-strong bg-background-elevated text-text-primary hover:border-text-tertiary min-h-11 rounded-lg border px-3 text-sm transition-colors";
+  "border-border-strong bg-background-elevated text-text-primary hover:border-line-active hover:bg-surface-hover focus-visible:border-accent min-h-11 rounded-lg border px-3 text-sm transition-colors";
 
 const SELECT = `${CONTROL} min-w-0 flex-1 basis-40 sm:flex-none sm:basis-auto`;
 

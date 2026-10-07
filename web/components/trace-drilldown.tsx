@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { AsyncState, type AsyncStatus } from "@/components/async-state";
 import { CopyButton } from "@/components/copy-button";
 import { JudgeStateBadge } from "@/components/judge-state-badge";
@@ -18,8 +19,10 @@ const FOCUSABLE_SELECTOR =
 function useDialogBehavior(
   dialogRef: React.RefObject<HTMLDivElement | null>,
   onClose: () => void,
+  active: boolean,
 ) {
   useEffect(() => {
+    if (!active) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -52,7 +55,19 @@ function useDialogBehavior(
       previouslyFocused?.focus();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [active]);
+}
+
+const noopSubscribe = () => () => {};
+
+/** False during server render and hydration, true once on the client, so
+ * the portal below only touches document.body in the browser. */
+function useIsClient(): boolean {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
 }
 
 /**
@@ -73,7 +88,8 @@ export function TraceDrilldown({
   const dialogRef = useRef<HTMLDivElement>(null);
   const scores = detail?.found ? detectDisagreement(detail) : null;
 
-  useDialogBehavior(dialogRef, onClose);
+  const isClient = useIsClient();
+  useDialogBehavior(dialogRef, onClose, isClient);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,18 +121,22 @@ export function TraceDrilldown({
     };
   }, [appTraceId, retryToken]);
 
-  return (
+  // The drawer renders into document.body so no page-level stacking context
+  // (the section backdrops isolate themselves) can sit above it or trap it
+  // beneath the sticky navigation.
+  if (!isClient) return null;
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Trace detail"
-      className="fixed inset-0 z-50 flex justify-end overscroll-contain bg-black/60 backdrop-blur-sm"
+      className="swap-in fixed inset-0 z-50 flex justify-end overscroll-contain bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="border-border-strong bg-background-elevated flex h-full w-full max-w-6xl flex-col border-l outline-none"
+        className="modal-in border-line-active bg-background-elevated flex h-full w-full max-w-6xl origin-right flex-col border-l shadow-[-30px_0_60px_-30px_rgb(0_0_0/0.8)] outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="border-border bg-background-elevated/95 sticky top-0 z-10 border-b px-5 pt-4 pb-4 backdrop-blur sm:px-8">
@@ -184,6 +204,7 @@ export function TraceDrilldown({
           </AsyncState>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

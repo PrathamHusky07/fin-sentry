@@ -14,19 +14,20 @@ interface Props {
   busy: boolean;
 }
 
-/** A left rail that sorts the eye: disagreement first, then blocks and
- * errors. A delivered, undisputed execution gets no rail at all. */
-function railClass(trace: TraceListItem, flagged: boolean): string {
-  if (flagged) {
-    return "bg-disagreement/[0.05] shadow-[inset_3px_0_0_var(--disagreement)]";
-  }
+/** The row's severity: disagreement first, then blocks and errors. A
+ * delivered, undisputed execution has no rail until it is pointed at. */
+function rowTone(
+  trace: TraceListItem,
+  flagged: boolean,
+): { tone: string; rail: boolean } {
+  if (flagged) return { tone: "var(--disagreement)", rail: true };
   if (trace.rag_status === "blocked") {
-    return "shadow-[inset_3px_0_0_var(--warning)]";
+    return { tone: "var(--warning)", rail: true };
   }
   if (trace.rag_status === "error") {
-    return "shadow-[inset_3px_0_0_var(--failure)]";
+    return { tone: "var(--failure)", rail: true };
   }
-  return "";
+  return { tone: "var(--text-tertiary)", rail: false };
 }
 
 function FrontierCell({
@@ -127,16 +128,17 @@ export function InvestigationsTable({
         <tbody>
           {traces.map((t) => {
             const selected = t.app_trace_id === selectedTraceId;
+            const flagged = disagreementIds.has(t.app_trace_id);
+            const { tone, rail } = rowTone(t, flagged);
             return (
               <tr
                 key={t.app_trace_id}
                 onClick={() => onSelect(t.app_trace_id)}
                 aria-current={selected ? "true" : undefined}
-                className={`border-border hover:bg-surface/70 cursor-pointer border-b transition-colors ${
-                  selected
-                    ? "bg-accent/[0.08] shadow-[inset_3px_0_0_var(--accent)]"
-                    : railClass(t, disagreementIds.has(t.app_trace_id))
-                }`}
+                data-rail={rail}
+                data-flagged={flagged}
+                style={{ "--tone": tone } as React.CSSProperties}
+                className="trace-row reveal-host border-border cursor-pointer border-b"
               >
                 <td className="text-text-tertiary tabular-metric py-3 pr-3 pl-5 align-top text-xs whitespace-nowrap">
                   {formatUtcSeconds(t.timestamp_utc)}
@@ -151,33 +153,48 @@ export function InvestigationsTable({
                     }}
                     onKeyDown={onKeyDown}
                     aria-label={`Open trace: ${t.query}`}
-                    className="flex min-h-11 w-full min-w-0 scroll-mt-28 scroll-mb-24 flex-col items-start justify-center rounded-md text-left"
+                    className="flex min-h-11 w-full min-w-0 scroll-mt-28 scroll-mb-24 items-center justify-between gap-3 rounded-md text-left"
                   >
-                    <span className="text-text-primary w-full truncate text-sm font-medium">
-                      {t.query}
+                    <span className="nudge flex min-w-0 flex-col items-start">
+                      <span className="text-text-primary w-full truncate text-sm font-medium">
+                        {t.query}
+                      </span>
+                      <span className="text-text-tertiary mt-0.5 flex items-center gap-2 font-mono text-xs">
+                        {t.ticker ? (
+                          <span className="text-text-secondary">
+                            {t.ticker}
+                          </span>
+                        ) : null}
+                        <span className="trace-id">
+                          {shortId(t.app_trace_id)}
+                        </span>
+                      </span>
                     </span>
-                    <span className="text-text-tertiary mt-0.5 flex items-center gap-2 font-mono text-xs">
-                      {t.ticker ? (
-                        <span className="text-text-secondary">{t.ticker}</span>
-                      ) : null}
-                      <span>{shortId(t.app_trace_id)}</span>
+                    <span
+                      aria-hidden="true"
+                      className="reveal-on-hover text-accent shrink-0 pr-1 text-base"
+                    >
+                      →
                     </span>
                   </button>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  <OutcomeBadge
-                    ragStatus={t.rag_status}
-                    blockReason={t.block_reason}
-                  />
+                  <span className="trace-badges inline-flex">
+                    <OutcomeBadge
+                      ragStatus={t.rag_status}
+                      blockReason={t.block_reason}
+                    />
+                  </span>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  <JudgeStateBadge state={t.judge_state} />
+                  <span className="trace-badges inline-flex">
+                    <JudgeStateBadge state={t.judge_state} />
+                  </span>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  <FrontierCell
-                    trace={t}
-                    flagged={disagreementIds.has(t.app_trace_id)}
-                  />
+                  <span className="trace-badges inline-flex">
+                    <FrontierCell trace={t} flagged={flagged} />
+                  </span>
                 </td>
               </tr>
             );
@@ -188,10 +205,16 @@ export function InvestigationsTable({
       <ul className="border-border border-t lg:hidden">
         {traces.map((t) => {
           const selected = t.app_trace_id === selectedTraceId;
+          const flagged = disagreementIds.has(t.app_trace_id);
+          const { tone, rail } = rowTone(t, flagged);
           return (
             <li
               key={t.app_trace_id}
-              className={`border-border border-b ${selected ? "bg-accent/[0.08] shadow-[inset_3px_0_0_var(--accent)]" : railClass(t, disagreementIds.has(t.app_trace_id))}`}
+              aria-current={selected ? "true" : undefined}
+              data-rail={rail}
+              data-flagged={flagged}
+              style={{ "--tone": tone } as React.CSSProperties}
+              className="trace-row border-border border-b"
             >
               <button
                 type="button"
@@ -199,7 +222,7 @@ export function InvestigationsTable({
                 onClick={() => onSelect(t.app_trace_id)}
                 onKeyDown={onKeyDown}
                 aria-label={`Open trace: ${t.query}`}
-                className="hover:bg-surface/70 flex min-h-11 w-full scroll-mt-28 scroll-mb-24 flex-col gap-2 px-1 py-4 text-left"
+                className="flex min-h-11 w-full scroll-mt-28 scroll-mb-24 flex-col gap-2 px-3 py-4 text-left"
               >
                 <span className="text-text-primary text-base leading-snug font-medium">
                   {t.query}
@@ -215,10 +238,7 @@ export function InvestigationsTable({
                     blockReason={t.block_reason}
                   />
                   <JudgeStateBadge state={t.judge_state} />
-                  <FrontierCell
-                    trace={t}
-                    flagged={disagreementIds.has(t.app_trace_id)}
-                  />
+                  <FrontierCell trace={t} flagged={flagged} />
                 </span>
               </button>
             </li>

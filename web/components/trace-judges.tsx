@@ -1,3 +1,6 @@
+"use client";
+
+import { useState, type PointerEvent } from "react";
 import type {
   FlashJudgeView,
   FrontierEvidenceView,
@@ -9,9 +12,20 @@ export interface DisagreementScores {
   frontierScore: number;
 }
 
+type Side = "flash" | "frontier";
+
 /** Two scores on one 0 to 1 axis, with the gap between them filled. The
- * distance is the finding, so it is drawn and not only stated. */
-function ScoreScale({ flash, frontier }: { flash: number; frontier: number }) {
+ * distance is the finding, so it is drawn and not only stated. When a judge
+ * is active its marker grows and the gap brightens. */
+function ScoreScale({
+  flash,
+  frontier,
+  side,
+}: {
+  flash: number;
+  frontier: number;
+  side: Side | null;
+}) {
   const lo = Math.min(flash, frontier) * 100;
   const hi = Math.max(flash, frontier) * 100;
   return (
@@ -22,12 +36,17 @@ function ScoreScale({ flash, frontier }: { flash: number; frontier: number }) {
     >
       <div className="bg-surface-high absolute inset-0 rounded-full" />
       <div
-        className="bg-disagreement/50 absolute inset-y-0"
+        className={`enter-sweep absolute inset-y-0 transition-colors duration-[var(--dur-base)] ${side ? "bg-disagreement/80" : "bg-disagreement/50"}`}
         style={{ left: `${lo}%`, width: `${hi - lo}%` }}
       />
       {[
-        { at: flash, name: "Flash", ring: "border-accent" },
-        { at: frontier, name: "Frontier", ring: "border-disagreement" },
+        { at: flash, name: "Flash", id: "flash", ring: "border-accent" },
+        {
+          at: frontier,
+          name: "Frontier",
+          id: "frontier",
+          ring: "border-disagreement",
+        },
       ].map((m) => (
         <div
           key={m.name}
@@ -36,7 +55,7 @@ function ScoreScale({ flash, frontier }: { flash: number; frontier: number }) {
         >
           <span
             aria-hidden="true"
-            className={`bg-background absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${m.ring}`}
+            className={`bg-background absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 transition-transform duration-[var(--dur-base)] ease-[var(--ease)] ${m.ring} ${side === m.id ? "scale-150" : ""}`}
           />
           <span className="text-text-secondary absolute top-3 -translate-x-1/2 text-xs whitespace-nowrap">
             {m.name}
@@ -54,28 +73,75 @@ function ScoreScale({ flash, frontier }: { flash: number; frontier: number }) {
 }
 
 /** The paired readings at the heart of a disagreement: both persisted
- * faithfulness scores, large, with the distance between them drawn. */
-function DisagreementDuel({ scores }: { scores: DisagreementScores }) {
+ * faithfulness scores, large, with the distance between them drawn. Pointing
+ * at, focusing or tapping a score lights that judge and dims the other. */
+function DisagreementDuel({
+  scores,
+  side,
+  onHover,
+  onPin,
+  pinned,
+}: {
+  scores: DisagreementScores;
+  side: Side | null;
+  onHover: (side: Side | null) => void;
+  onPin: (side: Side) => void;
+  pinned: Side | null;
+}) {
+  const cells: { id: Side; label: string; value: number; color: string }[] = [
+    {
+      id: "flash",
+      label: "Flash judge",
+      value: scores.flashScore,
+      color: "text-accent",
+    },
+    {
+      id: "frontier",
+      label: "Frontier judge",
+      value: scores.frontierScore,
+      color: "text-disagreement",
+    },
+  ];
   return (
     <div>
       <p className="text-disagreement text-base font-semibold">
         The two judge tiers disagree on faithfulness
       </p>
-      <div className="mt-5 grid grid-cols-2 gap-6">
-        <div>
-          <p className="text-text-secondary text-sm">Flash judge</p>
-          <p className="tabular-metric text-accent mt-1 text-5xl font-semibold tracking-tight">
-            {scores.flashScore.toFixed(3)}
-          </p>
-        </div>
-        <div>
-          <p className="text-text-secondary text-sm">Frontier judge</p>
-          <p className="tabular-metric text-disagreement mt-1 text-5xl font-semibold tracking-tight">
-            {scores.frontierScore.toFixed(3)}
-          </p>
-        </div>
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        {cells.map((cell) => (
+          <button
+            key={cell.id}
+            type="button"
+            aria-pressed={pinned === cell.id}
+            onPointerEnter={(e: PointerEvent) => {
+              if (e.pointerType === "mouse") onHover(cell.id);
+            }}
+            onPointerLeave={(e: PointerEvent) => {
+              if (e.pointerType === "mouse") onHover(null);
+            }}
+            onFocus={(e) => {
+              if (e.currentTarget.matches(":focus-visible")) onHover(cell.id);
+            }}
+            onBlur={() => onHover(null)}
+            onClick={() => onPin(cell.id)}
+            className={`min-h-11 rounded-lg p-2 text-left transition-[opacity,background-color] duration-[var(--dur-base)] ease-[var(--ease-soft)] ${side !== null && side !== cell.id ? "opacity-35" : "opacity-100"} ${side === cell.id ? "bg-surface-hover/60" : ""}`}
+          >
+            <span className="text-text-secondary block text-sm">
+              {cell.label}
+            </span>
+            <span
+              className={`tabular-metric mt-1 block text-5xl font-semibold tracking-tight ${cell.color}`}
+            >
+              {cell.value.toFixed(3)}
+            </span>
+          </button>
+        ))}
       </div>
-      <ScoreScale flash={scores.flashScore} frontier={scores.frontierScore} />
+      <ScoreScale
+        flash={scores.flashScore}
+        frontier={scores.frontierScore}
+        side={side}
+      />
     </div>
   );
 }
@@ -189,14 +255,18 @@ function FrontierSection({ evidence }: { evidence: FrontierEvidenceView }) {
 function JudgeBlock({
   title,
   note,
+  dimmed = false,
   children,
 }: {
   title: string;
   note?: string;
+  dimmed?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-border border-t pt-5">
+    <div
+      className={`border-border border-t pt-5 transition-opacity duration-[var(--dur-base)] ease-[var(--ease-soft)] ${dimmed ? "opacity-35" : "opacity-100"}`}
+    >
       <h2 className="text-text-primary text-base font-semibold">{title}</h2>
       {note ? (
         <p className="text-text-tertiary mt-0.5 text-sm">{note}</p>
@@ -217,6 +287,9 @@ export function JudgesColumn({
   scores: DisagreementScores | null;
 }) {
   const stoppedBefore = detail.rag_status !== "success";
+  const [hovered, setHovered] = useState<Side | null>(null);
+  const [pinned, setPinned] = useState<Side | null>(null);
+  const side = scores ? (hovered ?? pinned) : null;
   return (
     <section
       aria-label={
@@ -228,9 +301,21 @@ export function JudgesColumn({
           : "space-y-5"
       }
     >
-      {scores ? <DisagreementDuel scores={scores} /> : null}
+      {scores ? (
+        <DisagreementDuel
+          scores={scores}
+          side={side}
+          onHover={setHovered}
+          pinned={pinned}
+          onPin={(s) => setPinned((p) => (p === s ? null : s))}
+        />
+      ) : null}
 
-      <JudgeBlock title="Flash judge" note="Scores every delivered answer">
+      <JudgeBlock
+        title="Flash judge"
+        note="Scores every delivered answer"
+        dimmed={side === "frontier"}
+      >
         {detail.flash ? (
           <FlashSection flash={detail.flash} />
         ) : (
@@ -242,7 +327,11 @@ export function JudgesColumn({
         )}
       </JudgeBlock>
 
-      <JudgeBlock title="Frontier judge" note="A second review on a sample">
+      <JudgeBlock
+        title="Frontier judge"
+        note="A second review on a sample"
+        dimmed={side === "flash"}
+      >
         {detail.frontier.evidence ? (
           <FrontierSection evidence={detail.frontier.evidence} />
         ) : (

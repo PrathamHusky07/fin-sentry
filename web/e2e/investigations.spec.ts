@@ -140,4 +140,58 @@ test.describe("Investigations", () => {
     await page.goto("/judges");
     await expect(page).toHaveURL(/\/investigations$/);
   });
+
+  test("hovering a row reveals its open action and brightens its rail", async ({
+    page,
+  }) => {
+    await page.goto("/investigations");
+    const row = page.locator("table tbody tr").nth(1);
+    const arrow = row.locator(".reveal-on-hover");
+    await expect(arrow).toHaveCSS("opacity", "0");
+    await row.hover();
+    await expect(arrow).toHaveCSS("opacity", "1");
+    await expect
+      .poll(() =>
+        row.evaluate((el) => getComputedStyle(el).boxShadow.includes("5px")),
+      )
+      .toBe(true);
+  });
+
+  test("the drawer lights the hovered judge, links chunks to quotes and opens path stages", async ({
+    page,
+  }) => {
+    await page.goto(
+      "/investigations?trace=96bca4b5-f707-4a93-b421-2674032849b5",
+    );
+    const dialog = page.getByRole("dialog", { name: "Trace detail" });
+    await expect(dialog).toBeVisible();
+
+    const flash = dialog.getByRole("button", { name: /^Flash judge/ }).first();
+    const frontier = dialog
+      .getByRole("button", { name: /^Frontier judge/ })
+      .first();
+    await flash.hover();
+    await expect
+      .poll(async () =>
+        Number(await frontier.evaluate((el) => getComputedStyle(el).opacity)),
+      )
+      .toBeLessThan(0.5);
+
+    const chunk = dialog
+      .locator("section[aria-labelledby='trace-evidence']")
+      .getByRole("button")
+      .first();
+    await chunk.hover();
+    await expect(
+      dialog.locator("section[aria-labelledby='trace-evidence']"),
+    ).toContainText(/Not cited by the answer|Cited by the answer/);
+
+    const generation = dialog.getByRole("button", { name: /^Generation/ });
+    await generation.scrollIntoViewIfNeeded();
+    await expect(generation).toHaveAttribute("aria-expanded", "false");
+    await generation.hover();
+    await expect(dialog.getByText(/^Model .*stated confidence/)).toBeVisible();
+    await generation.click();
+    await expect(generation).toHaveAttribute("aria-expanded", "true");
+  });
 });

@@ -1,4 +1,5 @@
 import { ExecutionPath } from "@/components/execution-path";
+import { Evidence } from "@/components/trace-evidence";
 import { JudgesColumn } from "@/components/trace-judges";
 import {
   Section,
@@ -127,83 +128,6 @@ function Answer({
         </p>
       ) : null}
     </section>
-  );
-}
-
-/** The retrieved chunks and what the answer made of them. A chunk is marked
- * cited when the answer cites it, and marked again when the frontier judge
- * named it as supporting or contradicting. */
-function Evidence({ detail }: { detail: TraceDetailResponse }) {
-  const cited = new Set(detail.citations.map((c) => c.chunk_id));
-  const supporting = new Set(
-    detail.frontier.evidence?.cited_chunks_supporting ?? [],
-  );
-  const contradicting = new Set(
-    detail.frontier.evidence?.cited_chunks_contradicting ?? [],
-  );
-  const stoppedBefore = detail.rag_status !== "success";
-  const retrieved = detail.retrieved_chunk_ids.length;
-  const citedCount = cited.size;
-
-  return (
-    <Section title="Evidence the answer rests on" id="trace-evidence">
-      <p className="text-text-secondary text-base">
-        {retrieved} chunk{retrieved === 1 ? "" : "s"} retrieved, {citedCount}{" "}
-        cited in the answer.
-        {retrieved > 0 && citedCount === 0 && !stoppedBefore
-          ? " The model cited none of the retrieved context."
-          : ""}
-      </p>
-      {retrieved > 0 ? (
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {detail.retrieved_chunk_ids.map((id) => {
-            const tags = [
-              cited.has(id) ? "cited" : "not cited",
-              supporting.has(id) ? "frontier: supports" : null,
-              contradicting.has(id) ? "frontier: contradicts" : null,
-            ].filter((t): t is string => t !== null);
-            return (
-              <li
-                key={id}
-                className={`rounded-md border px-2 py-1 ${cited.has(id) ? "border-accent/50 bg-accent/5" : "border-border-strong"}`}
-              >
-                <span
-                  className={`font-mono text-xs ${cited.has(id) ? "text-accent" : "text-text-tertiary"}`}
-                >
-                  {id}
-                </span>
-                <span
-                  className={`ml-2 text-xs ${contradicting.has(id) ? "text-disagreement" : "text-text-tertiary"}`}
-                >
-                  {tags.join(", ")}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="text-text-tertiary mt-2 text-sm">
-          No retrieved chunk ids were recorded for this trace.
-        </p>
-      )}
-      {detail.citations.length > 0 ? (
-        <ul className="mt-5 space-y-4">
-          {detail.citations.map((c, index) => (
-            <li
-              key={`${c.chunk_id}-${index}`}
-              className="border-accent/40 border-l-2 pl-4"
-            >
-              <span className="text-accent font-mono text-xs">
-                {c.chunk_id}
-              </span>
-              <p className="text-text-primary mt-1 text-base leading-relaxed">
-                {c.quote}
-              </p>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </Section>
   );
 }
 

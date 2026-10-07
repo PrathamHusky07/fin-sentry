@@ -1,7 +1,10 @@
-import { Fragment } from "react";
+"use client";
+
+import { Fragment, useState } from "react";
 import {
   BLOCK_STAGE_LABEL,
   blockReasonLabel,
+  blockReasonMeaning,
   blockStage,
   errorKindLabel,
 } from "@/lib/labels";
@@ -25,6 +28,9 @@ interface Stage {
   summary: string;
   /** The persisted machine fields behind the outcome, for the engineer. */
   code?: string;
+  /** The persisted reason or evidence behind the outcome, shown when the
+   * stage is opened. Only ever built from fields on the trace. */
+  detail?: string;
   /** True for the stages that run after the response, off the request path. */
   async?: boolean;
 }
@@ -123,7 +129,8 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
     stage: Exclude<StageKey, "unknown">,
     reached: boolean,
     passedText: string,
-  ): Pick<Stage, "status" | "summary" | "code"> {
+    passedDetail?: string,
+  ): Pick<Stage, "status" | "summary" | "code" | "detail"> {
     if (unclassified) {
       return {
         status: "unknown",
@@ -135,6 +142,7 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
         status: "blocked",
         summary: blockReasonLabel(detail.block_reason, detail.block_rail),
         code,
+        detail: blockReasonMeaning(detail.block_reason) ?? undefined,
       };
     }
     if (errorAt === stage) {
@@ -142,10 +150,11 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
         status: "error",
         summary: errorKind ? errorKindLabel(errorKind) : "Failed",
         code,
+        detail: `The request ended in an error at this stage. The persisted error kind is ${errorKind ?? "not recorded"}.`,
       };
     }
     if (!reached) return { status: "not_reached", summary: "Not reached" };
-    return { status: "passed", summary: passedText };
+    return { status: "passed", summary: passedText, detail: passedDetail };
   }
 
   const flash = detail.flash;
@@ -166,7 +175,14 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
     : [];
 
   return [
-    { label: "Request", status: "passed", summary: "Received by the gateway" },
+    {
+      label: "Request",
+      status: "passed",
+      summary: "Received by the gateway",
+      detail: detail.endpoint
+        ? `Endpoint ${detail.endpoint}${detail.ticker ? `, ticker ${detail.ticker}` : ""}.`
+        : undefined,
+    },
     ...unknownStage,
     {
       label: BLOCK_STAGE_LABEL.input,
@@ -180,6 +196,9 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
         chunks > 0
           ? `${chunks} chunk${chunks === 1 ? "" : "s"} retrieved`
           : "No chunk ids were recorded",
+        chunks > 0
+          ? `Retrieved ${detail.retrieved_chunk_ids.slice(0, 8).join(", ")}${chunks > 8 ? ` and ${chunks - 8} more` : ""}.`
+          : undefined,
       ),
     },
     {
@@ -190,11 +209,21 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
         detail.model_used
           ? `Answered by ${detail.model_used}`
           : "Model not recorded",
+        detail.model_used
+          ? `Model ${detail.model_used}${detail.confidence ? `, stated confidence ${detail.confidence}` : ""}.`
+          : undefined,
       ),
     },
     {
       label: BLOCK_STAGE_LABEL.output,
-      ...outcome("output", reachedOutput, "Answer passed every output rail"),
+      ...outcome(
+        "output",
+        reachedOutput,
+        "Answer passed every output rail",
+        detail.citations.length > 0
+          ? `The answer cites ${new Set(detail.citations.map((c) => c.chunk_id)).size} distinct retrieved chunks.`
+          : undefined,
+      ),
     },
     {
       label: "Flash judge",
@@ -217,6 +246,9 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
         : delivered
           ? "No verdict has been persisted"
           : "Nothing to judge: no answer was delivered",
+      detail: flash
+        ? `Status ${flash.status}. Faithfulness ${flash.faithfulness_score?.toFixed(3) ?? "not scored"}, answer relevance ${flash.answer_relevance_score?.toFixed(3) ?? "not scored"}, context relevance ${flash.context_relevance_score?.toFixed(3) ?? "not scored"}.`
+        : undefined,
     },
     {
       label: "Frontier judge",
@@ -231,20 +263,39 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
         : frontier.sampled
           ? "Sampled, but no real judge evidence is persisted"
           : "Not in the one-in-ten sample",
+      detail: frontier.evidence
+        ? `Verdict ${frontier.evidence.verdict}${frontier.evidence.faithfulness_score !== null ? `, faithfulness ${frontier.evidence.faithfulness_score.toFixed(3)}` : ""}.`
+        : frontier.note || undefined,
     },
   ];
 }
 
 /** The real per-trace execution path. Every stage’s outcome traces to a
  * field on TraceDetailResponse, and the raw codes sit under the plain
- * summary for the engineer who needs them. */
+ * summary for the engineer who needs them. A stage with persisted evidence
+ * behind it opens on hover, focus or tap to show it. */
 export function ExecutionPath({ detail }: { detail: TraceDetailResponse }) {
   const stages = buildStages(detail);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
   return (
     <ol className="relative">
       {stages.map((stage, i) => {
         const style = STATUS_STYLE[stage.status];
         const showBoundary = stage.async && !stages[i - 1]?.async;
+        const expandable = Boolean(stage.detail);
+        const open = hovered === stage.label || pinned === stage.label;
+        const heading = (
+          <span className="flex flex-wrap items-baseline gap-x-3">
+            <span className="text-text-primary text-base font-medium">
+              {stage.label}
+            </span>
+            <span className={`text-sm ${style.text}`}>
+              <span className="sr-only">{style.word}: </span>
+              {stage.summary}
+            </span>
+          </span>
+        );
         return (
           <Fragment key={stage.label}>
             {showBoundary ? (
@@ -258,7 +309,15 @@ export function ExecutionPath({ detail }: { detail: TraceDetailResponse }) {
                 </p>
               </li>
             ) : null}
-            <li className="relative pb-5 pl-8 last:pb-0">
+            <li
+              className="relative pb-5 pl-8 last:pb-0"
+              onPointerEnter={(e) => {
+                if (e.pointerType === "mouse") setHovered(stage.label);
+              }}
+              onPointerLeave={(e) => {
+                if (e.pointerType === "mouse") setHovered(null);
+              }}
+            >
               {i < stages.length - 1 ? (
                 <span
                   aria-hidden="true"
@@ -267,21 +326,38 @@ export function ExecutionPath({ detail }: { detail: TraceDetailResponse }) {
               ) : null}
               <span
                 aria-hidden="true"
-                className={`absolute top-[5px] left-0 h-[11px] w-[11px] rounded-full border-2 ${style.dot}`}
+                className={`absolute top-[5px] left-0 h-[11px] w-[11px] rounded-full border-2 transition-transform duration-[var(--dur-base)] ease-[var(--ease)] ${style.dot} ${open ? "scale-125" : ""}`}
               />
-              <div className="flex flex-wrap items-baseline gap-x-3">
-                <span className="text-text-primary text-base font-medium">
-                  {stage.label}
-                </span>
-                <span className={`text-sm ${style.text}`}>
-                  <span className="sr-only">{style.word}: </span>
-                  {stage.summary}
-                </span>
-              </div>
+              {expandable ? (
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setPinned((p) => (p === stage.label ? null : stage.label))
+                  }
+                  className="min-h-6 w-full rounded-md text-left"
+                >
+                  {heading}
+                </button>
+              ) : (
+                heading
+              )}
               {stage.code ? (
                 <p className="text-text-tertiary mt-1 font-mono text-xs break-words">
                   {stage.code}
                 </p>
+              ) : null}
+              {expandable ? (
+                <div
+                  className={`grid transition-[grid-template-rows,opacity] duration-[var(--dur-base)] ease-[var(--ease)] ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+                >
+                  <p
+                    inert={!open}
+                    className="text-text-secondary overflow-hidden text-sm leading-relaxed"
+                  >
+                    <span className="block pt-1.5">{stage.detail}</span>
+                  </p>
+                </div>
               ) : null}
             </li>
           </Fragment>
