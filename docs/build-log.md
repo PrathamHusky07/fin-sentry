@@ -1,5 +1,30 @@
 # Build Log
 
+## 2026-10-06 — Frontend transformation (frontend only)
+
+Rebuilt the frontend around six routes: `/` (presentation), `/overview`
+(command center), `/operations` (telemetry), `/investigations` (forensic
+workspace), `/architecture` (new) and `/red-team` (honest not-built page).
+Dark-only visual system, sticky translucent shell, an interactive systems
+topology on the landing page, and a separate Overview and Live Operations
+(they no longer share content). Investigations keeps one row per execution
+and gains a sticky header, human-readable outcomes, disagreement marks and a
+trace drawer that mirrors state in the URL.
+
+Frontend claims corrected from source (read, not run): the flash judge is
+`gemini-3.6-flash`, hosted. The frontier judge is a hosted Gemini rubric
+judge, not local. Calibration covers the frontier judge only and is one
+manual canary reading on disk, not a weekly or per-request step. Token and
+cost readouts are the flash judge's latest one-minute bucket, not platform
+totals. NeMo orchestrates the input rails only.
+
+No backend code, database, Docker service or model run was touched. Backend
+defects found while reading source, including the known 422 raw-output leak,
+are listed in `docs/internal/backend-followups.md` and are not fixed.
+Frontend checks: `tsc`, `eslint`, `prettier --check`, `next build` clean;
+Playwright 17 of 17 with one worker against the live stack. Not added:
+Vitest (needs approval as a new dependency).
+
 ## 2026-10-06 — d9 Session 2B Phase 6: verification, close session 2B
 
 Backend: `pytest -x -q` 559 passed, `ruff check .` clean, `mypy

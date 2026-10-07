@@ -68,44 +68,53 @@ test.describe("Investigations", () => {
     await expect(previous).toBeDisabled();
   });
 
-  test("the table header stays pinned while the body scrolls (sticky header)", async ({
+  test("the table header stays pinned beneath the global nav while the page scrolls", async ({
     page,
   }) => {
     await page.goto("/investigations");
-    // The DataTable's own overflow-y-auto div, not the page -- scrolling
-    // this element's scrollTop directly isolates the check from any page-
-    // level scroll scrollIntoViewIfNeeded might also trigger.
-    const scrollRegion = page.locator("table").locator("xpath=..");
-    const header = page.locator("table thead tr");
+    const header = page.locator("table thead th").first();
     await expect(header).toBeVisible();
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
 
-    await scrollRegion.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
+    await page.evaluate(() => window.scrollTo(0, 700));
+    await page.waitForTimeout(200);
 
+    const nav = await page.locator("header").first().boundingBox();
     const headerBox = await header.boundingBox();
-    const regionBox = await scrollRegion.boundingBox();
+    expect(nav).not.toBeNull();
     expect(headerBox).not.toBeNull();
-    expect(regionBox).not.toBeNull();
-    // A pinned header sits at the top edge of its scroll container even
-    // after the container scrolls to its end -- an un-pinned header would
-    // have scrolled away with the rows and no longer be near that edge.
-    expect(Math.abs((headerBox?.y ?? 0) - (regionBox?.y ?? 0))).toBeLessThan(2);
+    // Pinned: the header sits directly under the sticky nav after scroll.
+    expect(Math.abs((headerBox?.y ?? 0) - (nav?.height ?? 0))).toBeLessThan(3);
   });
 
   test("a trace row opens the dialog, Escape closes it, and focus returns to the row", async ({
     page,
   }) => {
     await page.goto("/investigations");
-    const firstRow = page.locator("table tbody tr").first();
-    await firstRow.focus();
-    await firstRow.press("Enter");
+    const firstButton = page.locator("table [data-row-button]").first();
+    await firstButton.focus();
+    await firstButton.press("Enter");
 
     const dialog = page.getByRole("dialog", { name: "Trace detail" });
     await expect(dialog).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
-    await expect(firstRow).toBeFocused();
+    await expect(firstButton).toBeFocused();
+  });
+
+  test("outcomes use human-readable labels, with raw codes kept for the detail view", async ({
+    page,
+  }) => {
+    await page.goto("/investigations?status=blocked");
+    const rows = page.locator("table tbody tr");
+    await expect(rows.first()).toBeVisible();
+    await expect(rows.first()).toContainText(/Blocked · /);
+    await expect(page.locator("table")).not.toContainText("malformed_json");
+  });
+
+  test("/judges still redirects to /investigations", async ({ page }) => {
+    await page.goto("/judges");
+    await expect(page).toHaveURL(/\/investigations$/);
   });
 });

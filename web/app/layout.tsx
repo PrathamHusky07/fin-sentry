@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { TopNav } from "@/components/top-nav";
 import "./globals.css";
 
@@ -13,18 +13,34 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const displaySerif = Instrument_Serif({
+  variable: "--font-display-serif",
+  subsets: ["latin"],
+  weight: "400",
+  style: "italic",
+});
+
+export const viewport: Viewport = {
+  themeColor: "#07090c",
+  colorScheme: "dark",
+};
+
 export const metadata: Metadata = {
   title: "Fin-Sentry",
-  description: "AI reliability and evaluation operations",
+  description:
+    "An AI reliability and evaluation platform for financial RAG: guardrails on the request path, judges on a separate evaluation plane, and a preserved record of every execution.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} ${displaySerif.variable} h-full antialiased`}
+    >
       <body className="flex min-h-full flex-col">
         <a
           href="#main-content"
-          className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:rounded-md focus-visible:bg-blue-600 focus-visible:px-4 focus-visible:py-2 focus-visible:text-white"
+          className="bg-accent text-background sr-only rounded-md px-4 py-2 font-medium focus-visible:not-sr-only focus-visible:absolute focus-visible:top-2 focus-visible:left-2 focus-visible:z-[60]"
         >
           Skip to content
         </a>

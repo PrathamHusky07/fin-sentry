@@ -1,36 +1,51 @@
 @import "tailwindcss";
 
-/* Fin-Sentry application visual system: a dense operations tool, not a
-   marketing surface (see ../CLAUDE.md). Background-shift elevation, not
-   drop shadows -- bg / bg-elevated / surface are three steps of the same
-   scale, not a color plus a shadow. */
+/* Fin-Sentry visual system.
+
+   One dark, ink-toned identity across every route. Elevation is a
+   background-shift scale (background < elevated < surface < surface-high),
+   never a drop shadow. Color carries meaning, so the semantic hues are
+   reserved: positive, warning, failure and disagreement always mean what
+   they say. `accent` marks the synchronous request path and `signal`
+   marks the asynchronous evaluation plane in diagrams. The page is dark by
+   design (no theme toggle), so every contrast pair below was checked
+   against WCAG AA on all four surfaces. */
 :root {
-  --background: #fafaf9;
-  --background-elevated: #ffffff;
-  --surface: #f2f1ee;
-  --border: #e4e2dd;
-  --text-primary: #1a1c1e;
-  --text-secondary: #6b6f76;
-  --accent: #2b6cb8;
-  --positive: #2f9e59;
-  --warning: #c98a1e;
-  --failure: #c4493d;
-  --info: #4a7fb5;
-  /* A fourth signal, distinct from failure -- a flash/frontier disagreement
-     is a real finding the platform is supposed to surface, not a system
-     failure. Never reuse --failure for it (see web/CLAUDE.md, judge /
-     frontier data section). */
-  --disagreement: #8451c4;
+  color-scheme: dark;
+  --background: #07090c;
+  --background-elevated: #0c1015;
+  --surface: #11161d;
+  --surface-high: #171d26;
+  --border: #1c232d;
+  --border-strong: #2c3541;
+  --text-primary: #e9edf2;
+  --text-secondary: #9aa4b2;
+  --text-tertiary: #7a8596;
+  --accent: #6aa8ff;
+  --signal: #5cd4e6;
+  --positive: #46d982;
+  --warning: #f0a93b;
+  --failure: #f26b5e;
+  --info: #7fb0e8;
+  /* A fourth signal, distinct from failure: a flash/frontier disagreement
+     is a real finding the platform exists to surface, not a system
+     failure (see web/CLAUDE.md, judge / frontier data section). */
+  --disagreement: #b794f4;
+  --nav-h: 3.5rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-background-elevated: var(--background-elevated);
   --color-surface: var(--surface);
+  --color-surface-high: var(--surface-high);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
   --color-accent: var(--accent);
+  --color-signal: var(--signal);
   --color-positive: var(--positive);
   --color-warning: var(--warning);
   --color-failure: var(--failure);
@@ -38,63 +53,152 @@
   --color-disagreement: var(--disagreement);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display-serif);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d0f12;
-    --background-elevated: #15181d;
-    --surface: #1b1f26;
-    --border: #272b33;
-    --text-primary: #ededec;
-    --text-secondary: #8b9099;
-    --accent: #5b9bd9;
-    --positive: #4ade80;
-    --warning: #f5a623;
-    --failure: #f2645a;
-    --info: #7daedc;
-    --disagreement: #b48af0;
-  }
+html {
+  scroll-padding-top: calc(var(--nav-h) + 1rem);
 }
 
 body {
   background: var(--background);
   color: var(--text-primary);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Metric values use tabular figures so a changing number never shifts its
-   neighbors' width -- Geist Mono is already loaded for this, no new font. */
-.tabular-metric {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
+/* Taps on controls should never wait for a double-tap zoom. */
+a,
+button,
+input,
+select,
+summary,
+[role="button"] {
+  touch-action: manipulation;
 }
 
-/* Reliability pipeline connector: a static line between stages. The subtle
-   gradient drift is purely decorative (it does not represent request
-   volume or any live value) and is disabled under prefers-reduced-motion. */
-.pipeline-connector {
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    var(--border) 0%,
-    var(--accent) 50%,
-    var(--border) 100%
-  );
-  background-size: 200% 100%;
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text-primary);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .pipeline-connector {
-    animation: pipeline-flow 6s linear infinite;
+/* One focus treatment for every interactive element, so a keyboard user
+   never loses their place. Components may adjust the offset, never remove
+   the outline. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@layer components {
+  /* Metric values use tabular figures so a changing number never shifts its
+   neighbors' width. */
+  .tabular-metric {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Small mono labels: section eyebrows, column heads, scope tags. These are
+   labels, not prose; running text elsewhere stays at 16px on mobile. */
+  .eyebrow {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  /* Display serif accent used on the presentation and architecture routes
+   for one or two emphasized words per headline. */
+  .display-accent {
+    font-family: var(--font-display), Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  /* Atmospheric field behind the landing hero and the architecture header:
+   a fine grid that fades out toward the edges plus one soft radial glow.
+   Decorative only. */
+  .field-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--text-primary) 5%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--text-primary) 5%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 48px 48px;
+    mask-image: radial-gradient(
+      ellipse 70% 60% at 50% 30%,
+      #000 30%,
+      transparent 75%
+    );
+  }
+
+  .field-glow {
+    background:
+      radial-gradient(
+        ellipse 50% 40% at 50% 0%,
+        color-mix(in srgb, var(--accent) 16%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse 35% 30% at 85% 20%,
+        color-mix(in srgb, var(--signal) 10%, transparent),
+        transparent 70%
+      );
+  }
+
+  /* Topology connectors. Solid strokes are the synchronous request path;
+   dashed strokes are asynchronous hand-offs. The dash drift on async edges
+   is decorative: it shows direction, it does not represent any request,
+   rate or live signal. Disabled under prefers-reduced-motion. */
+  .edge-async {
+    stroke-dasharray: 5 6;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .edge-async {
+      animation: edge-drift 1.6s linear infinite;
+    }
+
+    .rise {
+      animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    }
+
+    .rise-2 {
+      animation-delay: 0.08s;
+    }
+
+    .rise-3 {
+      animation-delay: 0.16s;
+    }
   }
 }
 
-@keyframes pipeline-flow {
-  from {
-    background-position: 200% 0;
-  }
+@keyframes edge-drift {
   to {
-    background-position: -200% 0;
+    stroke-dashoffset: -22;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Thin, quiet scrollbars inside dense panels. */
+@layer components {
+  .thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
   }
 }

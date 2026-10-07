@@ -2,64 +2,35 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AsyncState, type AsyncStatus } from "@/components/async-state";
+import { CopyButton } from "@/components/copy-button";
 import { ExecutionPath } from "@/components/execution-path";
-import { StatusDot } from "@/components/status-dot";
+import { JudgeStateBadge } from "@/components/judge-state-badge";
+import { OutcomeBadge } from "@/components/outcome-badge";
+import {
+  DisagreementPanel,
+  FlashSection,
+  FrontierSection,
+  Section,
+  TechnicalRecord,
+  detectDisagreement,
+} from "@/components/trace-sections";
 import { GATEWAY_URL } from "@/lib/config";
+import { formatUtc } from "@/lib/format";
 import type { TraceDetailResponse } from "@/lib/trace-api";
-
-// Mirrors _DISAGREEMENT_SCORE_DELTA in finsentry/dashboard/app.py -- a
-// display threshold for highlighting, not re-derived independently.
-const DISAGREEMENT_SCORE_DELTA = 0.5;
-
-function detectDisagreement(
-  detail: TraceDetailResponse,
-): { flashScore: number; frontierScore: number } | null {
-  const flashScore = detail.flash?.faithfulness_score;
-  const frontierScore = detail.frontier.evidence?.faithfulness_score;
-  if (flashScore == null || frontierScore == null) return null;
-  if (Math.abs(flashScore - frontierScore) < DISAGREEMENT_SCORE_DELTA) {
-    return null;
-  }
-  return { flashScore, frontierScore };
-}
-
-interface ScoreRowProps {
-  label: string;
-  score: number | null;
-  status: string | null;
-}
-
-function ScoreRow({ label, score, status }: ScoreRowProps) {
-  // score=null with status "complete" never happens in practice (see
-  // ../CLAUDE.md's zero-vs-null rule) -- null means not computed, a real
-  // 0.0 with status="complete" means computed and genuinely zero. Both are
-  // rendered from the score/status pair together, never the score alone.
-  return (
-    <div className="flex items-baseline justify-between border-b border-dashed py-1.5 last:border-b-0">
-      <span className="text-text-secondary text-sm">{label}</span>
-      <span className="flex items-baseline gap-2">
-        <span className="tabular-metric text-text-primary text-sm font-medium">
-          {score === null ? "—" : score.toFixed(3)}
-        </span>
-        <span className="text-text-secondary text-xs">
-          {status ?? "no status recorded"}
-        </span>
-      </span>
-    </div>
-  );
-}
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-/** Keeps Tab/Shift+Tab inside the dialog -- a real focus trap, not a
- * cosmetic one. */
-function useFocusTrap(
+/** Keeps Tab and Shift+Tab inside the dialog, closes on Escape, locks page
+ * scroll while open, and hands focus back to whatever opened it. */
+function useDialogBehavior(
   dialogRef: React.RefObject<HTMLDivElement | null>,
   onClose: () => void,
 ) {
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     dialogRef.current?.focus();
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -85,12 +56,138 @@ function useFocusTrap(
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 
+function TraceBody({ detail }: { detail: TraceDetailResponse }) {
+  const disagreement = detectDisagreement(detail);
+  const citedIds = new Set(detail.citations.map((c) => c.chunk_id));
+  const stoppedBefore = detail.rag_status !== "success";
+
+  return (
+    <div className="space-y-8">
+      {disagreement ? (
+        <DisagreementPanel detail={detail} scores={disagreement} />
+      ) : null}
+
+      <section>
+        <p className="eyebrow">Question</p>
+        <h2 className="text-text-primary mt-2 text-2xl leading-snug font-semibold tracking-tight text-balance">
+          {detail.query}
+        </h2>
+        <p className="text-text-tertiary mt-2 text-sm">
+          {detail.ticker ?? "No ticker"}
+          {detail.timestamp_utc ? ` · ${formatUtc(detail.timestamp_utc)}` : ""}
+        </p>
+      </section>
+
+      <Section title="Execution path" id="trace-path">
+        <ExecutionPath detail={detail} />
+      </Section>
+
+      <Section title="Retrieved evidence" id="trace-evidence">
+        <p className="text-text-secondary text-base">
+          {detail.retrieved_chunk_ids.length} chunk
+          {detail.retrieved_chunk_ids.length === 1 ? "" : "s"} retrieved,{" "}
+          {detail.citations.length} cited in the answer.
+          {detail.retrieved_chunk_ids.length > 0 &&
+          detail.citations.length === 0 &&
+          !stoppedBefore
+            ? " The model cited none of the retrieved context."
+            : ""}
+        </p>
+        {detail.retrieved_chunk_ids.length > 0 ? (
+          <ul className="mt-3 flex flex-wrap gap-1.5">
+            {detail.retrieved_chunk_ids.map((id) => (
+              <li
+                key={id}
+                className={`rounded border px-1.5 py-0.5 font-mono text-xs ${citedIds.has(id) ? "border-accent/50 text-accent" : "border-border-strong text-text-tertiary"}`}
+              >
+                {id}
+                <span className="sr-only">
+                  {citedIds.has(id) ? " (cited)" : " (not cited)"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-text-tertiary mt-2 text-sm">
+            No retrieved chunk ids were recorded for this trace.
+          </p>
+        )}
+        {detail.citations.length > 0 ? (
+          <ul className="mt-4 space-y-3">
+            {detail.citations.map((c, index) => (
+              <li
+                key={`${c.chunk_id}-${index}`}
+                className="border-border-strong border-l-2 pl-4"
+              >
+                <span className="text-accent font-mono text-xs">
+                  {c.chunk_id}
+                </span>
+                <p className="text-text-primary mt-1 text-base leading-relaxed">
+                  {c.quote}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Section>
+
+      <Section title="Delivered answer" id="trace-answer">
+        {detail.answer ? (
+          <p className="text-text-primary text-base leading-relaxed">
+            {detail.answer}
+          </p>
+        ) : (
+          <p className="text-text-secondary text-base">
+            No answer was delivered.{" "}
+            {detail.rag_status === "blocked"
+              ? "The request was blocked, and the persisted record keeps the reason, not the model output."
+              : detail.rag_status === "error"
+                ? "The request ended in an error before an answer existed."
+                : "No answer text is recorded."}
+          </p>
+        )}
+      </Section>
+
+      <Section title="Flash judge" id="trace-flash">
+        {detail.flash ? (
+          <FlashSection flash={detail.flash} />
+        ) : (
+          <p className="text-text-secondary text-base">
+            {stoppedBefore
+              ? "Nothing to judge: no answer was delivered."
+              : "No flash verdict has been persisted for this execution."}
+          </p>
+        )}
+      </Section>
+
+      <Section title="Frontier judge" id="trace-frontier">
+        {detail.frontier.evidence ? (
+          <FrontierSection evidence={detail.frontier.evidence} />
+        ) : (
+          <p className="text-text-secondary text-base">
+            {detail.frontier.note}
+          </p>
+        )}
+      </Section>
+
+      <Section title="Technical record" id="trace-technical">
+        <TechnicalRecord detail={detail} />
+      </Section>
+    </div>
+  );
+}
+
+/**
+ * The trace detail drawer. A modal dialog: focus moves in, Tab stays
+ * inside, Escape closes, and focus returns to the row that opened it.
+ */
 export function TraceDrilldown({
   appTraceId,
   onClose,
@@ -104,7 +201,7 @@ export function TraceDrilldown({
   const [retryToken, setRetryToken] = useState(0);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  useFocusTrap(dialogRef, onClose);
+  useDialogBehavior(dialogRef, onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +209,7 @@ export function TraceDrilldown({
       .then((res) => {
         if (!res.ok) {
           throw new Error(
-            `Trace service unavailable — gateway returned ${res.status}`,
+            `Trace service unavailable. The gateway returned ${res.status}.`,
           );
         }
         return res.json() as Promise<TraceDetailResponse>;
@@ -141,31 +238,56 @@ export function TraceDrilldown({
       role="dialog"
       aria-modal="true"
       aria-label="Trace detail"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8"
+      className="fixed inset-0 z-50 flex justify-end overscroll-contain bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="border-border bg-background-elevated w-full max-w-3xl rounded-md border p-6 outline-none"
+        className="border-border-strong bg-background-elevated flex h-full w-full max-w-3xl flex-col border-l outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-text-secondary text-xs break-all">
-              {appTraceId}
-            </p>
+        <header className="border-border bg-background-elevated/95 sticky top-0 z-10 border-b px-5 pt-4 pb-4 backdrop-blur sm:px-8">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="eyebrow">Trace</p>
+              <div className="flex items-center">
+                <p className="text-text-primary font-mono text-sm break-all">
+                  {appTraceId}
+                </p>
+                <CopyButton value={appTraceId} label="Copy trace id" />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="border-border-strong text-text-primary hover:bg-surface inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm font-medium"
+            >
+              Close
+              <kbd className="text-text-tertiary hidden font-mono text-xs sm:inline">
+                Esc
+              </kbd>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-text-secondary hover:text-text-primary min-h-11 min-w-11 shrink-0 rounded-md text-sm"
-          >
-            Close
-          </button>
-        </div>
+          {detail?.found ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <OutcomeBadge
+                ragStatus={detail.rag_status ?? "unknown"}
+                blockReason={detail.block_reason}
+                blockRail={detail.block_rail}
+                errorKind={detail.error_kind}
+              />
+              <JudgeStateBadge state={detail.judge_state} />
+              {detail.frontier.sampled ? (
+                <span className="border-signal/30 bg-signal/10 text-signal inline-flex rounded-md border px-2 py-0.5 text-xs font-medium">
+                  Frontier sampled
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </header>
 
-        <div className="mt-4">
+        <div className="thin-scroll flex-1 overflow-y-auto overscroll-contain px-5 py-8 sm:px-8">
           <AsyncState
             status={status}
             errorMessage={errorMessage}
@@ -175,200 +297,11 @@ export function TraceDrilldown({
             }}
           >
             {!detail?.found ? (
-              <p className="text-text-secondary text-sm">
+              <p className="text-text-secondary text-base">
                 {detail?.note ?? "Trace not found."}
               </p>
             ) : (
-              <div className="space-y-5">
-                {(() => {
-                  const disagreement = detectDisagreement(detail);
-                  if (!disagreement) return null;
-                  return (
-                    <section
-                      aria-label="Flash and frontier disagree"
-                      className="border-disagreement/40 bg-disagreement/5 rounded-md border p-3.5"
-                    >
-                      <div className="flex items-center gap-2">
-                        <StatusDot color="disagreement" />
-                        <span className="text-disagreement text-sm font-semibold">
-                          Flash and frontier disagree on faithfulness
-                        </span>
-                      </div>
-                      <div className="mt-3 flex items-center gap-6">
-                        <div>
-                          <p className="text-text-secondary text-[11px] tracking-wide uppercase">
-                            Flash
-                          </p>
-                          <p className="tabular-metric text-text-primary text-3xl font-semibold">
-                            {disagreement.flashScore.toFixed(3)}
-                          </p>
-                        </div>
-                        <span className="text-text-secondary text-xl">vs</span>
-                        <div>
-                          <p className="text-text-secondary text-[11px] tracking-wide uppercase">
-                            Frontier (gemini-rubric)
-                          </p>
-                          <p className="tabular-metric text-text-primary text-3xl font-semibold">
-                            {disagreement.frontierScore.toFixed(3)}
-                          </p>
-                        </div>
-                      </div>
-                      {detail.frontier.evidence?.rubric_reasoning ? (
-                        <p className="text-text-primary mt-3 text-sm leading-relaxed">
-                          {detail.frontier.evidence.rubric_reasoning}
-                        </p>
-                      ) : null}
-                    </section>
-                  );
-                })()}
-
-                <section>
-                  <h2 className="text-text-primary text-lg font-semibold">
-                    {detail.query}
-                  </h2>
-                  <p className="text-text-secondary mt-1 text-xs">
-                    {detail.ticker ?? "no ticker"} · {detail.rag_status}
-                    {detail.block_reason
-                      ? ` · blocked: ${detail.block_reason} (${detail.block_rail})`
-                      : ""}
-                    {detail.error_kind ? ` · error: ${detail.error_kind}` : ""}
-                    {detail.timestamp_utc
-                      ? ` · ${new Date(detail.timestamp_utc).toLocaleString()}`
-                      : ""}
-                  </p>
-                </section>
-
-                <section>
-                  <h3 className="text-text-secondary text-xs tracking-wide uppercase">
-                    Execution path
-                  </h3>
-                  <div className="mt-2">
-                    <ExecutionPath detail={detail} />
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-text-secondary text-xs tracking-wide uppercase">
-                    Cited chunks
-                  </h3>
-                  <p className="text-text-secondary mt-1 text-xs">
-                    {detail.retrieved_chunk_ids.length} chunk
-                    {detail.retrieved_chunk_ids.length === 1 ? "" : "s"}{" "}
-                    retrieved, {detail.citations.length} cited in the answer.
-                    {detail.retrieved_chunk_ids.length > 0 &&
-                    detail.citations.length === 0
-                      ? " The model cited none of the retrieved context."
-                      : ""}
-                  </p>
-                  {detail.citations.length > 0 ? (
-                    <ul className="mt-2 space-y-2">
-                      {detail.citations.map((c, index) => (
-                        <li
-                          key={`${c.chunk_id}-${index}`}
-                          className="border-border rounded border p-2 text-xs"
-                        >
-                          <span className="text-text-secondary">
-                            {c.chunk_id}
-                          </span>
-                          <p className="text-text-primary mt-1">{c.quote}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : detail.retrieved_chunk_ids.length === 0 ? (
-                    <p className="text-text-secondary mt-1 text-sm">
-                      No retrieved evidence recorded for this trace.
-                    </p>
-                  ) : null}
-                </section>
-
-                <section>
-                  <h3 className="text-text-secondary text-xs tracking-wide uppercase">
-                    Answer
-                  </h3>
-                  {detail.answer ? (
-                    <p className="text-text-primary mt-1 text-sm">
-                      {detail.answer}
-                    </p>
-                  ) : (
-                    <p className="text-text-secondary mt-1 text-sm">
-                      No answer generated for this trace.
-                    </p>
-                  )}
-                </section>
-
-                <section>
-                  <h3 className="text-text-secondary text-xs tracking-wide uppercase">
-                    Flash-tier RAGAS scores
-                  </h3>
-                  {detail.flash ? (
-                    <div className="mt-1">
-                      <ScoreRow
-                        label="Faithfulness"
-                        score={detail.flash.faithfulness_score}
-                        status={detail.flash.faithfulness_status}
-                      />
-                      <ScoreRow
-                        label="Answer relevance"
-                        score={detail.flash.answer_relevance_score}
-                        status={detail.flash.answer_relevance_status}
-                      />
-                      <ScoreRow
-                        label="Context relevance"
-                        score={detail.flash.context_relevance_score}
-                        status={detail.flash.context_relevance_status}
-                      />
-                    </div>
-                  ) : (
-                    <p className="text-text-secondary mt-1 text-sm">
-                      {detail.rag_status === "success"
-                        ? "Not yet evaluated."
-                        : "Blocked before evaluation -- nothing to judge."}
-                    </p>
-                  )}
-                </section>
-
-                <section>
-                  <h3 className="text-text-secondary text-xs tracking-wide uppercase">
-                    Frontier evidence
-                  </h3>
-                  {detail.frontier.evidence ? (
-                    <div className="mt-1 space-y-2 text-sm">
-                      <p className="text-text-secondary text-xs">
-                        {detail.frontier.evidence.judge_id} · verdict:{" "}
-                        {detail.frontier.evidence.verdict}
-                        {detail.frontier.evidence.faithfulness_score !== null
-                          ? ` · score ${detail.frontier.evidence.faithfulness_score.toFixed(2)}`
-                          : ""}
-                      </p>
-                      <p className="text-text-primary">
-                        {detail.frontier.evidence.rubric_reasoning}
-                      </p>
-                      {detail.frontier.evidence.cited_chunks_supporting.length >
-                      0 ? (
-                        <p className="text-text-secondary text-xs">
-                          Supporting:{" "}
-                          {detail.frontier.evidence.cited_chunks_supporting.join(
-                            ", ",
-                          )}
-                        </p>
-                      ) : null}
-                      {detail.frontier.evidence.cited_chunks_contradicting
-                        .length > 0 ? (
-                        <p className="text-text-secondary text-xs">
-                          Contradicting:{" "}
-                          {detail.frontier.evidence.cited_chunks_contradicting.join(
-                            ", ",
-                          )}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="text-text-secondary mt-1 text-sm">
-                      {detail.frontier.note}
-                    </p>
-                  )}
-                </section>
-              </div>
+              <TraceBody detail={detail} />
             )}
           </AsyncState>
         </div>

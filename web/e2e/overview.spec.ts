@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * /overview -- the operations command center. Real stack required. Checks
- * the nav's active-route state and that real data sections render without
- * console errors, never a specific numeric value (those are real and
- * change as the corpus grows).
+ * /overview -- the command center. Real stack required. Checks the nav's
+ * active-route state, the five sections in order, that no live telemetry
+ * leaked in from Live Operations, and no console errors. Never a specific
+ * numeric value: those are real and change as the corpus grows.
  */
-test("Overview renders real sections with the active nav state and no console errors", async ({
+test("Overview renders the command center sections with no console errors", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -17,28 +17,34 @@ test("Overview renders real sections with the active nav state and no console er
 
   await page.goto("/overview");
 
-  const overviewLink = page.getByRole("link", { name: "Overview" });
-  await expect(overviewLink).toHaveAttribute("aria-current", "page");
-
+  await expect(
+    page.getByRole("link", { name: "Overview", exact: true }).first(),
+  ).toHaveAttribute("aria-current", "page");
   await expect(
     page.getByRole("heading", { name: "Overview", level: 1 }),
   ).toBeVisible();
-  const systemStatus = page.getByRole("region", { name: "System status" });
-  await expect(systemStatus.getByText("Calibration")).toBeVisible();
-  await expect(systemStatus.getByText("Evaluation completion")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Judge-state distribution" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Reliability pipeline" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Recent investigations" }),
-  ).toBeVisible();
 
-  // The reliability pipeline's structural labels, independent of counts.
-  await expect(page.getByText("Flash evaluation")).toBeVisible();
-  await expect(page.getByText("Frontier evaluation")).toBeVisible();
+  const state = page.getByRole("region", { name: "System state" });
+  await expect(state.getByText("Frontier calibration")).toBeVisible();
+  await expect(state.getByText("Delivered answers judged")).toBeVisible();
+
+  for (const heading of [
+    "Attention required",
+    "Evaluation coverage",
+    "Reliability pipeline",
+    "Recent investigations",
+  ]) {
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  }
+
+  // Overview is not Live Operations: none of the live readouts belong here.
+  await expect(page.getByText("Latency (avg / p95)")).toHaveCount(0);
+  await expect(page.getByText("Judge tokens")).toHaveCount(0);
+  await expect(page.getByText("Request activity")).toHaveCount(0);
+
+  // Raw machine labels never appear in the user-facing funnel.
+  await expect(page.getByText("malformed_json")).toHaveCount(0);
+  await expect(page.getByText("input_rail_blocked")).toHaveCount(0);
 
   expect(errors).toEqual([]);
 });

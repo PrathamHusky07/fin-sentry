@@ -19,7 +19,11 @@ test("the Amazon disagreement is reachable and renders the real Flash 1.000 vs F
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());
   });
-  page.on("requestfailed", (req) => failedRequests.push(req.url()));
+  // Next's <Link> prefetches (_rsc) are aborted when a page unloads in
+  // production. They are not data requests, so they are not failures here.
+  page.on("requestfailed", (req) => {
+    if (!req.url().includes("_rsc=")) failedRequests.push(req.url());
+  });
 
   await page.goto(`/investigations?trace=${AMAZON_TRACE_ID}`);
 
