@@ -55,7 +55,7 @@ export function Investigations() {
   const [offset, setOffset] = useState(0);
   const [data, setData] = useState<TraceListResponse | null>(null);
   const [status, setStatus] = useState<AsyncStatus>("loading");
-  const [fetching, setFetching] = useState(true);
+  const [loadedQs, setLoadedQs] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
   const [selected, setSelected] = useState<string | null>(
@@ -89,11 +89,12 @@ export function Investigations() {
   const [debouncedQ, setDebouncedQ] = useState(filters.q);
   useEffect(() => {
     const id = setTimeout(() => {
+      if (filters.q === debouncedQ) return;
       setDebouncedQ(filters.q);
       setOffset(0);
     }, 300);
     return () => clearTimeout(id);
-  }, [filters.q]);
+  }, [filters.q, debouncedQ]);
 
   // Keep the URL in step with the workspace so a filtered view or an open
   // trace can be reloaded or shared. replaceState, not pushState: typing in
@@ -121,9 +122,25 @@ export function Investigations() {
     setOffset(0);
   }
 
+  // Depends on the debounced search term and the individual filter fields,
+  // never on filters.q, so typing does not fetch until the debounce lands.
+  const { ticker, ragStatus, judgeState, frontierSampled, disagreement } =
+    filters;
+  const qs = buildQuery(
+    {
+      q: debouncedQ,
+      ticker,
+      ragStatus,
+      judgeState,
+      frontierSampled,
+      disagreement,
+    },
+    offset,
+  );
+  // The table is busy while the rows on screen answer a different query.
+  const fetching = loadedQs !== qs;
   useEffect(() => {
     let cancelled = false;
-    const qs = buildQuery({ ...filters, q: debouncedQ }, offset);
     fetch(`${GATEWAY_URL}/ops/traces?${qs}`)
       .then((res) => {
         if (!res.ok) {
@@ -137,7 +154,7 @@ export function Investigations() {
         if (!cancelled) {
           setData(body);
           setStatus("ready");
-          setFetching(false);
+          setLoadedQs(qs);
         }
       })
       .catch((err: unknown) => {
@@ -146,13 +163,12 @@ export function Investigations() {
             err instanceof Error ? err.message : "Trace service unreachable.",
           );
           setStatus("error");
-          setFetching(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [filters, debouncedQ, offset, retryToken]);
+  }, [qs, retryToken]);
 
   const filtered = hasActiveFilters(filters);
 
@@ -166,10 +182,7 @@ export function Investigations() {
       <div className="mt-10">
         <InvestigationsFilters
           filters={filters}
-          onChange={(next) => {
-            setFetching(true);
-            handleFiltersChange(next);
-          }}
+          onChange={handleFiltersChange}
         />
       </div>
 
@@ -179,7 +192,6 @@ export function Investigations() {
           errorMessage={errorMessage}
           onRetry={() => {
             setStatus("loading");
-            setFetching(true);
             setRetryToken((n) => n + 1);
           }}
         >
@@ -193,10 +205,7 @@ export function Investigations() {
               {filtered ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    setFetching(true);
-                    handleFiltersChange(EMPTY_FILTERS);
-                  }}
+                  onClick={() => handleFiltersChange(EMPTY_FILTERS)}
                   className="border-border-strong text-text-primary hover:bg-surface mt-5 min-h-11 rounded-lg border px-4 text-sm font-medium"
                 >
                   Clear all filters
@@ -213,10 +222,7 @@ export function Investigations() {
                 {filtered ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      setFetching(true);
-                      handleFiltersChange(EMPTY_FILTERS);
-                    }}
+                    onClick={() => handleFiltersChange(EMPTY_FILTERS)}
                     className="text-accent hover:text-text-primary min-h-11 px-2 text-sm underline underline-offset-4"
                   >
                     Clear all filters
@@ -234,10 +240,7 @@ export function Investigations() {
                 <button
                   type="button"
                   disabled={offset === 0}
-                  onClick={() => {
-                    setFetching(true);
-                    setOffset((o) => Math.max(0, o - PAGE_SIZE));
-                  }}
+                  onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
                   className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Previous
@@ -245,10 +248,7 @@ export function Investigations() {
                 <button
                   type="button"
                   disabled={data.next_offset === null}
-                  onClick={() => {
-                    setFetching(true);
-                    setOffset(data.next_offset ?? offset);
-                  }}
+                  onClick={() => setOffset(data.next_offset ?? offset)}
                   className="border-border-strong text-text-primary hover:bg-surface min-h-11 rounded-lg border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
