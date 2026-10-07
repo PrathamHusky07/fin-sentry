@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { formatUtc, relativeTime } from "@/lib/format";
+import { useNow } from "@/lib/use-now";
 import type {
   CalibrationHealthResponse,
   CalibrationPosition,
@@ -65,49 +69,72 @@ function trustLine(health: CalibrationHealthResponse): string {
   }
 }
 
-function Marker({
-  at,
-  label,
-  value,
-  side,
-  align = "center",
-}: {
-  at: number;
+type MarkerId = "entry" | "recovery" | "baseline" | "kappa";
+
+interface MarkerInfo {
+  id: MarkerId;
   label: string;
   value: number;
-  side: "above" | "below";
-  align?: "center" | "start" | "end";
-}) {
-  const translate =
-    align === "center"
-      ? "-translate-x-1/2"
-      : align === "end"
-        ? "-translate-x-full"
-        : "";
-  return (
-    <div
-      className={`absolute ${translate} ${side === "below" ? "top-full pt-2" : "bottom-full pb-2"}`}
-      style={{ left: `${pct(at)}%` }}
-    >
-      <p className="text-text-secondary text-xs whitespace-nowrap">{label}</p>
-      <p className="tabular-metric text-text-primary text-sm">
-        {value.toFixed(value === 0.605 ? 3 : 2)}
-      </p>
-    </div>
-  );
+  /** One sentence on what the marker means, read from the drift policy. */
+  meaning: string;
+}
+
+function markersFor(health: CalibrationHealthResponse): MarkerInfo[] {
+  const markers: MarkerInfo[] = [
+    {
+      id: "entry",
+      label: "Drift entry",
+      value: health.drift_entry_threshold,
+      meaning:
+        "The drift policy puts the judge in drift when agreement stays at or below this line. It is the lower of the two thresholds.",
+    },
+    {
+      id: "recovery",
+      label: "Recovery",
+      value: health.recovery_threshold,
+      meaning:
+        "After drift, the judge counts as recovered only when agreement stays at or above this line. It sits above the entry line, so the state has a gap to cross.",
+    },
+    {
+      id: "baseline",
+      label: "Healthy baseline",
+      value: health.healthy_baseline_kappa,
+      meaning:
+        "The agreement established on the labeled calibration set. The policy never lets the recovery line sit above it.",
+    },
+  ];
+  if (health.kappa !== null) {
+    markers.push({
+      id: "kappa",
+      label: "Last reading",
+      value: health.kappa,
+      meaning: `Cohen’s kappa of the frontier judge against labeled financial rows${health.window_n !== null ? `, over ${health.window_n} rows` : ""}. One manual reading, not a live value.`,
+    });
+  }
+  return markers;
+}
+
+function digits(m: MarkerInfo): number {
+  return m.id === "baseline" || m.id === "kappa" ? 3 : 2;
 }
 
 /**
  * The persisted calibration reading drawn against its policy: the drift
  * entry line, the recovery line and the healthy baseline, with the one real
- * kappa on the same axis. It is one point in time. There is no trend line
- * because only one reading exists on record.
+ * kappa on the same axis. It answers "why is the judge in this state".
+ * Each marker is a focusable control that explains itself on hover or
+ * focus. The zones sweep in once on entry; nothing here moves afterward. It
+ * is one point in time. There is no trend line because only one reading
+ * exists on record.
  */
 export function CalibrationInstrument({
   health,
 }: {
   health: CalibrationHealthResponse | null;
 }) {
+  const [active, setActive] = useState<MarkerId | null>(null);
+  const now = useNow();
+
   if (!health) {
     return (
       <section id="calibration" aria-labelledby="calibration-heading">
@@ -128,6 +155,8 @@ export function CalibrationInstrument({
   const text = POSITION_TEXT[health.position];
   const entry = health.drift_entry_threshold;
   const recovery = health.recovery_threshold;
+  const markers = markersFor(health);
+  const info = markers.find((m) => m.id === active) ?? null;
 
   return (
     <section id="calibration" aria-labelledby="calibration-heading">
@@ -170,83 +199,129 @@ export function CalibrationInstrument({
         <div>
           {health.kappa !== null ? (
             <div
-              role="img"
-              aria-label={`Kappa ${health.kappa.toFixed(3)} on a scale from ${SCALE_MIN} to ${SCALE_MAX}. Drift entry threshold ${entry.toFixed(2)}, recovery threshold ${recovery.toFixed(2)}, healthy baseline ${health.healthy_baseline_kappa.toFixed(3)}.`}
-              className="relative mt-16 mb-20 h-3"
+              role="group"
+              aria-label={`Kappa ${health.kappa.toFixed(3)} on a scale from ${SCALE_MIN} to ${SCALE_MAX}. Drift entry threshold ${entry.toFixed(2)}, recovery threshold ${recovery.toFixed(2)}, healthy baseline ${health.healthy_baseline_kappa.toFixed(3)}. Each marker explains itself on focus.`}
+              className="relative mt-20 mb-24 h-3"
             >
               <div className="bg-surface absolute inset-0 overflow-hidden rounded-full">
-                <div
-                  className="bg-failure/35 absolute inset-y-0 left-0"
-                  style={{ width: `${pct(entry)}%` }}
-                />
-                <div
-                  className="bg-warning/35 absolute inset-y-0"
-                  style={{
-                    left: `${pct(entry)}%`,
-                    width: `${pct(recovery) - pct(entry)}%`,
-                  }}
-                />
-                <div
-                  className="bg-positive/30 absolute inset-y-0 right-0"
-                  style={{ left: `${pct(recovery)}%` }}
-                />
+                <div className="enter-sweep absolute inset-0">
+                  <div
+                    className="bg-failure/35 absolute inset-y-0 left-0"
+                    style={{ width: `${pct(entry)}%` }}
+                  />
+                  <div
+                    className="bg-warning/35 absolute inset-y-0"
+                    style={{
+                      left: `${pct(entry)}%`,
+                      width: `${pct(recovery) - pct(entry)}%`,
+                    }}
+                  />
+                  <div
+                    className="bg-positive/30 absolute inset-y-0 right-0"
+                    style={{ left: `${pct(recovery)}%` }}
+                  />
+                </div>
               </div>
 
-              {[entry, recovery].map((t) => (
-                <span
-                  key={t}
-                  aria-hidden="true"
-                  className="bg-text-secondary absolute -top-1 h-5 w-px"
-                  style={{ left: `${pct(t)}%` }}
-                />
-              ))}
-              <span
-                aria-hidden="true"
-                className="border-text-tertiary absolute -top-1 h-5 border-l border-dashed"
-                style={{ left: `${pct(health.healthy_baseline_kappa)}%` }}
-              />
+              {markers.map((m) => {
+                const isActive = active === m.id;
+                const isKappa = m.id === "kappa";
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    aria-label={`${m.label} ${m.value.toFixed(digits(m))}. ${m.meaning}`}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType === "mouse") setActive(m.id);
+                    }}
+                    onPointerLeave={(e) => {
+                      if (e.pointerType === "mouse") setActive(null);
+                    }}
+                    onFocus={() => setActive(m.id)}
+                    onBlur={() => setActive(null)}
+                    onClick={() => setActive((a) => (a === m.id ? null : m.id))}
+                    className={`group absolute top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full ${isKappa ? "enter-fade z-10" : ""}`}
+                    style={
+                      {
+                        left: `${pct(m.value)}%`,
+                        "--i": 14,
+                      } as React.CSSProperties
+                    }
+                  >
+                    {isKappa ? (
+                      <span
+                        className={`bg-text-primary border-background block h-6 w-1.5 rounded-full border-2 transition-transform duration-[var(--dur-base)] ease-[var(--ease)] ${isActive ? "scale-y-125 scale-x-150" : ""}`}
+                      />
+                    ) : (
+                      <span
+                        className={`block h-5 transition-[width,background-color] duration-[var(--dur-base)] ${m.id === "baseline" ? "border-text-tertiary border-l border-dashed" : `w-px ${isActive ? "bg-text-primary scale-x-[3]" : "bg-text-secondary"}`}`}
+                      />
+                    )}
+                  </button>
+                );
+              })}
 
-              <Marker
-                at={entry}
-                label="Drift entry"
-                value={entry}
-                side="below"
-                align="end"
-              />
-              <Marker
-                at={recovery}
-                label="Recovery"
-                value={recovery}
-                side="below"
-              />
-              <Marker
-                at={health.healthy_baseline_kappa}
-                label="Healthy baseline"
-                value={health.healthy_baseline_kappa}
-                side="below"
-                align="start"
-              />
+              {markers
+                .filter((m) => m.id !== "kappa")
+                .map((m) => (
+                  <div
+                    key={m.id}
+                    aria-hidden="true"
+                    className={`absolute top-full pt-3 transition-opacity duration-[var(--dur-base)] ${m.id === "entry" ? "-translate-x-full" : m.id === "baseline" ? "" : "-translate-x-1/2"} ${active && active !== m.id ? "opacity-40" : "opacity-100"}`}
+                    style={{ left: `${pct(m.value)}%` }}
+                  >
+                    <p className="text-text-secondary text-xs whitespace-nowrap">
+                      {m.label}
+                    </p>
+                    <p className="tabular-metric text-text-primary text-sm">
+                      {m.value.toFixed(digits(m))}
+                    </p>
+                  </div>
+                ))}
 
               <div
-                className="absolute bottom-full -translate-x-1/2 pb-1.5"
+                aria-hidden="true"
+                className="absolute bottom-full -translate-x-1/2 pb-2"
                 style={{ left: `${pct(health.kappa)}%` }}
               >
                 <p className="tabular-metric text-text-primary text-sm font-semibold whitespace-nowrap">
                   kappa {health.kappa.toFixed(3)}
                 </p>
               </div>
-              <span
+
+              <div
                 aria-hidden="true"
-                className="bg-text-primary border-background absolute top-1/2 h-6 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
-                style={{ left: `${pct(health.kappa)}%` }}
-              />
-              <div className="text-text-tertiary absolute top-full right-0 left-0 mt-14 flex justify-between font-mono text-[11px]">
+                className="text-text-tertiary absolute top-full right-0 left-0 mt-16 flex justify-between font-mono text-[11px]"
+              >
                 <span>{SCALE_MIN.toFixed(2)}</span>
                 <span>
                   scale {SCALE_MIN.toFixed(2)} to {SCALE_MAX.toFixed(2)}, not
                   the full kappa range
                 </span>
                 <span>{SCALE_MAX.toFixed(2)}</span>
+              </div>
+
+              <div
+                aria-live="polite"
+                className="pointer-events-none absolute z-20"
+                style={{
+                  left: `${info ? Math.min(78, Math.max(22, pct(info.value))) : 50}%`,
+                  bottom: "calc(100% + 2.75rem)",
+                }}
+              >
+                {info ? (
+                  <div className="floating swap-in w-72 -translate-x-1/2 rounded-lg px-4 py-3">
+                    <p className="text-text-primary text-sm font-semibold">
+                      {info.label}{" "}
+                      <span className="tabular-metric text-text-secondary font-normal">
+                        {info.value.toFixed(digits(info))}
+                      </span>
+                    </p>
+                    <p className="text-text-secondary mt-1 text-sm leading-snug">
+                      {info.meaning}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -262,7 +337,7 @@ export function CalibrationInstrument({
         <dt className="text-text-tertiary">Persisted</dt>
         <dd className="text-text-secondary">
           {health.state_as_of
-            ? `${formatUtc(health.state_as_of)}, ${relativeTime(health.state_as_of)}`
+            ? `${formatUtc(health.state_as_of)}${now !== null ? `, ${relativeTime(health.state_as_of, now)}` : ""}`
             : "No timestamp recorded"}
         </dd>
         <dt className="text-text-tertiary">Provenance</dt>

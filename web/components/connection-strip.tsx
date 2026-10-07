@@ -15,6 +15,8 @@ interface Cell {
   label: string;
   value: string;
   color: StatusColor;
+  /** Only the open stream pulses: it is the one claim of liveness here. */
+  live?: boolean;
 }
 
 /**
@@ -54,6 +56,7 @@ export function ConnectionStrip({
           : connectionState === "error"
             ? "failure"
             : "neutral",
+      live: connectionState === "open",
     },
     {
       label: "Last snapshot",
@@ -92,7 +95,7 @@ export function ConnectionStrip({
       >
         {cells.map((cell) => (
           <div key={cell.label} className="flex min-h-9 items-center gap-2.5">
-            <StatusDot color={cell.color} />
+            <StatusDot color={cell.color} live={cell.live} />
             <dt className="text-text-tertiary text-sm">{cell.label}</dt>
             <dd className="text-text-primary text-sm font-medium">
               {cell.value}

@@ -6,11 +6,13 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { StatusDot } from "@/components/status-dot";
 import type { ThroughputHistoryPoint } from "@/lib/use-metrics-snapshot";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
@@ -69,14 +71,20 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length || label === undefined) return null;
   return (
-    <div className="border-border-strong bg-surface-high rounded-md border px-3 py-2 text-xs">
-      <p className="text-text-tertiary font-mono">
+    <div className="floating rounded-lg px-4 py-3 text-sm">
+      <p className="text-text-tertiary font-mono text-xs">
         Bucket ending {clock(label)} UTC
       </p>
       {payload.map((p) => (
-        <p key={p.name} className="text-text-primary tabular-metric mt-1">
-          {p.name}: {p.value ?? "no data"}
-          {p.value != null ? ` ${unit}` : ""}
+        <p
+          key={p.name}
+          className="text-text-primary tabular-metric mt-1.5 flex items-baseline justify-between gap-6"
+        >
+          <span className="text-text-secondary">{p.name}</span>
+          <span>
+            {p.value ?? "no data"}
+            {p.value != null ? ` ${unit}` : ""}
+          </span>
         </p>
       ))}
     </div>
@@ -94,8 +102,11 @@ const AXIS_TICK = { fontSize: 12, fill: "var(--text-tertiary)" };
  */
 export function ActivityChart({
   history,
+  live,
 }: {
   history: ThroughputHistoryPoint[];
+  /** True only while the stream is open and the newest bucket is fresh. */
+  live: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const points = toPoints(history);
@@ -108,6 +119,17 @@ export function ActivityChart({
         : [0, 1];
 
   const sparse = history.length < 2;
+  const newest = history.length > 0 ? history[history.length - 1] : null;
+  const newestT = newest ? new Date(newest.windowEnd).getTime() : null;
+  const edge =
+    live && newestT !== null ? (
+      <ReferenceLine
+        x={newestT}
+        stroke="var(--signal)"
+        strokeOpacity={0.5}
+        strokeDasharray="2 4"
+      />
+    ) : null;
   const xAxis = (
     <XAxis
       dataKey="t"
@@ -133,8 +155,14 @@ export function ActivityChart({
     <div>
       <div className="grid gap-y-2">
         <figure>
-          <figcaption className="text-text-secondary text-sm">
-            Requests per bucket
+          <figcaption className="text-text-secondary flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
+            <span>Requests per bucket</span>
+            {live && newest ? (
+              <span className="text-signal flex items-center gap-2">
+                <StatusDot color="signal" live />
+                Live edge: newest bucket ended {clock(newestT ?? 0)} UTC
+              </span>
+            ) : null}
           </figcaption>
           <div
             className="mt-2 h-44"
@@ -157,15 +185,18 @@ export function ActivityChart({
                   allowDecimals={false}
                 />
                 <Tooltip
-                  cursor={{ stroke: "var(--text-tertiary)", strokeWidth: 1 }}
+                  cursor={{ fill: "rgb(255 255 255 / 0.05)" }}
                   content={<ChartTooltip unit="requests" />}
+                  animationDuration={140}
                 />
+                {edge}
                 <Bar
                   dataKey="requests"
                   name="requests"
                   fill="var(--accent)"
                   maxBarSize={24}
                   radius={[4, 4, 0, 0]}
+                  activeBar={{ fill: "var(--text-primary)" }}
                   isAnimationActive={!reducedMotion}
                 />
               </BarChart>
@@ -223,9 +254,15 @@ export function ActivityChart({
                   width={44}
                 />
                 <Tooltip
-                  cursor={{ stroke: "var(--text-tertiary)", strokeWidth: 1 }}
+                  cursor={{
+                    stroke: "var(--text-secondary)",
+                    strokeWidth: 1,
+                    strokeDasharray: "3 3",
+                  }}
                   content={<ChartTooltip unit="ms" />}
+                  animationDuration={140}
                 />
+                {edge}
                 <Line
                   type="linear"
                   dataKey="avg"
@@ -233,6 +270,12 @@ export function ActivityChart({
                   stroke="var(--signal)"
                   strokeWidth={2}
                   dot={{ r: 4.5, fill: "var(--signal)", strokeWidth: 0 }}
+                  activeDot={{
+                    r: 7,
+                    fill: "var(--signal)",
+                    stroke: "var(--background)",
+                    strokeWidth: 2,
+                  }}
                   isAnimationActive={!reducedMotion}
                   connectNulls={false}
                 />
@@ -248,6 +291,12 @@ export function ActivityChart({
                     fill: "var(--background)",
                     stroke: "var(--signal)",
                     strokeWidth: 2,
+                  }}
+                  activeDot={{
+                    r: 7,
+                    fill: "var(--background)",
+                    stroke: "var(--signal)",
+                    strokeWidth: 3,
                   }}
                   isAnimationActive={!reducedMotion}
                   connectNulls={false}

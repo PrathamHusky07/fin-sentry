@@ -35,6 +35,10 @@ test("Live Operations receives a real snapshot over SSE and labels every readout
     page.getByRole("heading", { name: "Calibration" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Recent operational events" }),
+    page.getByRole("heading", { name: "Evaluation telemetry" }),
   ).toBeVisible();
+  // The recent-events list was cut: Investigations and Overview cover it.
+  await expect(
+    page.getByRole("heading", { name: "Recent operational events" }),
+  ).toHaveCount(0);
 });

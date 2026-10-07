@@ -9,7 +9,9 @@ export const metadata: Metadata = {
 export default async function OperationsPage() {
   const [calibration, recent] = await Promise.all([
     fetchCalibrationHealth(),
-    fetchRecentTraces(12),
+    fetchRecentTraces(1),
   ]);
-  return <LiveOperations calibration={calibration} recent={recent} />;
+  return (
+    <LiveOperations calibration={calibration} newest={recent?.[0] ?? null} />
+  );
 }

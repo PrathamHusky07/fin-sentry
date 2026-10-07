@@ -19,14 +19,20 @@ const COLOR_CLASS: Record<StatusColor, string> = {
   neutral: "bg-text-tertiary",
 };
 
-/** A small colored status indicator. It never animates: motion would imply
- * liveness, and liveness is only ever claimed by the SSE connection state
- * on Live Operations, in words. */
-export function StatusDot({ color }: { color: StatusColor }) {
+/** A small colored status indicator. It is still unless `live` is set:
+ * motion would imply liveness, and liveness is only ever claimed by the SSE
+ * connection state on Live Operations, which says it in words as well. */
+export function StatusDot({
+  color,
+  live = false,
+}: {
+  color: StatusColor;
+  live?: boolean;
+}) {
   return (
     <span
       aria-hidden="true"
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${COLOR_CLASS[color]}`}
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ${COLOR_CLASS[color]} ${live ? "pulse-live" : ""}`}
     />
   );
 }
