@@ -103,10 +103,14 @@ export function SystemState({
               Judge tiers in disagreement
             </dt>
             <dd className="tabular-metric text-disagreement mt-1 text-2xl font-semibold">
-              {overview ? overview.disagreementTraces.length : "not available"}
+              {overview
+                ? `${overview.disagreementTraces.length}${overview.disagreementIsWindow ? "+" : ""}`
+                : "not available"}
             </dd>
             <dd className="text-text-tertiary mt-0.5 text-xs">
-              scores 0.5 apart or more
+              {overview?.disagreementIsWindow
+                ? "scores 0.5 apart or more, the query hit its limit"
+                : "scores 0.5 apart or more"}
             </dd>
           </div>
         </dl>

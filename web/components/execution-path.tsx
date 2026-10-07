@@ -7,7 +7,16 @@ import {
 } from "@/lib/labels";
 import type { TraceDetailResponse } from "@/lib/trace-api";
 
-type StageStatus = "passed" | "blocked" | "error" | "not_reached" | "pending";
+type StageStatus =
+  | "passed"
+  | "partial"
+  | "blocked"
+  | "error"
+  | "not_reached"
+  | "pending"
+  | "unknown";
+
+type StageKey = "input" | "retrieval" | "generation" | "output" | "unknown";
 
 interface Stage {
   label: string;
@@ -29,6 +38,13 @@ const STATUS_STYLE: Record<
     text: "text-text-primary",
     word: "Passed",
   },
+  // Partial is a measured result with a gap, not a stop: it gets the info
+  // hue and a half-filled dot so it never reads as blocked.
+  partial: {
+    dot: "border-info bg-info/35",
+    text: "text-info",
+    word: "Partial",
+  },
   blocked: {
     dot: "bg-warning border-warning",
     text: "text-warning",
@@ -49,7 +65,28 @@ const STATUS_STYLE: Record<
     text: "text-text-secondary",
     word: "Pending",
   },
+  unknown: {
+    dot: "bg-transparent border-text-secondary border-dotted",
+    text: "text-text-secondary",
+    word: "Unknown",
+  },
 };
+
+// error_kind values the gateway emits on the generation call
+// (finsentry/gateway/main.py). Anything else is unclassified, never
+// assumed to be generation.
+const GENERATION_ERROR_KINDS = new Set([
+  "downstream_unavailable",
+  "downstream_rate_limit",
+  "downstream_error",
+]);
+
+function errorStage(kind: string | null): StageKey {
+  if (kind === "input_rail_service_unavailable") return "input";
+  if (kind === "vector_search_failed") return "retrieval";
+  if (kind && GENERATION_ERROR_KINDS.has(kind)) return "generation";
+  return "unknown";
+}
 
 function codeFor(detail: TraceDetailResponse): string {
   const parts: string[] = [];
@@ -71,29 +108,28 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
   const errored = detail.rag_status === "error";
   const at = blocked ? blockStage(detail.block_reason as string) : null;
   const errorKind = detail.error_kind;
-  const errorAt =
-    errorKind === "input_rail_service_unavailable"
-      ? "input"
-      : errorKind === "vector_search_failed"
-        ? "retrieval"
-        : errored
-          ? "generation"
-          : null;
+  const errorAt = errored ? errorStage(errorKind) : null;
   const code = codeFor(detail);
   const delivered = detail.rag_status === "success";
   const chunks = detail.retrieved_chunk_ids.length;
 
-  const stopped = (stage: "input" | "retrieval" | "generation" | "output") =>
-    at === stage || errorAt === stage;
+  const stopped = (stage: StageKey) => at === stage || errorAt === stage;
+  const unclassified = stopped("unknown");
   const reachedRetrieval = !stopped("input");
   const reachedGeneration = reachedRetrieval && !stopped("retrieval");
   const reachedOutput = reachedGeneration && !stopped("generation");
 
   function outcome(
-    stage: "input" | "retrieval" | "generation" | "output",
+    stage: Exclude<StageKey, "unknown">,
     reached: boolean,
     passedText: string,
   ): Pick<Stage, "status" | "summary" | "code"> {
+    if (unclassified) {
+      return {
+        status: "unknown",
+        summary: "Not determined: the stage that stopped it is unclassified",
+      };
+    }
     if (at === stage && detail.block_reason) {
       return {
         status: "blocked",
@@ -115,8 +151,23 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
   const flash = detail.flash;
   const frontier = detail.frontier;
 
+  const unknownStage: Stage[] = unclassified
+    ? [
+        {
+          label: BLOCK_STAGE_LABEL.unknown,
+          status: at === "unknown" ? "blocked" : "error",
+          summary:
+            at === "unknown" && detail.block_reason
+              ? `${blockReasonLabel(detail.block_reason, detail.block_rail)}, a reason not mapped to a stage`
+              : `${errorKind ? errorKindLabel(errorKind) : "Failed"}, an error not mapped to a stage`,
+          code,
+        },
+      ]
+    : [];
+
   return [
     { label: "Request", status: "passed", summary: "Received by the gateway" },
+    ...unknownStage,
     {
       label: BLOCK_STAGE_LABEL.input,
       ...outcome("input", true, "No input rail stopped it"),
@@ -151,7 +202,9 @@ export function buildStages(detail: TraceDetailResponse): Stage[] {
       status: flash
         ? flash.status === "complete"
           ? "passed"
-          : "blocked"
+          : flash.status === "partial"
+            ? "partial"
+            : "blocked"
         : delivered
           ? "pending"
           : "not_reached",

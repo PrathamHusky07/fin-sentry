@@ -15,6 +15,12 @@ import {
 } from "@/lib/labels";
 import type { TraceDetailResponse } from "@/lib/trace-api";
 
+/** Distinct chunks the answer cites. A chunk quoted twice is still one
+ * chunk of the retrieved context. */
+export function citedChunkCount(detail: TraceDetailResponse): number {
+  return new Set(detail.citations.map((c) => c.chunk_id)).size;
+}
+
 function Question({ detail }: { detail: TraceDetailResponse }) {
   return (
     <section aria-labelledby="trace-question">
@@ -43,9 +49,10 @@ function NoAnswer({ detail }: { detail: TraceDetailResponse }) {
           No answer was delivered.
         </p>
         <p className="text-warning mt-2 text-base">
-          Stopped by the{" "}
-          {BLOCK_STAGE_LABEL[blockStage(detail.block_reason)].toLowerCase()}:{" "}
-          {blockReasonLabel(detail.block_reason, detail.block_rail)}
+          {blockStage(detail.block_reason) === "unknown"
+            ? "Stopped at an unclassified stage"
+            : `Stopped by the ${BLOCK_STAGE_LABEL[blockStage(detail.block_reason)].toLowerCase()}`}
+          : {blockReasonLabel(detail.block_reason, detail.block_rail)}
         </p>
         {meaning ? (
           <p className="text-text-secondary mt-2 text-base leading-relaxed">
@@ -115,7 +122,7 @@ function Answer({
         <p className="text-text-tertiary mt-4 text-sm">
           {detail.model_used ? `Written by ${detail.model_used}. ` : ""}
           {detail.confidence ? `Stated confidence ${detail.confidence}. ` : ""}
-          Cites {detail.citations.length} of {detail.retrieved_chunk_ids.length}{" "}
+          Cites {citedChunkCount(detail)} of {detail.retrieved_chunk_ids.length}{" "}
           retrieved chunk{detail.retrieved_chunk_ids.length === 1 ? "" : "s"}.
         </p>
       ) : null}
@@ -136,13 +143,14 @@ function Evidence({ detail }: { detail: TraceDetailResponse }) {
   );
   const stoppedBefore = detail.rag_status !== "success";
   const retrieved = detail.retrieved_chunk_ids.length;
+  const citedCount = cited.size;
 
   return (
     <Section title="Evidence the answer rests on" id="trace-evidence">
       <p className="text-text-secondary text-base">
-        {retrieved} chunk{retrieved === 1 ? "" : "s"} retrieved,{" "}
-        {detail.citations.length} cited in the answer.
-        {retrieved > 0 && detail.citations.length === 0 && !stoppedBefore
+        {retrieved} chunk{retrieved === 1 ? "" : "s"} retrieved, {citedCount}{" "}
+        cited in the answer.
+        {retrieved > 0 && citedCount === 0 && !stoppedBefore
           ? " The model cited none of the retrieved context."
           : ""}
       </p>

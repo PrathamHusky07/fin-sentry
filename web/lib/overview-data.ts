@@ -73,6 +73,9 @@ export interface RequestFlow {
 export interface OverviewData {
   totalRequests: number;
   scanIsWindow: boolean;
+  /** True when the disagreement query returned exactly its limit, so the
+   * count is a floor over the most recent disagreements, not a total. */
+  disagreementIsWindow: boolean;
   latestTimestamp: string | null;
   judgeStateCounts: JudgeStateCounts;
   flow: RequestFlow;
@@ -201,7 +204,7 @@ export async function fetchOverviewData(): Promise<OverviewData | null> {
   };
   const flow: RequestFlow = {
     total: allTraces.length,
-    stoppedAt: { input: 0, retrieval: 0, output: 0 },
+    stoppedAt: { input: 0, retrieval: 0, output: 0, unknown: 0 },
     errored: 0,
     delivered: 0,
     deliveredComplete: 0,
@@ -245,6 +248,7 @@ export async function fetchOverviewData(): Promise<OverviewData | null> {
   return {
     totalRequests: allTraces.length,
     scanIsWindow: allTraces.length >= STATS_SCAN_LIMIT,
+    disagreementIsWindow: disagreementTraces.length >= STATS_SCAN_LIMIT,
     latestTimestamp: latestMs > 0 ? new Date(latestMs).toISOString() : null,
     judgeStateCounts,
     flow,

@@ -6,6 +6,7 @@ import type { CalibrationHealthResponse } from "@/lib/trace-api";
 const QUIET_OVERVIEW: OverviewData = {
   totalRequests: 20,
   scanIsWindow: false,
+  disagreementIsWindow: false,
   latestTimestamp: "2026-01-01T00:00:00.000Z",
   judgeStateCounts: {
     evaluated: 20,
@@ -16,7 +17,7 @@ const QUIET_OVERVIEW: OverviewData = {
   },
   flow: {
     total: 20,
-    stoppedAt: { input: 0, retrieval: 0, output: 0 },
+    stoppedAt: { input: 0, retrieval: 0, output: 0, unknown: 0 },
     errored: 0,
     delivered: 20,
     deliveredComplete: 20,

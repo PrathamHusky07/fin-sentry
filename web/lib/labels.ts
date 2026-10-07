@@ -7,8 +7,10 @@ import type { JudgeState } from "@/lib/trace-api";
  * source (finsentry/gateway/main.py, finsentry/rails/output/*), not guessed.
  */
 
-/** Pipeline stage a block belongs to, derived from block_reason. */
-export type BlockStage = "input" | "retrieval" | "output";
+/** Pipeline stage a block belongs to, derived from block_reason. "unknown"
+ * means the reason is not one the gateway is known to emit, so no stage is
+ * claimed for it. */
+export type BlockStage = "input" | "retrieval" | "output" | "unknown";
 
 const BLOCK_REASON_LABEL: Record<string, string> = {
   no_trustworthy_sources: "No trustworthy sources",
@@ -47,16 +49,29 @@ const INPUT_RAIL_LABEL: Record<string, string> = {
   "check hazard taxonomy": "Hazard taxonomy",
 };
 
+// Reasons the output rails emit (finsentry/rails/output/*). Listed so an
+// unrecognized reason is never silently filed under the output stage.
+const OUTPUT_BLOCK_REASONS = new Set([
+  "malformed_json",
+  "schema_violation",
+  "hallucinated_citation",
+  "empty_citations_with_non_low_confidence",
+  "regulated_phrase",
+  "low_faithfulness",
+]);
+
 export function blockStage(reason: string): BlockStage {
   if (reason === "input_rail_blocked") return "input";
   if (reason === "no_trustworthy_sources") return "retrieval";
-  return "output";
+  if (OUTPUT_BLOCK_REASONS.has(reason)) return "output";
+  return "unknown";
 }
 
 export const BLOCK_STAGE_LABEL: Record<BlockStage, string> = {
   input: "Input rails",
   retrieval: "Retrieval rail",
   output: "Output rails",
+  unknown: "Unknown stage",
 };
 
 /** "Malformed JSON", "Prompt injection", ... Never the raw snake_case. When

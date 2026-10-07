@@ -144,6 +144,10 @@ export function buildAttentionItems({
   }
 
   const disagreementCount = overview?.disagreementTraces.length ?? 0;
+  // At the query limit the count is a floor, so the copy says "at least".
+  const disagreementMore = overview?.disagreementIsWindow
+    ? `${disagreementCount - 3}+`
+    : String(disagreementCount - 3);
   if (overview && disagreementCount > 0) {
     overview.disagreementTraces.slice(0, 3).forEach((trace, i) => {
       const detail = disagreementDetails[i];
@@ -172,10 +176,12 @@ export function buildAttentionItems({
       items.push({
         key: "disagreement-more",
         tone: "disagreement",
-        title: `${disagreementCount - 3} more cross-tier disagreements`,
-        figure: String(disagreementCount - 3),
+        title: `${disagreementMore} more cross-tier disagreements`,
+        figure: disagreementMore,
         figureNote: "more disagreements",
-        what: "Only the three most recent are listed above.",
+        what: overview.disagreementIsWindow
+          ? "Only the three most recent are listed above. The query returned its limit, so more may exist."
+          : "Only the three most recent are listed above.",
         why: "Each one is a delivered answer where the two judge tiers reached different verdicts.",
         href: "/investigations?disagreement=true",
         cta: "Open the disagreement lens",

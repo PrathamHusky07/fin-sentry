@@ -142,6 +142,13 @@ export function RequestFlow({
       fill: "var(--warning)",
       href: "/investigations?status=blocked",
     },
+    {
+      key: "unknown",
+      label: "Blocked, unknown stage",
+      count: flow.stoppedAt.unknown,
+      fill: "var(--warning)",
+      href: "/investigations?status=blocked",
+    },
   ]);
   const verdicts = place([
     {

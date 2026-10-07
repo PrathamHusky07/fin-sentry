@@ -5,7 +5,7 @@ import type { RequestFlow as RequestFlowData } from "@/lib/overview-data";
 
 const FLOW: RequestFlowData = {
   total: 10,
-  stoppedAt: { input: 1, retrieval: 0, output: 1 },
+  stoppedAt: { input: 1, retrieval: 0, output: 1, unknown: 0 },
   errored: 0,
   delivered: 8,
   deliveredComplete: 7,
