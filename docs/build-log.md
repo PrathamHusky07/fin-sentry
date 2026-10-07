@@ -1,5 +1,47 @@
 # Build Log
 
+## 2026-10-07 (later) — Frontend visual interaction system
+
+Frontend only. No backend code, database, schema, Docker service, model or
+RAG run was touched. No pytest, ruff or mypy run. One cheap read of the
+disagreement list confirmed the Amazon row and a connected RisingWave before
+any data-dependent browser check.
+
+Correctness gate first, each with a test. A partial flash verdict has its own
+non-alarming state and never reads as blocked. An unrecognized error kind or
+block reason renders as an unclassified stage and is never filed under
+generation or the output rails. Overview marks a disagreement count that hit
+its query limit as a floor. The case file counts distinct cited chunks.
+
+The system: depth, motion and glow tokens in `globals.css`, six contextual
+backdrops (hero, topology, overview, live, forensic, blueprint), and three
+interaction tiers (lift, row reveal, plain transitions) with focus and touch
+twins for every hover effect. Landing: HeroFlow was replaced by a system
+constellation that is an identity picture, not a flow diagram; the decision
+ledger became a keyboard-navigable navigator; evidence screenshots became
+scrollable windows with one action each, recaptured tall from the production
+build. Overview: figure-led system state, a compact calibration card, the
+Amazon case as the dominant instrument with side highlighting, a moving hover
+plate on signals, a coverage unit chart and a clickable pipeline. Live
+Operations: request and evaluation telemetry from existing snapshot fields
+only, a crosshair activity chart, and a calibration instrument whose markers
+explain themselves. Investigations: severity rails, row actions, judge side
+highlighting, chunk to quote linking and expandable path stages. Architecture:
+one node model shared by all four diagrams, a layer rail, expandable reasons
+and an MCP-first last layer.
+
+Cut as redundant: Recent investigations on Overview and Recent operational
+events on Live Operations. The newest persisted execution time was the one
+fact worth keeping and now sits under the request readouts. Because grouping
+left Overview, the first landing decision no longer claims summary pages group
+repeated questions. `groupKey` stays only because its test is a required
+guard.
+
+Fixed along the way: the drawer is portaled to the body so a section backdrop
+cannot trap it under the navigation, and pipeline hit areas no longer overlap
+neighbouring labels. Verified: Vitest 28, Playwright 57 on the production
+build at 375, 768 and 1440, frame times at 60 fps with no long tasks.
+
 ## 2026-10-07 — Frontend overhaul: correctness fixes, recomposed pages, trace answer view
 
 Frontend only. No backend code, database, schema, Docker service or model was
