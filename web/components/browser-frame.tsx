@@ -2,7 +2,7 @@ import Image from "next/image";
 
 /**
  * A screenshot presented as product evidence: window chrome with the real
- * route in the address bar, then the captured frame itself. The chrome is
+ * route in the title bar, then the captured frame itself. The chrome is
  * presentation only; the image is a capture of the running application.
  */
 export function BrowserFrame({
@@ -25,7 +25,7 @@ export function BrowserFrame({
           <span className="bg-border-strong h-2.5 w-2.5 rounded-full" />
         </span>
         <span className="text-text-secondary bg-background border-border min-w-0 flex-1 truncate rounded-md border px-3 py-1 text-center font-mono text-xs">
-          localhost:3000{route}
+          {route}
         </span>
         <span aria-hidden="true" className="w-10" />
       </div>
