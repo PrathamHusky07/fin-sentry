@@ -33,6 +33,22 @@ test("Architecture lays out four layers and keeps its claims source-accurate", a
   await expect(body).not.toContainText(/2\.5 Flash/);
   await expect(body).not.toContainText(/weekly/i);
   await expect(body).toContainText("not a live monitor");
+  // No repo paths or dev hosts on the page.
+  await expect(body).not.toContainText(
+    /finsentry\/|Read from|docs\/adr|\.py\b/,
+  );
+  await expect(body).not.toContainText(/localhost|127\.0\.0\.1|:3000|:8000/);
+  // Four distinct diagrams: a pipeline, a topology, event lanes and a hub.
+  await expect(
+    page.getByRole("list", { name: "The request path, left to right" }),
+  ).toBeVisible();
+  for (const name of [
+    /evaluation plane\. A response event forks/i,
+    /two lanes around a log/i,
+    /operational interface as a hub/i,
+  ]) {
+    await expect(page.getByRole("img", { name })).toBeVisible();
+  }
   // Red Team is shown as not built, never as a working capability.
   await expect(body).toContainText("not registered");
 
