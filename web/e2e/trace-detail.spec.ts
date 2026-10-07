@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 const AMAZON_TRACE_ID = "96bca4b5-f707-4a93-b421-2674032849b5";
 
+test.use({ viewport: { width: 1440, height: 900 } });
+
 /**
  * The showcase trace -- the real, persisted Amazon FY2024 net-income
  * disagreement (see docs/build-log.md and
@@ -41,6 +43,24 @@ test("the Amazon disagreement is reachable and renders the real Flash 1.000 vs F
   await expect(dialog).toContainText(
     "What is Amazon's FY2024 net income attributable to shareholders",
   );
+
+  // The returned answer is the dominant block, and it comes after the
+  // question and before the judges' verdict in reading order.
+  const answerHeading = dialog.getByRole("heading", {
+    name: "Answer returned",
+  });
+  await expect(answerHeading).toBeVisible();
+  const answer = dialog.locator("section[aria-labelledby='trace-answer']");
+  await expect(answer).toContainText(/\S{3,}/);
+  const answerBox = await answer.boundingBox();
+  const bannerBox = await banner.boundingBox();
+  const questionBox = await dialog
+    .locator("section[aria-labelledby='trace-question']")
+    .boundingBox();
+  expect(questionBox?.y ?? 0).toBeLessThan(answerBox?.y ?? 0);
+  // At xl widths the judges sit beside the answer, so both start in the
+  // first screenful. Below that they stack under it.
+  expect(bannerBox?.y ?? 0).toBeLessThan(900);
 
   expect(errors).toEqual([]);
   expect(failedRequests).toEqual([]);
