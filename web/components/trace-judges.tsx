@@ -18,11 +18,11 @@ function ScoreScale({ flash, frontier }: { flash: number; frontier: number }) {
     <div
       role="img"
       aria-label={`Faithfulness on a scale from 0 to 1: flash ${flash.toFixed(3)}, frontier ${frontier.toFixed(3)}.`}
-      className="relative mx-3 mt-6 mb-9 h-2"
+      className="relative mx-3 mt-9 mb-9 h-3"
     >
       <div className="bg-surface-high absolute inset-0 rounded-full" />
       <div
-        className="bg-disagreement/35 absolute inset-y-0"
+        className="bg-disagreement/50 absolute inset-y-0"
         style={{ left: `${lo}%`, width: `${hi - lo}%` }}
       />
       {[
@@ -110,8 +110,13 @@ function MetricRow({
   // computed and genuinely zero. Both render from the pair, never the score
   // alone (see ../CLAUDE.md’s zero-vs-null rule).
   return (
-    <div className="border-border grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-1.5 border-b py-2.5 last:border-b-0">
-      <span className="text-text-secondary text-base">{label}</span>
+    <div className="border-border grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1.5 border-b py-2 last:border-b-0">
+      <span className="text-text-secondary text-base">
+        {label}
+        <span className="text-text-tertiary ml-2 font-mono text-xs">
+          {status ?? "no status recorded"}
+        </span>
+      </span>
       <span className="tabular-metric text-text-primary text-right text-base font-medium">
         {score === null ? "not scored" : score.toFixed(3)}
       </span>
@@ -125,9 +130,6 @@ function MetricRow({
             style={{ width: `${Math.max(0, Math.min(1, score)) * 100}%` }}
           />
         ) : null}
-      </span>
-      <span className="text-text-tertiary col-span-2 font-mono text-xs">
-        {status ?? "no status recorded"}
       </span>
     </div>
   );

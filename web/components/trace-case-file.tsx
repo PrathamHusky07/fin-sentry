@@ -210,19 +210,13 @@ function Evidence({ detail }: { detail: TraceDetailResponse }) {
 export function TraceCaseFile({ detail }: { detail: TraceDetailResponse }) {
   const scores = detectDisagreement(detail);
   return (
-    <div className="grid gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-      <div className="xl:col-start-1">
+    <div className="grid gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] xl:items-start">
+      <div className="space-y-8">
         <Question detail={detail} />
-      </div>
-      <div className="xl:col-start-1">
         <Answer detail={detail} disputed={scores !== null} />
-      </div>
-      <div className="xl:col-start-1">
         <Evidence detail={detail} />
       </div>
-      <div className="xl:col-start-2 xl:row-span-3 xl:row-start-1">
-        <JudgesColumn detail={detail} scores={scores} />
-      </div>
+      <JudgesColumn detail={detail} scores={scores} />
       <div className="xl:col-span-2">
         <Section title="Execution path" id="trace-path">
           <ExecutionPath detail={detail} />
