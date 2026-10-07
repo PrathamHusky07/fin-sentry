@@ -1,16 +1,45 @@
 # Build Log
 
-## 2026-10-07 — Frontend overhaul (in progress): contract edits
+## 2026-10-07 — Frontend overhaul: correctness fixes, recomposed pages, trace answer view
 
-Two edits to `web/CLAUDE.md`, recorded here so the contract does not drift.
-First, the stale line saying no presentation-layer UI existed was corrected
-(the landing and architecture routes are built). Second, the truth boundary
-now states that honest-absence states remain mandatory in the application
-(Overview, Live Operations, Investigations) while the presentation layer is
-no longer required to carry a dedicated "what this does not do" section. The
-file had no literal requirement for such a section; the "Known limits"
-block on the landing page came from build practice. Everything else in the
+Frontend only. No backend code, database, schema, Docker service or model was
+changed or run. No pytest, ruff or mypy run.
+
+Correctness fixes, each with a deterministic test: the landing calibration
+arrow now runs frontier to calibration and reads "measured by"; trace group
+keys are JSON-encoded; the Investigations fetch depends on the debounced
+search term only (six keystrokes fire one request); an unavailable
+calibration reading raises its own signal and never reads as all clear; the
+request flow no longer calls sampled traces "persisted frontier verdicts" or
+claims a delivered answer carried citations. Vitest was added as a
+dev-only dependency for the pure-logic tests.
+
+Pages recomposed: the landing page (two-lane hero, a station map with hover
+brightening, a six-row decision ledger), the trace drawer (question, the
+delivered answer verbatim, evidence, then the judges beside it), Overview
+(state band with a calibration threshold scale, the Amazon case featured,
+ranked signals, a unit chart of coverage, a two-stage flow), Live Operations
+(pinned freshness band, telemetry over a synced two-panel chart with a table
+view, trust verdict before kappa), Investigations (search first, severity
+rails, pinned pagination) and Architecture (four different diagrams).
+Dev-host text and repo file paths are gone from every rendered surface.
+
+Contract edits to `web/CLAUDE.md`, recorded so they do not drift. First, the
+stale line saying no presentation-layer UI existed was corrected. Second,
+honest-absence states stay mandatory in the application (Overview, Live
+Operations, Investigations), while the presentation layer is no longer
+required to carry a dedicated "what this does not do" section. The file had
+no literal requirement for such a section; the "Known limits" block on the
+landing page came from build practice and was removed. The rest of the
 truth boundary is unchanged.
+
+Verification: `tsc`, `eslint`, `prettier --check` and `next build` clean;
+11 Vitest tests; 20 of 20 Playwright tests with one worker against the live
+stack on the production build; one sequential responsive pass over six
+routes at 375, 768 and 1440 with zero overflow, console errors or failed
+requests. RisingWave had exited before the session and was restarted by the
+user; the Amazon trace was confirmed present before any browser check that
+asserts on it.
 
 ## 2026-10-06 — Frontend transformation (frontend only)
 
