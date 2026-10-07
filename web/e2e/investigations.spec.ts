@@ -24,6 +24,29 @@ test.describe("Investigations", () => {
     }
   });
 
+  test("typing in search fires at most one list request after the debounce window", async ({
+    page,
+  }) => {
+    await page.goto("/investigations");
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
+
+    const searchRequests: string[] = [];
+    page.on("request", (req) => {
+      const url = new URL(req.url());
+      if (url.pathname === "/ops/traces" && url.searchParams.has("q")) {
+        searchRequests.push(url.searchParams.get("q") ?? "");
+      }
+    });
+
+    // Six keystrokes well inside the 300 ms window, then wait it out.
+    await page
+      .getByPlaceholder("Search query text or trace ID")
+      .pressSequentially("amazon", { delay: 60 });
+    await page.waitForTimeout(900);
+
+    expect(searchRequests).toEqual(["amazon"]);
+  });
+
   test("the disagreement lens returns exactly the real known disagreement", async ({
     page,
   }) => {
