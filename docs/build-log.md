@@ -1,5 +1,52 @@
 # Build Log
 
+## 2026-10-08 (close-out): Day 9 backend reliability fixes
+
+Model: Sonnet 5.5. Backend only. No frontend file, corpus, experiment rerun or drift
+controller. Four fixes, one commit each.
+
+Kafka commit (23fd040). The consumer called commit() with no offset from concurrent
+tasks. That commits the read position, so a crash could skip an unfinished earlier
+message. A per-partition tracker now commits only the end of the unbroken run of
+finished offsets. A failed handler is retried three times inside its own slot, then
+left uncommitted and redelivered after a restart. Later messages keep running.
+Delivery is at-least-once and duplicate-tolerant. It is not exactly-once.
+
+Frontier failures (3bee7c4). A peer retrieval error used to drop the sampled event.
+It now records the existing unavailable verdict: each judge is listed unavailable and
+the reason sits in error_detail. A retrieval that failed is not treated as a
+retrieval that found no peers. A failed verdict emit now raises, so the source offset
+stays uncommitted and the event is retried.
+
+Faithfulness cost (b31de93). Each request keeps its own budget and report. Each call
+is also charged to a process-local ledger, which gates the cumulative run and day
+ceilings again with the existing skipped_budget fail-open response. The ledger resets
+on restart and is not shared between gateway replicas.
+
+RisingWave failures (795e237). /traces, /traces/{id} and /metrics/throughput/history
+answer 503 when RisingWave is not connected or a query fails. They answer 200 with an
+empty body only when the query ran and matched nothing. The failure travels with each
+call, so concurrent requests cannot hide each other's. Healthy responses were
+byte-identical to the old ones across 50 live paths. With a forced query failure the
+real browser showed "Trace service unavailable" on Investigations, "trace service
+unavailable" on Overview and "Stored history is not available" on Operations.
+
+Verification. 695 tests pass, up from 652. ruff and mypy are clean. The frontend is
+unchanged: tsc, eslint, prettier, 55 Vitest cases, the production build and 98 of 98
+Playwright tests pass. Each new test was mutation-checked against its fix.
+
+Deployed. The live dashboard and one flash and one frontier consumer were restarted
+on the new code. The old stack ran two members per consumer group on a one-partition
+topic, so one member in each group was idle. The gateway was not restarted, so the
+faithfulness ledger is not live there until its next restart.
+
+Found, not fixed. The gateway maps a dashboard 503 to "metrics service unreachable",
+which is imprecise for a query failure. Live Operations still reads "RisingWave
+Reachable" while queries fail, because the snapshot path is unchanged. The flash
+JudgeVerdictProducer.emit swallows send failures the way the frontier one did. The
+dashboard blocks about 30 seconds at startup when RisingWave is down. The live SQL
+and integration tests publish probe rows to the real topics: this session added 12.
+
 ## 2026-10-08 (later): Day 9 frontend completion, interaction hierarchy
 
 Model: Sonnet 5.5. Frontend only. No backend file, data path, corpus or model run.
