@@ -464,3 +464,165 @@ async def test_fetch_disagreement_trace_ids_flags_real_cross_tier_disagreement()
         result = await _fetch_disagreement_trace_ids()
 
     assert result == {"trace-disagree"}
+
+
+# ---------------------------------------------------------------------------
+# judge_failed semantics (Day 9 close-out).
+#
+# judge_failed means the RAG request succeeded and delivered an answer AND the
+# evaluation pipeline produced no valid verdict. It is never used for a request
+# that failed before producing an answer, and it never collapses into
+# blocked_before_evaluation or never_evaluated.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("rag_status", "judge_status", "expected"),
+    [
+        ("success", "complete", "evaluated"),
+        ("success", "partial", "partially_evaluated"),
+        ("success", "failed", "judge_failed"),
+        ("success", None, "never_evaluated"),
+        ("blocked", "failed", "blocked_before_evaluation"),
+        ("error", "failed", "blocked_before_evaluation"),
+        # Nothing was delivered, so nothing was there to judge, even when no failed
+        # verdict row exists. This is never never_evaluated and never judge_failed.
+        ("blocked", None, "blocked_before_evaluation"),
+        ("error", None, "blocked_before_evaluation"),
+    ],
+)
+def test_judge_state_follows_rag_status_and_verdict(
+    rag_status: str, judge_status: str | None, expected: str
+) -> None:
+    from finsentry.dashboard.app import _classify_judge_state
+
+    assert _classify_judge_state(judge_status, rag_status) == expected  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("rag_status", ["blocked", "error"])
+@pytest.mark.parametrize("judge_status", ["failed", None])
+def test_a_request_that_produced_no_answer_is_never_judge_failed(
+    rag_status: str, judge_status: str | None
+) -> None:
+    from finsentry.dashboard.app import _classify_judge_state
+
+    assert _classify_judge_state(judge_status, rag_status) != "judge_failed"  # type: ignore[arg-type]
+
+
+async def test_traces_list_error_request_with_no_verdict_is_blocked_before_evaluation() -> None:
+    row = {
+        "app_trace_id": "trace-error-no-verdict",
+        "timestamp_utc": _NOW,
+        "endpoint": "rag",
+        "ticker": "AAPL",
+        "query": "q",
+        "rag_status": "error",
+        "block_reason": None,
+        "judge_status": None,
+    }
+    with patch(
+        "finsentry.dashboard.app._fetch_all",
+        AsyncMock(side_effect=lambda sql, params=(): [row] if "LEFT JOIN (" in sql else []),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/traces")
+
+    assert resp.json()["traces"][0]["judge_state"] == "blocked_before_evaluation"
+
+
+@pytest.mark.parametrize(
+    ("judge_state", "must_contain"),
+    [
+        ("judge_failed", ["j.status = 'failed'", "r.status = 'success'"]),
+        ("never_evaluated", ["j.status IS NULL", "r.status = 'success'"]),
+        ("blocked_before_evaluation", ["r.status != 'success'", "j.status IS NULL"]),
+    ],
+)
+async def test_judge_state_filter_matches_the_classification(
+    judge_state: str, must_contain: list[str]
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def _capture(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        if "LEFT JOIN (" in sql:
+            captured["sql"] = sql
+        return []
+
+    with patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_capture)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/traces", params={"judge_state": judge_state})
+
+    assert resp.status_code == 200
+    for fragment in must_contain:
+        assert fragment in captured["sql"]
+
+
+def _rag_detail_row(status: str) -> dict[str, Any]:
+    return {
+        "app_trace_id": "trace-x",
+        "status": status,
+        "endpoint": "rag",
+        "ticker": "AAPL",
+        "query": "q",
+        "answer": "a" if status == "success" else "",
+        "confidence": "high" if status == "success" else None,
+        "model_used": "m",
+        "citations": [],
+        "retrieved_chunk_ids": [],
+        "block_reason": None,
+        "block_rail": None,
+        "error_kind": "downstream_unavailable" if status == "error" else None,
+        "error_detail": None,
+        "timestamp_utc": _NOW,
+    }
+
+
+@pytest.mark.parametrize(
+    ("rag_status", "expected"),
+    [("success", "judge_failed"), ("error", "blocked_before_evaluation")],
+)
+async def test_trace_detail_and_list_agree_on_a_failed_verdict(
+    rag_status: str, expected: str
+) -> None:
+    failed_verdict = {
+        "status": "failed",
+        "timestamp_utc": _NOW,
+        "faithfulness_score": None,
+        "faithfulness_status": "skipped_evaluator_error",
+        "answer_relevance_score": None,
+        "answer_relevance_status": "skipped_evaluator_error",
+        "context_relevance_score": None,
+        "context_relevance_status": "skipped_evaluator_error",
+    }
+
+    async def _one(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+        if "FROM rag_events" in sql:
+            return _rag_detail_row(rag_status)
+        if "FROM judge_verdicts" in sql:
+            return failed_verdict
+        return None
+
+    list_row = {
+        "app_trace_id": "trace-x",
+        "timestamp_utc": _NOW,
+        "endpoint": "rag",
+        "ticker": "AAPL",
+        "query": "q",
+        "rag_status": rag_status,
+        "block_reason": None,
+        "judge_status": "failed",
+    }
+
+    async def _all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        return [list_row] if "LEFT JOIN (" in sql else []
+
+    with (
+        patch("finsentry.dashboard.app._fetch_one", AsyncMock(side_effect=_one)),
+        patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_all)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            detail = (await client.get("/traces/trace-x")).json()
+            listing = (await client.get("/traces")).json()
+
+    assert detail["judge_state"] == expected
+    assert listing["traces"][0]["judge_state"] == expected

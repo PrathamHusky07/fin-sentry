@@ -406,28 +406,32 @@ _REAL_FRONTIER_JUDGE_ID: Literal["gemini-rubric"] = "gemini-rubric"
 
 
 def _classify_judge_state(judge_status: str | None, rag_status: str) -> JudgeState:
-    if judge_status is None:
-        return "never_evaluated"
     if judge_status == "complete":
         return "evaluated"
     if judge_status == "partial":
         return "partially_evaluated"
-    # judge_status == "failed" (or any other unrecognized status): a real
-    # rag_status="success" row with no complete metric is a judge-pipeline
-    # outage, not a guardrail block -- see finsentry/events/trace_api.py.
-    if rag_status == "success":
-        return "judge_failed"
-    return "blocked_before_evaluation"
+    if rag_status != "success":
+        # Blocked or errored: no answer was delivered, so there was nothing to judge,
+        # whether or not a failed verdict row exists. Never a judge error.
+        return "blocked_before_evaluation"
+    if judge_status is None:
+        return "never_evaluated"
+    # judge_status == "failed" (or any other unrecognized status) on a delivered
+    # answer: a judge-pipeline outage, not a guardrail block -- see
+    # finsentry/events/trace_api.py.
+    return "judge_failed"
 
 
 # Translates the public five-state judge_state filter back to the raw
 # judge_verdicts.status / rag_events.status condition _classify_judge_state
 # derives it from -- the dashboard never stores judge_state itself.
 _JUDGE_STATE_TO_STATUS_SQL: dict[str, str] = {
-    "never_evaluated": "j.status IS NULL",
+    "never_evaluated": "j.status IS NULL AND r.status = 'success'",
     "evaluated": "j.status = 'complete'",
     "partially_evaluated": "j.status = 'partial'",
-    "blocked_before_evaluation": "j.status = 'failed' AND r.status != 'success'",
+    "blocked_before_evaluation": (
+        "r.status != 'success' AND (j.status IS NULL OR j.status = 'failed')"
+    ),
     "judge_failed": "j.status = 'failed' AND r.status = 'success'",
 }
 

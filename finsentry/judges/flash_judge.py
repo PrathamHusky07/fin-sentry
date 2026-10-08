@@ -129,7 +129,29 @@ class FlashJudge:
         return make_gemini_generate_fn(self._client, self._model_name)
 
     async def evaluate(self, event: RagResponseEvent) -> JudgeVerdictEvent:
-        """Run all three metrics on event and return a JudgeVerdictEvent."""
+        """Run all three metrics on event and return a JudgeVerdictEvent.
+
+        Never raises. An unexpected failure becomes a persisted "failed" verdict, so a
+        delivered answer the judge could not score reads as judge_failed instead of
+        looking like a trace nobody evaluated."""
+        try:
+            return await self._evaluate(event)
+        except Exception:
+            log.exception("FlashJudge: unexpected failure for %s", event.app_trace_id)
+            return JudgeVerdictEvent(
+                event_id=str(uuid.uuid4()),
+                source_event_id=event.event_id,
+                app_trace_id=event.app_trace_id,
+                timestamp_utc=datetime.now(UTC).isoformat(),
+                faithfulness_status="skipped_evaluator_error",
+                answer_relevance_status="skipped_evaluator_error",
+                context_relevance_status="skipped_evaluator_error",
+                judge_tier="flash",
+                judge_model=self._model_name,
+                status="failed",
+            )
+
+    async def _evaluate(self, event: RagResponseEvent) -> JudgeVerdictEvent:
         budget = CostBudget()
         generate_fn = self._make_generate_fn()
 

@@ -199,3 +199,23 @@ async def test_judge_verdict_event_serializes_to_json() -> None:
     decoded = json.loads(payload.decode("utf-8"))
     assert decoded["schema_version"] == "1.0"
     assert decoded["app_trace_id"] == verdict.app_trace_id
+
+
+@pytest.mark.anyio
+async def test_flash_judge_unexpected_failure_still_produces_a_failed_verdict() -> None:
+    """If scoring blows up outside the per-metric guards, the delivered answer must still
+    get a persisted failed verdict, so it reads as judge_failed and not never_evaluated."""
+    from unittest.mock import patch
+
+    judge = FlashJudge(mode="disabled")
+    event = _make_event()
+
+    with patch.object(FlashJudge, "_evaluate", side_effect=RuntimeError("scorer exploded")):
+        verdict = await judge.evaluate(event)
+
+    assert verdict.status == "failed"
+    assert verdict.source_event_id == event.event_id
+    assert verdict.app_trace_id == event.app_trace_id
+    assert verdict.faithfulness_status == "skipped_evaluator_error"
+    assert verdict.faithfulness_score is None
+    assert verdict.total_gemini_calls == 0
