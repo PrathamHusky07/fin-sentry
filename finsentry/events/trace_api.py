@@ -12,9 +12,9 @@ RAGAS metrics completed, others skipped for a judge-side reason); no
 judge_verdicts row at all (a success rag_events row the async consumer
 never produced a verdict for) is "never_evaluated".
 
-The paired rag_events status decides first for anything that is not complete or
-partial. A request that was not delivered (blocked or error) is always
-"blocked_before_evaluation", with or without a failed verdict row, because
+The paired rag_events status is the first discriminator. A request that was not
+delivered (blocked or error) is always "blocked_before_evaluation", whatever
+verdict row exists (none, failed, or even a stray complete/partial one), because
 there was nothing to judge. For a delivered answer, a judge_verdicts row with
 status="failed" is "judge_failed" (Day 9 Session 2B -- Phase 0 found the
 two-state version of this conflated two different things):
