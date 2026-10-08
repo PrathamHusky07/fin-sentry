@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
@@ -98,6 +99,13 @@ _tracer = get_tracer()
 _RAG_BUDGET: float = 20.0  # total wall-time budget per request in seconds
 _RAG_STOP = stop_after_delay(20)
 _RAG_WAIT = wait_exponential(multiplier=0.5, min=0.5, max=4)
+
+# Hard end-to-end limit for one /v1/rag/query request: input rails, retrieval, the
+# downstream call (which keeps its own 20 s budget above), the output rails and the
+# faithfulness rail. Enforced at the request boundary in rag_query. The faithfulness
+# rail is told how much of this is left, so it still fails open instead of tripping it.
+_REQUEST_DEADLINE: float = 60.0
+_DEADLINE_MARGIN: float = 5.0
 
 # Per-attempt httpx timeout cap. Combined with the remaining-budget check, this
 # ensures a single slow attempt cannot consume the entire budget.
@@ -661,34 +669,113 @@ async def _call_downstream_rag(
 # ---------------------------------------------------------------------------
 
 
-def _emit_error_event(
-    producer: RagEventProducer | None,
-    app_trace_id: str,
-    request_start_time: float,
-    request_body: RagQueryRequest,
-    error_kind: str,
-    error_detail: str,
-    input_rail_status: Literal["pass", "modified", "blocked"] = "pass",
+@dataclass
+class _RequestState:
+    """What the terminal event of one request needs, and the flag that keeps it
+    to exactly one terminal event per request."""
+
+    app_trace_id: str
+    start: float
+    raw_query: str
+    ticker: str | None
+    # The query as forwarded downstream, after any input-rail redaction. None until
+    # the input rails have run, so an earlier event redacts raw_query itself.
+    query: str | None = None
+    input_rail_status: Literal["pass", "modified", "blocked"] = "pass"
+    emitted: bool = False
+
+
+_WITHHELD_QUERY = "[query withheld: redaction unavailable]"
+
+
+async def _redact_for_persistence(text: str) -> str:
+    """Presidio-redact a query that never reached the input-rail sanitizer (a block or
+    failure before it ran). Fails closed: if redaction cannot run, no query is kept."""
+    try:
+        decision = await asyncio.to_thread(PiiRedactionRail().check, text, {})
+    except Exception:
+        log.warning("query redaction failed; withholding the query from the event", exc_info=True)
+        return _WITHHELD_QUERY
+    if decision.outcome == "sanitize":
+        return str(decision.details["sanitized_content"])
+    return text
+
+
+async def _publish_terminal(
+    producer: RagEventProducer,
+    state: _RequestState,
+    timestamp_utc: str,
+    total_latency_ms: int,
+    # Event fields vary by status; RagResponseEvent validates them.
+    fields: dict[str, Any],
 ) -> None:
-    """Fire-and-forget error event emission. Truncates error_detail at 500 chars."""
-    if producer is None:
-        return
-    asyncio.create_task(
-        producer.emit(
-            RagResponseEvent(
-                event_id=str(uuid.uuid4()),
-                app_trace_id=app_trace_id,
-                timestamp_utc=datetime.now(UTC).isoformat(),
-                status="error",
-                endpoint="/v1/rag/query",
-                query=request_body.query,
-                ticker=request_body.ticker,
-                error_kind=error_kind,
-                error_detail=error_detail[:500],
-                input_rail_status=input_rail_status,
-                total_latency_ms=int((time.monotonic() - request_start_time) * 1000),
-            )
+    query = (
+        state.query if state.query is not None else await _redact_for_persistence(state.raw_query)
+    )
+    await producer.emit(
+        RagResponseEvent(
+            event_id=str(uuid.uuid4()),
+            app_trace_id=state.app_trace_id,
+            timestamp_utc=timestamp_utc,
+            endpoint="/v1/rag/query",
+            query=query,
+            ticker=state.ticker,
+            input_rail_status=state.input_rail_status,
+            total_latency_ms=total_latency_ms,
+            **fields,
         )
+    )
+
+
+def _emit_terminal(state: _RequestState, **fields: Any) -> None:
+    """Schedule the one terminal event for this request, fire-and-forget. A request
+    that already emitted its terminal event never emits a second one."""
+    producer = _rag_event_producer
+    if producer is None or state.emitted:
+        return
+    state.emitted = True
+    asyncio.create_task(
+        _publish_terminal(
+            producer,
+            state,
+            datetime.now(UTC).isoformat(),
+            int((time.monotonic() - state.start) * 1000),
+            fields,
+        )
+    )
+
+
+def _emit_error(state: _RequestState, error_kind: str, error_detail: str) -> None:
+    _emit_terminal(state, status="error", error_kind=error_kind, error_detail=error_detail[:500])
+
+
+def _output_rail_block(
+    state: _RequestState,
+    rail: str,
+    reason: str,
+    evidence: dict[str, Any],
+    output_trace: dict[str, Any],
+) -> Response:
+    """Record an output-rail block and return the 422. The body carries only fixed
+    identifiers. Rail details can echo the model's reply, so they stay out of it."""
+    _emit_terminal(
+        state,
+        status="blocked",
+        block_reason=reason,
+        block_rail=rail,
+        model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
+        output_rail_trace_snapshot=output_trace,
+        **evidence,
+    )
+    return JSONResponse(
+        {
+            "error": "output_rail_block",
+            "rail": rail,
+            "reason": reason,
+            "app_trace_id": state.app_trace_id,
+            "message": f"The answer was blocked by the {rail} output rail.",
+        },
+        status_code=422,
     )
 
 
@@ -706,7 +793,12 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
     with _tracer.start_as_current_span("rag.query.total") as root_span:
         # Established inside the root span so set_app_trace_id records on a recording span.
         app_trace_id = str(uuid.uuid4())
-        request_start_time = time.monotonic()
+        state = _RequestState(
+            app_trace_id=app_trace_id,
+            start=time.monotonic(),
+            raw_query=request_body.query,
+            ticker=request_body.ticker,
+        )
 
         # app_trace_id (UUID4, 36 chars) and OTel trace_id (128-bit hex, 32 chars) serve
         # different audiences: app_trace_id correlates Kafka events, logs, and dashboards
@@ -715,33 +807,35 @@ async def rag_query(request_body: RagQueryRequest) -> Response:
         set_app_trace_id(root_span, app_trace_id)
 
         try:
-            return await _rag_query_inner(request_body, app_trace_id, request_start_time)
-        except Exception as exc:
-            error_kind = type(exc).__name__
-            error_detail = str(exc)[:500]
-            _emit_error_event(
-                _rag_event_producer,
-                app_trace_id,
-                request_start_time,
-                request_body,
-                error_kind=error_kind,
-                error_detail=error_detail,
+            # One deadline for the whole request, not for any single stage. Expiry cancels
+            # the handler wherever it is waiting and lands in the except TimeoutError below.
+            async with asyncio.timeout(_REQUEST_DEADLINE):
+                try:
+                    return await _rag_query_inner(request_body, state)
+                except Exception as exc:
+                    error_kind = type(exc).__name__
+                    error_detail = str(exc)[:500]
+                    _emit_error(state, error_kind, error_detail)
+                    root_span.set_status(StatusCode.ERROR, f"{error_kind}: {error_detail}")
+                    log.error("Unhandled exception in rag_query: %s", exc, exc_info=True)
+                    return JSONResponse({"error": "internal server error"}, status_code=500)
+        except TimeoutError:
+            detail = f"request exceeded the {_REQUEST_DEADLINE:g} second deadline"
+            _emit_error(state, "request_deadline_exceeded", detail)
+            root_span.set_status(StatusCode.ERROR, detail)
+            log.error("rag_query deadline exceeded app_trace_id=%s", app_trace_id)
+            return JSONResponse(
+                {"error": "request deadline exceeded", "app_trace_id": app_trace_id},
+                status_code=504,
             )
-            root_span.set_status(StatusCode.ERROR, f"{error_kind}: {error_detail}")
-            log.error("Unhandled exception in rag_query: %s", exc, exc_info=True)
-            return JSONResponse({"error": "internal server error"}, status_code=500)
 
 
-async def _rag_query_inner(
-    request_body: RagQueryRequest,
-    app_trace_id: str,
-    request_start_time: float,
-) -> Response:
+async def _rag_query_inner(request_body: RagQueryRequest, state: _RequestState) -> Response:
     """Core RAG handler body. Called inside the rag.query.total root span."""
+    app_trace_id = state.app_trace_id
     query = request_body.query
     ticker = request_body.ticker
     top_k = request_body.top_k
-    input_rail_status: Literal["pass", "modified", "blocked"] = "pass"
 
     # 1. Input rails on the query.
     if _adapter is not None:
@@ -754,46 +848,28 @@ async def _rag_query_inner(
                 )
             except Exception as exc:
                 log.error("Input rail enforcement failed: %s", exc, exc_info=True)
-                _emit_error_event(
-                    _rag_event_producer,
-                    app_trace_id,
-                    request_start_time,
-                    request_body,
-                    error_kind="input_rail_service_unavailable",
-                    error_detail=str(exc)[:500],
-                )
+                _emit_error(state, "input_rail_service_unavailable", str(exc))
                 return JSONResponse({"error": "input rail service unavailable"}, status_code=503)
 
             if status == RailStatus.BLOCKED:
-                input_rail_status = "blocked"
-                if _rag_event_producer is not None:
-                    asyncio.create_task(
-                        _rag_event_producer.emit(
-                            RagResponseEvent(
-                                event_id=str(uuid.uuid4()),
-                                app_trace_id=app_trace_id,
-                                timestamp_utc=datetime.now(UTC).isoformat(),
-                                status="blocked",
-                                endpoint="/v1/rag/query",
-                                query=request_body.query,
-                                ticker=ticker,
-                                block_reason="input_rail_blocked",
-                                block_rail=rail_name or "unknown",
-                                input_rail_status="blocked",
-                                total_latency_ms=int(
-                                    (time.monotonic() - request_start_time) * 1000
-                                ),
-                            )
-                        )
-                    )
+                state.input_rail_status = "blocked"
+                _emit_terminal(
+                    state,
+                    status="blocked",
+                    block_reason="input_rail_blocked",
+                    block_rail=rail_name or "unknown",
+                )
                 block_body: dict[str, str] = {"error": "request blocked by input rail"}
                 if rail_name is not None:
                     block_body["rail"] = rail_name
                 return JSONResponse(block_body, status_code=403)
 
             if status == RailStatus.MODIFIED:
-                input_rail_status = "modified"
+                state.input_rail_status = "modified"
                 query = str(updated[0].get("content", query))
+
+    # From here on events carry the query the model sees, with any PII already redacted.
+    state.query = query
 
     # 2. Embed the (possibly sanitised) query.
     with _tracer.start_as_current_span("rag.embed_query"):
@@ -807,15 +883,7 @@ async def _rag_query_inner(
             chunks = await _fetch_chunks(_DATABASE_URL, embedding, ticker, top_k)
         except Exception as exc:
             log.error("Vector search failed: %s", exc, exc_info=True)
-            _emit_error_event(
-                _rag_event_producer,
-                app_trace_id,
-                request_start_time,
-                request_body,
-                error_kind="vector_search_failed",
-                error_detail=str(exc)[:500],
-                input_rail_status=input_rail_status,
-            )
+            _emit_error(state, "vector_search_failed", str(exc))
             return JSONResponse({"error": "vector search failed"}, status_code=503)
 
     # 4. Retrieval rail: source-trust, injection detection, PII redaction.
@@ -826,24 +894,12 @@ async def _rag_query_inner(
             filtered_chunks = chunks
 
     if not filtered_chunks:
-        if _rag_event_producer is not None:
-            asyncio.create_task(
-                _rag_event_producer.emit(
-                    RagResponseEvent(
-                        event_id=str(uuid.uuid4()),
-                        app_trace_id=app_trace_id,
-                        timestamp_utc=datetime.now(UTC).isoformat(),
-                        status="blocked",
-                        endpoint="/v1/rag/query",
-                        query=request_body.query,
-                        ticker=ticker,
-                        block_reason="no_trustworthy_sources",
-                        block_rail="retrieval-rail",
-                        input_rail_status=input_rail_status,
-                        total_latency_ms=int((time.monotonic() - request_start_time) * 1000),
-                    )
-                )
-            )
+        _emit_terminal(
+            state,
+            status="blocked",
+            block_reason="no_trustworthy_sources",
+            block_rail="retrieval-rail",
+        )
         return JSONResponse(
             RagQueryResponse(
                 answer=RagAnswerResponse(
@@ -861,9 +917,11 @@ async def _rag_query_inner(
         prompt_messages = _build_rag_messages(query, filtered_chunks)
 
     # 6. Forward to downstream LLM with budget and circuit breaker.
-    # List forms used for event payloads.
-    _ev_chunk_ids = [c.chunk_id for c in filtered_chunks]
-    _ev_chunk_texts = [c.text for c in filtered_chunks]
+    # Evidence fields shared by every event from here on.
+    evidence: dict[str, Any] = {
+        "retrieved_chunk_ids": [c.chunk_id for c in filtered_chunks],
+        "retrieved_chunks_text": [c.text for c in filtered_chunks],
+    }
     # Set used for citation cross-check in schema rail.
     retrieved_chunk_ids = {c.chunk_id for c in filtered_chunks}
 
@@ -878,6 +936,11 @@ async def _rag_query_inner(
             )
             raw_downstream_body = raw_body_holder[-1] if raw_body_holder else answer
         except _DownstreamCircuitOpenError as exc:
+            _emit_error(
+                state,
+                "downstream_unavailable",
+                f"circuit breaker open, retry after {round(exc.retry_after, 1)} s",
+            )
             return JSONResponse(
                 {
                     "error": "downstream_circuit_open",
@@ -886,43 +949,33 @@ async def _rag_query_inner(
                 status_code=503,
             )
         except _NonRetryableError as exc:
+            _emit_error(
+                state,
+                "downstream_error",
+                f"downstream rejected the request with status {exc.status_code}",
+            )
             return JSONResponse({"error": "bad request to downstream"}, status_code=exc.status_code)
-        except _AuthError:
+        except _AuthError as exc:
+            _emit_error(
+                state,
+                "downstream_error",
+                f"downstream auth misconfiguration, status {exc.status_code}",
+            )
             return JSONResponse({"error": "downstream auth misconfiguration"}, status_code=502)
         except RetryError as exc:
             last = exc.last_attempt.exception()
             if isinstance(last, _RateLimitError):
-                _emit_error_event(
-                    _rag_event_producer,
-                    app_trace_id,
-                    request_start_time,
-                    request_body,
-                    error_kind="downstream_rate_limit",
-                    error_detail="downstream rate limit exhausted after retries",
-                    input_rail_status=input_rail_status,
+                _emit_error(
+                    state,
+                    "downstream_rate_limit",
+                    "downstream rate limit exhausted after retries",
                 )
                 return JSONResponse({"error": "downstream rate limit"}, status_code=429)
-            _emit_error_event(
-                _rag_event_producer,
-                app_trace_id,
-                request_start_time,
-                request_body,
-                error_kind="downstream_unavailable",
-                error_detail="downstream unavailable after retries",
-                input_rail_status=input_rail_status,
-            )
+            _emit_error(state, "downstream_unavailable", "downstream unavailable after retries")
             return JSONResponse({"error": "downstream unavailable"}, status_code=504)
         except Exception as exc:
             log.error("Unexpected downstream error: %s", exc, exc_info=True)
-            _emit_error_event(
-                _rag_event_producer,
-                app_trace_id,
-                request_start_time,
-                request_body,
-                error_kind="downstream_error",
-                error_detail=str(exc)[:500],
-                input_rail_status=input_rail_status,
-            )
+            _emit_error(state, "downstream_error", str(exc))
             return JSONResponse({"error": "downstream error"}, status_code=502)
 
     # 7. Output rails: schema, regulated phrases, faithfulness.
@@ -966,38 +1019,8 @@ async def _rag_query_inner(
                             "app_trace_id": app_trace_id,
                         },
                     )
-                if _rag_event_producer is not None:
-                    asyncio.create_task(
-                        _rag_event_producer.emit(
-                            RagResponseEvent(
-                                event_id=str(uuid.uuid4()),
-                                app_trace_id=app_trace_id,
-                                timestamp_utc=datetime.now(UTC).isoformat(),
-                                status="blocked",
-                                endpoint="/v1/rag/query",
-                                query=request_body.query,
-                                ticker=ticker,
-                                retrieved_chunk_ids=_ev_chunk_ids,
-                                retrieved_chunks_text=_ev_chunk_texts,
-                                block_reason=schema_decision.reason,
-                                block_rail="schema-enforcement",
-                                model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
-                                input_rail_status=input_rail_status,
-                                output_rail_trace_snapshot=output_trace,
-                                total_latency_ms=int(
-                                    (time.monotonic() - request_start_time) * 1000
-                                ),
-                            )
-                        )
-                    )
-                return JSONResponse(
-                    {
-                        "error": "output_rail_block",
-                        "rail": "schema-enforcement",
-                        "reason": schema_decision.reason,
-                        "details": schema_decision.details,
-                    },
-                    status_code=422,
+                return _output_rail_block(
+                    state, "schema-enforcement", schema_decision.reason, evidence, output_trace
                 )
             output_trace["schema-enforcement"] = {
                 "outcome": "pass",
@@ -1016,38 +1039,8 @@ async def _rag_query_inner(
         if _phrase_rail is not None:
             phrase_decision = _phrase_rail.check(parsed_answer.answer)
             if phrase_decision.outcome == "block":
-                if _rag_event_producer is not None:
-                    asyncio.create_task(
-                        _rag_event_producer.emit(
-                            RagResponseEvent(
-                                event_id=str(uuid.uuid4()),
-                                app_trace_id=app_trace_id,
-                                timestamp_utc=datetime.now(UTC).isoformat(),
-                                status="blocked",
-                                endpoint="/v1/rag/query",
-                                query=request_body.query,
-                                ticker=ticker,
-                                retrieved_chunk_ids=_ev_chunk_ids,
-                                retrieved_chunks_text=_ev_chunk_texts,
-                                block_reason=phrase_decision.reason,
-                                block_rail="regulated-phrases",
-                                model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
-                                input_rail_status=input_rail_status,
-                                output_rail_trace_snapshot=output_trace,
-                                total_latency_ms=int(
-                                    (time.monotonic() - request_start_time) * 1000
-                                ),
-                            )
-                        )
-                    )
-                return JSONResponse(
-                    {
-                        "error": "output_rail_block",
-                        "rail": "regulated-phrases",
-                        "reason": phrase_decision.reason,
-                        "details": phrase_decision.details,
-                    },
-                    status_code=422,
+                return _output_rail_block(
+                    state, "regulated-phrases", phrase_decision.reason, evidence, output_trace
                 )
             output_trace["regulated-phrases"] = {
                 "outcome": "pass",
@@ -1057,66 +1050,33 @@ async def _rag_query_inner(
     # Rail C: faithfulness (async, fail-open per ADR 005)
     with _tracer.start_as_current_span("rag.faithfulness_rail"):
         if _faithfulness_rail is not None:
-            faith_decision = await _faithfulness_rail.check(parsed_answer.answer, filtered_chunks)
-            output_trace["faithfulness"] = faith_decision.details
+            # Hand the rail whatever is left of the request deadline, so a slow Gemini
+            # makes it fail open (skipped_timeout) instead of failing the request.
+            remaining = _REQUEST_DEADLINE - (time.monotonic() - state.start)
+            faith_decision = await _faithfulness_rail.check(
+                parsed_answer.answer,
+                filtered_chunks,
+                total_budget=max(1.0, remaining - _DEADLINE_MARGIN),
+            )
+            # The evaluator's raw reply is a debugging aid for the rail, not trace data.
+            output_trace["faithfulness"] = {
+                k: v for k, v in faith_decision.details.items() if k != "raw_response_snippet"
+            }
             if faith_decision.outcome == "block":
-                if _rag_event_producer is not None:
-                    asyncio.create_task(
-                        _rag_event_producer.emit(
-                            RagResponseEvent(
-                                event_id=str(uuid.uuid4()),
-                                app_trace_id=app_trace_id,
-                                timestamp_utc=datetime.now(UTC).isoformat(),
-                                status="blocked",
-                                endpoint="/v1/rag/query",
-                                query=request_body.query,
-                                ticker=ticker,
-                                retrieved_chunk_ids=_ev_chunk_ids,
-                                retrieved_chunks_text=_ev_chunk_texts,
-                                block_reason=faith_decision.reason,
-                                block_rail="faithfulness",
-                                model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
-                                input_rail_status=input_rail_status,
-                                output_rail_trace_snapshot=output_trace,
-                                total_latency_ms=int(
-                                    (time.monotonic() - request_start_time) * 1000
-                                ),
-                            )
-                        )
-                    )
-                return JSONResponse(
-                    {
-                        "error": "output_rail_block",
-                        "rail": "faithfulness",
-                        "reason": faith_decision.reason,
-                        "details": faith_decision.details,
+                # A blocked answer is never persisted, so its claim text is not either.
+                blocked_trace = {
+                    **output_trace,
+                    "faithfulness": {
+                        k: v
+                        for k, v in output_trace["faithfulness"].items()
+                        if k not in {"supported_claims", "unsupported_claims"}
                     },
-                    status_code=422,
+                }
+                return _output_rail_block(
+                    state, "faithfulness", faith_decision.reason, evidence, blocked_trace
                 )
 
-    if _rag_event_producer is not None:
-        asyncio.create_task(
-            _rag_event_producer.emit(
-                RagResponseEvent(
-                    event_id=str(uuid.uuid4()),
-                    app_trace_id=app_trace_id,
-                    timestamp_utc=datetime.now(UTC).isoformat(),
-                    status="success",
-                    endpoint="/v1/rag/query",
-                    query=request_body.query,
-                    ticker=ticker,
-                    retrieved_chunk_ids=_ev_chunk_ids,
-                    retrieved_chunks_text=_ev_chunk_texts,
-                    answer=parsed_answer.answer,
-                    citations=[c.model_dump() for c in parsed_answer.citations],
-                    confidence=parsed_answer.confidence,
-                    model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
-                    input_rail_status=input_rail_status,
-                    output_rail_trace_snapshot=output_trace,
-                    total_latency_ms=int((time.monotonic() - request_start_time) * 1000),
-                )
-            )
-        )
+    # Build the response first: if that fails, the request is an error, not a success.
     with _tracer.start_as_current_span("rag.build_response"):
         response = RagQueryResponse(
             answer=parsed_answer,
@@ -1124,4 +1084,15 @@ async def _rag_query_inner(
             retrieval_trace_id=app_trace_id,
             output_rail_trace=output_trace,
         )
-    return JSONResponse(response.model_dump())
+        body = response.model_dump()
+    _emit_terminal(
+        state,
+        status="success",
+        answer=parsed_answer.answer,
+        citations=[c.model_dump() for c in parsed_answer.citations],
+        confidence=parsed_answer.confidence,
+        model_used=_DOWNSTREAM_MODEL_ROUTING_ID,
+        output_rail_trace_snapshot=output_trace,
+        **evidence,
+    )
+    return JSONResponse(body)

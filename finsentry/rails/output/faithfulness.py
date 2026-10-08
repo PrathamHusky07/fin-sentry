@@ -121,6 +121,7 @@ class FaithfulnessRail:
         self,
         answer_text: str,
         retrieved_chunks: list[Any],  # list[RetrievedChunk]; avoid circular import
+        total_budget: float = _TOTAL_BUDGET,
     ) -> RailDecision:
         if not self._enabled:
             return self._to_rail_decision(
@@ -148,7 +149,7 @@ class FaithfulnessRail:
             generate_fn=self._generate,
             cost_budget=self._budget,
             per_call_timeout=self._per_call_timeout,
-            total_budget=_TOTAL_BUDGET,
+            total_budget=total_budget,
         )
 
         return self._to_rail_decision(result)

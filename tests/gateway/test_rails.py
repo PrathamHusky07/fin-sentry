@@ -442,9 +442,12 @@ async def test_pii_sanitize_propagates_to_llama_guard(pg_module_restored: Any) -
     assert "<REDACTED_US_SSN>" in captured_lg_content[0]
 
 
-async def test_fail_closed_blocks_on_rail_crash(pg_module_restored: Any) -> None:
-    """Rail exception with on_failure=closed → BLOCKED."""
-    from nemoguardrails.rails.llm.options import RailStatus
+async def test_fail_closed_rail_crash_is_an_infrastructure_failure(
+    pg_module_restored: Any,
+) -> None:
+    """Rail exception with on_failure=closed still stops the request, but it is raised
+    as an infrastructure failure so the gateway records an error, not a policy block."""
+    from finsentry.gateway.rails import AdapterUnavailableError
 
     pg_module._pipeline = MagicMock(side_effect=RuntimeError("model unavailable"))
 
@@ -460,7 +463,91 @@ async def test_fail_closed_blocks_on_rail_crash(pg_module_restored: Any) -> None
         adapter = InputRailsAdapter(
             rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
         )
-        _, status, _, _ = await adapter.run([{"role": "user", "content": "hello"}])
+        with pytest.raises(AdapterUnavailableError, match="prompt-guard-2 failed closed"):
+            await adapter.run([{"role": "user", "content": "hello"}])
+
+
+async def test_fail_closed_error_decision_is_an_infrastructure_failure(
+    pg_module_restored: Any,
+) -> None:
+    """A rail that returns outcome='error' (malformed Llama Guard output) fails closed
+    the same way a crash does."""
+    from finsentry.gateway.rails import AdapterUnavailableError
+
+    with patch.object(
+        PromptGuard2Rail,
+        "check",
+        return_value=RailDecision(outcome="pass", reason="ok", details={}),
+    ), patch.object(
+        PiiRedactionRail,
+        "check",
+        return_value=RailDecision(outcome="pass", reason="ok", details={}),
+    ), patch.object(
+        LlamaGuard3Rail,
+        "check",
+        return_value=RailDecision(outcome="error", reason="malformed model output", details={}),
+    ):
+        adapter = InputRailsAdapter(
+            rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+        )
+        with pytest.raises(AdapterUnavailableError, match="llama-guard-3 failed closed"):
+            await adapter.run([{"role": "user", "content": "hello"}])
+
+
+async def test_policy_block_is_not_an_infrastructure_failure(
+    pg_module_restored: Any,
+) -> None:
+    """A rail that decides to block returns BLOCKED and does not raise."""
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    with patch.object(
+        PromptGuard2Rail,
+        "check",
+        return_value=RailDecision(outcome="block", reason="injection", details={}),
+    ), patch.object(
+        PiiRedactionRail,
+        "check",
+        return_value=RailDecision(outcome="pass", reason="ok", details={}),
+    ), patch.object(
+        LlamaGuard3Rail,
+        "check",
+        return_value=RailDecision(outcome="pass", reason="ok", details={}),
+    ):
+        adapter = InputRailsAdapter(
+            rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+        )
+        _, status, rail, _ = await adapter.run([{"role": "user", "content": "hello"}])
+
+    assert status == RailStatus.BLOCKED
+    assert rail is not None
+
+
+async def test_failure_record_does_not_leak_between_requests(
+    pg_module_restored: Any,
+) -> None:
+    """A rail failure on one call must not turn a later policy block into an error."""
+    from nemoguardrails.rails.llm.options import RailStatus
+
+    from finsentry.gateway.rails import AdapterUnavailableError
+
+    guard = MagicMock(side_effect=[RuntimeError("down"), RailDecision("block", "injection", {})])
+    pg_module._pipeline = None
+
+    with patch.object(PromptGuard2Rail, "check", guard), patch.object(
+        PiiRedactionRail,
+        "check",
+        return_value=RailDecision(outcome="pass", reason="ok", details={}),
+    ), patch.object(
+        LlamaGuard3Rail,
+        "check",
+        return_value=RailDecision(outcome="pass", reason="ok", details={}),
+    ):
+        adapter = InputRailsAdapter(
+            rails=[PromptGuard2Rail(), PiiRedactionRail(), LlamaGuard3Rail()]
+        )
+        with pytest.raises(AdapterUnavailableError):
+            await adapter.run([{"role": "user", "content": "first"}])
+        _, status, _, _ = await adapter.run([{"role": "user", "content": "second"}])
 
     assert status == RailStatus.BLOCKED
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,18 @@ log = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "rails.yml"
 _COLANG_PATH = Path(__file__).parent / "colang"
+
+# Rails that failed closed during the check_async call in progress. NeMo folds a
+# fail-closed rail error into an ordinary BLOCKED result, so the action wrappers
+# record the failure here and run() tells the two apart. The list is created per
+# call and shared with NeMo's tasks through the copied context.
+_rail_failures: ContextVar[list[str] | None] = ContextVar("rail_failures", default=None)
+
+
+def _record_closed_failure(rail_name: str) -> None:
+    failures = _rail_failures.get()
+    if failures is not None:
+        failures.append(rail_name)
 
 
 class AdapterUnavailableError(RuntimeError):
@@ -30,6 +43,7 @@ class AdapterUnavailableError(RuntimeError):
 def _decision_to_outcome(
     decision: RailDecision,
     on_failure_mode: str = "closed",
+    rail_name: str = "unknown",
 ) -> object:
     """Translate a RailDecision into a NeMo RailOutcome.
 
@@ -56,6 +70,7 @@ def _decision_to_outcome(
             reason=f"rail_error (fail-open): {decision.reason}",
             metadata={"rail_error": True, "fail_open": True, **decision.details},
         )
+    _record_closed_failure(rail_name)
     return RailOutcome.failure(
         reason=f"rail_error: {decision.reason}",
         metadata={"rail_error": True, **decision.details},
@@ -77,6 +92,7 @@ def _exception_to_outcome(
             metadata={"rail_error": True, "fail_open": True},
         )
     log.error("Rail %s failed (fail-closed): %s", rail_name, exc)
+    _record_closed_failure(rail_name)
     return RailOutcome.failure(
         reason=f"rail_error: {exc}",
         metadata={"rail_error": True},
@@ -154,7 +170,7 @@ class InputRailsAdapter:
                             "rail.confidence", decision.details["malicious_probability"]
                         )
                 return _decision_to_outcome(
-                    decision, on_failure.get("prompt-guard-2", "closed")
+                    decision, on_failure.get("prompt-guard-2", "closed"), "prompt-guard-2"
                 )
 
             @action(name="pii_redact", execute_async=True)  # type: ignore[untyped-decorator]
@@ -183,7 +199,7 @@ class InputRailsAdapter:
                     span.set_attribute("rail.decision", decision.outcome)
                     span.set_attribute("rail.latency_ms", latency_ms)
                 return _decision_to_outcome(
-                    decision, on_failure.get("pii-redaction", "closed")
+                    decision, on_failure.get("pii-redaction", "closed"), "pii-redaction"
                 )
 
             @action(name="llama_guard_3_check", execute_async=True)  # type: ignore[untyped-decorator]
@@ -212,7 +228,7 @@ class InputRailsAdapter:
                     span.set_attribute("rail.decision", decision.outcome)
                     span.set_attribute("rail.latency_ms", latency_ms)
                 return _decision_to_outcome(
-                    decision, on_failure.get("llama-guard-3", "closed")
+                    decision, on_failure.get("llama-guard-3", "closed"), "llama-guard-3"
                 )
 
             nemo.register_action(prompt_guard_2_check, name="prompt_guard_2_check")
@@ -235,6 +251,21 @@ class InputRailsAdapter:
     # check_async crash) propagate as exceptions so the gateway returns 503
     # (enforcement unavailable), never 403 (policy block). Conflating the two
     # would misrepresent infrastructure failures as user-policy violations.
+    async def _check(self, nemo: Any, messages: list[dict[str, Any]]) -> Any:
+        """One check_async call. A BLOCKED result caused by a rail that failed
+        closed is an infrastructure failure, not a policy block, so it raises."""
+        from nemoguardrails.rails.llm.options import RailStatus, RailType
+
+        failures: list[str] = []
+        token = _rail_failures.set(failures)
+        try:
+            result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
+        finally:
+            _rail_failures.reset(token)
+        if result.status == RailStatus.BLOCKED and failures:
+            raise AdapterUnavailableError(f"input rail {failures[0]} failed closed")
+        return result
+
     async def run(
         self, messages: list[dict[str, Any]]
     ) -> tuple[list[dict[str, Any]], object, str | None, object]:
@@ -246,7 +277,8 @@ class InputRailsAdapter:
         returned (the gateway returns 403 and does not forward). On PASSED,
         the working list is returned unchanged.
         rail_name is the name of the blocking rail on BLOCKED, None otherwise.
-        Raises AdapterUnavailableError on NeMo engine failure.
+        Raises AdapterUnavailableError on NeMo engine failure or when a rail
+        failed closed (an error in the rail, not a policy decision).
 
         Each user message is scanned as a single-turn call so NeMo's
         context["user_message"] is set correctly for every turn. A single
@@ -255,13 +287,13 @@ class InputRailsAdapter:
         """
         try:
             from nemoguardrails.logging.explain import ExplainInfo
-            from nemoguardrails.rails.llm.options import RailStatus, RailType
+            from nemoguardrails.rails.llm.options import RailStatus
 
             nemo: Any = self._nemo
             user_indices = [i for i, m in enumerate(messages) if m.get("role") == "user"]
 
             if not user_indices:
-                result = await nemo.check_async(messages, rail_types=[RailType.INPUT])
+                result = await self._check(nemo, messages)
                 explain: ExplainInfo = nemo.explain()
                 return messages, result.status, result.rail, explain
 
@@ -271,10 +303,7 @@ class InputRailsAdapter:
 
             for idx in user_indices:
                 user_content = str(working[idx].get("content", ""))
-                result = await nemo.check_async(
-                    [{"role": "user", "content": user_content}],
-                    rail_types=[RailType.INPUT],
-                )
+                result = await self._check(nemo, [{"role": "user", "content": user_content}])
                 last_explain = nemo.explain()
 
                 if result.status == RailStatus.BLOCKED:
