@@ -849,7 +849,7 @@ async def traces(
     ticker: str | None = None,
     status: str | None = None,
     q: str | None = None,
-    judge_state: str | None = None,
+    judge_state: JudgeState | None = None,
     frontier_sampled: bool | None = None,
     disagreement: bool | None = None,
 ) -> TraceListResponse:

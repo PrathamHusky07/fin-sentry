@@ -567,6 +567,31 @@ async def test_judge_state_filter_matches_the_classification(
         assert fragment in captured["sql"]
 
 
+@pytest.mark.parametrize("bogus", ["bogus", "EVALUATED", "evaluated;DROP TABLE x", ""])
+async def test_unknown_judge_state_is_rejected_before_any_query_runs(bogus: str) -> None:
+    query = AsyncMock(return_value=[])
+
+    with patch("finsentry.dashboard.app._query_all", query):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/traces", params={"judge_state": bogus})
+
+    assert resp.status_code == 422
+    query.assert_not_called()
+    body = resp.text
+    assert "KeyError" not in body
+    assert "Traceback" not in body
+    assert "SELECT" not in body
+
+
+def test_every_public_judge_state_has_a_sql_filter() -> None:
+    from typing import get_args
+
+    from finsentry.dashboard.app import _JUDGE_STATE_TO_STATUS_SQL
+    from finsentry.events.trace_api import JudgeState
+
+    assert set(_JUDGE_STATE_TO_STATUS_SQL) == set(get_args(JudgeState))
+
+
 def test_judge_state_sql_filter_selects_exactly_what_the_classifier_labels() -> None:
     """The public judge_state filter and _classify_judge_state must agree on every
     (rag_status, judge_status) pair, including contradictory and unrecognized ones.
