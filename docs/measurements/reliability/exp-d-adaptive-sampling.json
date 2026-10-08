@@ -1,0 +1,224 @@
+{
+  "experiment": "D",
+  "published_burst_at_utc": "2026-10-08T19:30:08.021387+00:00",
+  "thresholds": {
+    "entry_lag": 8,
+    "recovery_lag": 2
+  },
+  "defaults_from_spec": {
+    "entry_lag": 1000,
+    "recovery_lag": 200
+  },
+  "group_members": 1,
+  "burst_events": 48,
+  "burst_events_hash_sampled_at_normal_rate": 48,
+  "burst_events_hash_sampled_at_reduced_rate": 5,
+  "burst_events_evaluated_by_frontier": 30,
+  "rate_changes_logged_by_consumer": [
+    {
+      "from": 10,
+      "to": 100,
+      "reason_and_lag": "lag at or above 8 for 3 readings (lag=20)"
+    },
+    {
+      "from": 100,
+      "to": 10,
+      "reason_and_lag": "lag at or below 2 for 5 readings (lag=0)"
+    }
+  ],
+  "probe_events": 6,
+  "probe_events_evaluated_by_frontier": 6,
+  "timeline": [
+    {
+      "at_utc": "2026-10-08T19:30:08.089036+00:00",
+      "phase": "burst",
+      "lag": 48,
+      "evaluated_traces": 0,
+      "rate_changes_in_log": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:30:11.206125+00:00",
+      "phase": "burst",
+      "lag": 48,
+      "evaluated_traces": 0,
+      "rate_changes_in_log": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:30:14.311404+00:00",
+      "phase": "burst",
+      "lag": 34,
+      "evaluated_traces": 9,
+      "rate_changes_in_log": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:30:17.403099+00:00",
+      "phase": "burst",
+      "lag": 30,
+      "evaluated_traces": 13,
+      "rate_changes_in_log": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:30:20.515447+00:00",
+      "phase": "burst",
+      "lag": 25,
+      "evaluated_traces": 18,
+      "rate_changes_in_log": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:30:23.625115+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 26,
+      "rate_changes_in_log": 1,
+      "new_rate_change": [
+        {
+          "from": 10,
+          "to": 100,
+          "reason_and_lag": "lag at or above 8 for 3 readings (lag=20)"
+        }
+      ]
+    },
+    {
+      "at_utc": "2026-10-08T19:30:26.728196+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 29,
+      "rate_changes_in_log": 1
+    },
+    {
+      "at_utc": "2026-10-08T19:30:29.826719+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 30,
+      "rate_changes_in_log": 1
+    },
+    {
+      "at_utc": "2026-10-08T19:30:32.929529+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 30,
+      "rate_changes_in_log": 1
+    },
+    {
+      "at_utc": "2026-10-08T19:30:36.036803+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 30,
+      "rate_changes_in_log": 1
+    },
+    {
+      "at_utc": "2026-10-08T19:30:39.127418+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 30,
+      "rate_changes_in_log": 1
+    },
+    {
+      "at_utc": "2026-10-08T19:30:42.244888+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 30,
+      "rate_changes_in_log": 1
+    },
+    {
+      "at_utc": "2026-10-08T19:30:45.361418+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 30,
+      "rate_changes_in_log": 1
+    },
+    {
+      "at_utc": "2026-10-08T19:30:48.461038+00:00",
+      "phase": "burst",
+      "lag": 0,
+      "evaluated_traces": 30,
+      "rate_changes_in_log": 2,
+      "new_rate_change": [
+        {
+          "from": 100,
+          "to": 10,
+          "reason_and_lag": "lag at or below 2 for 5 readings (lag=0)"
+        }
+      ]
+    },
+    {
+      "at_utc": "2026-10-08T19:30:49.624663+00:00",
+      "phase": "probe",
+      "lag": 6,
+      "evaluated_traces": 0,
+      "rate_changes_in_log": 2
+    },
+    {
+      "at_utc": "2026-10-08T19:30:53.730887+00:00",
+      "phase": "probe",
+      "lag": 0,
+      "evaluated_traces": 4,
+      "rate_changes_in_log": 2
+    },
+    {
+      "at_utc": "2026-10-08T19:30:57.814063+00:00",
+      "phase": "probe",
+      "lag": 0,
+      "evaluated_traces": 6,
+      "rate_changes_in_log": 2
+    }
+  ],
+  "burst_trace_ids": [
+    "5cac1808-db38-40f7-aba0-9bb1847ac223",
+    "72c20cd5-d2af-452d-b9e3-6ceb03ae0c7b",
+    "9cfcaa8a-4b09-4b0d-8c7d-c531143d1b88",
+    "701244a8-23b1-4ea8-b2c8-b0537c648e29",
+    "3d7ee84e-ac65-4a19-b918-15fcc2e0f5a8",
+    "6f55ec10-eb77-47f7-b97e-c3c68f2cd2e5",
+    "c81e30fe-a0a4-47c8-8e85-2d999af67419",
+    "0b3c50ad-1744-4176-b692-99218d6f17b5",
+    "9804ae51-e0cc-4521-8675-82a234d95bfa",
+    "f40ed859-796f-4688-ac6e-267f7d166981",
+    "20e408ff-97d7-4527-94b2-a30293133a24",
+    "4d028718-24f3-49d5-a231-a7c46b1f2455",
+    "490ef624-0b84-4beb-a51c-73137b542b18",
+    "762e563b-bc5d-45fe-a659-90acfeb7170e",
+    "b78030cb-a2cc-46ac-bbf1-beb8814ab8f3",
+    "b2766caa-b8ad-4e61-9b54-17c6c41a77b9",
+    "cc68e9ec-1f97-46a7-962f-64184b09bb54",
+    "618850b4-65c5-4801-9c35-014278ab6d6c",
+    "43485895-193d-4653-b2db-c6c822313d01",
+    "f8e455d6-66ca-4066-a494-e2bb0a84be62",
+    "2557d3f0-32b5-4645-80f4-9d6ccbe0edb8",
+    "966bc878-67cb-4f8a-bda5-d77763567bbb",
+    "1fd9ff70-2a50-4237-ac36-da376365c456",
+    "5e6c7a7c-11d0-4643-8d7c-57d5c28a4b66",
+    "5045c4c1-17ed-46b4-8c32-6b6ebd528d22",
+    "65b52769-af15-4030-b59c-241fdb9002ea",
+    "c032a5c5-b25c-4251-afe0-79d3637e6b62",
+    "e3b76ef9-0beb-4a6e-a58e-352fa8a24a72",
+    "6ce6c99c-f835-468c-bbbd-d86b476b6f50",
+    "4b7f7d30-d336-4e76-90cd-70e910aaea26",
+    "896d5ec6-e974-4895-b827-142b0707741b",
+    "19e74908-8fb1-4906-bef4-1f02b3241bff",
+    "f85cd889-20d7-4116-aa61-0c70c7f20034",
+    "dddc05bf-147c-4be7-95d0-44aa99fb6cb3",
+    "a5d63039-9812-40c9-b9cd-1368440a0ce3",
+    "9bd0f891-8a35-4c4d-8132-b2675b42ae55",
+    "982be03d-8cb1-4727-98f1-79caacbe17c6",
+    "46f28bcd-b177-4806-ad22-e577582631d6",
+    "227eae27-1d65-412d-9d1c-ea2f389536df",
+    "ac3ae752-ac9d-470c-843f-28b2037589c0",
+    "735444bb-37e9-4ec5-92a1-63acbfbc609c",
+    "75cd0a3e-a27f-464c-ad3a-1b0e0797658f",
+    "fcb85cdd-0759-47a6-a0fe-aac981a1ed14",
+    "6b4f2ed2-38a1-4d49-b2ea-d00b4dba7e4d",
+    "d9093475-0a6f-4059-a03b-01bd54f9c7c5",
+    "0401c57c-0618-479f-9e1c-27ebd2a0bdc2",
+    "10696049-1c32-4df0-9aeb-a34ba6a5b90d",
+    "20e59f1d-34fe-415b-91f0-53320a39b9aa"
+  ],
+  "probe_trace_ids": [
+    "66e089f9-418f-4dc3-9c57-4ba781485329",
+    "a4de39aa-035e-41f1-801a-6032719a62e0",
+    "74b6b8b3-a579-4cc0-a261-06a37dda3d1f",
+    "20b964d3-fe4d-4266-b18e-3c5ec00288ba",
+    "92283cb8-a2f0-4540-94ed-7098a61f453c",
+    "46229238-332d-4bfa-b4d1-08f5e991aec6"
+  ]
+}

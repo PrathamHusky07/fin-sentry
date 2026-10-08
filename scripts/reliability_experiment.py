@@ -113,7 +113,7 @@ def send(questions: list[tuple[str, str]]) -> list[dict[str, Any]]:
 
 
 def publish_candidates(
-    conn: psycopg.Connection[Any], source_trace_id: str, n: int, sampled: bool
+    conn: psycopg.Connection[Any], source_trace_id: str, n: int, sampled: bool | None
 ) -> list[dict[str, Any]]:
     """Publish n copies of one real persisted success event under fresh trace ids.
 
@@ -127,7 +127,7 @@ def publish_candidates(
     events: list[RagResponseEvent] = []
     while len(events) < n:
         tid = str(uuid.uuid4())
-        if should_sample_for_frontier(tid) is not sampled:
+        if sampled is not None and should_sample_for_frontier(tid) is not sampled:
             continue
         events.append(
             RagResponseEvent(
