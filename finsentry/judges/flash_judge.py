@@ -70,9 +70,13 @@ class JudgeVerdictProducer:
             await self._producer.stop()
 
     async def emit(self, verdict: JudgeVerdictEvent) -> None:
+        """Send the verdict and wait for the broker acknowledgement. A failure
+        raises, so the caller does not acknowledge the source event. The consumer
+        then retries it, which can emit a duplicate verdict (at-least-once)."""
         if self._producer is None:
-            log.warning("JudgeVerdictProducer: not started, dropping verdict %s", verdict.event_id)
-            return
+            raise RuntimeError(
+                f"JudgeVerdictProducer not started, cannot emit verdict {verdict.event_id}"
+            )
         try:
             await self._producer.send_and_wait(
                 self._topic,
@@ -81,6 +85,7 @@ class JudgeVerdictProducer:
             )
         except Exception:
             log.exception("JudgeVerdictProducer: failed to emit verdict %s", verdict.event_id)
+            raise
 
 
 class FlashJudge:

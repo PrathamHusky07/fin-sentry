@@ -181,13 +181,90 @@ async def test_judge_verdict_producer_emit_calls_send_and_wait() -> None:
 
 
 @pytest.mark.anyio
-async def test_judge_verdict_producer_emit_without_start_logs_warning() -> None:
-    """emit() without start() logs a warning instead of raising."""
+async def test_judge_verdict_producer_emit_without_start_raises() -> None:
+    """A verdict that cannot be sent must not look delivered, so the caller does not
+    acknowledge the source event."""
     producer = JudgeVerdictProducer("localhost:19092", "judge-verdicts")
     judge = FlashJudge(mode="disabled")
     verdict = await judge.evaluate(_make_event())
-    # Should not raise
-    await producer.emit(verdict)
+    with pytest.raises(RuntimeError, match="not started"):
+        await producer.emit(verdict)
+
+
+@pytest.mark.anyio
+async def test_judge_verdict_producer_send_failure_raises() -> None:
+    """A broker failure propagates. Swallowing it would let the consumer commit the
+    source offset for a verdict that was never delivered."""
+    fake_kafka = AsyncMock()
+    fake_kafka.send_and_wait = AsyncMock(side_effect=OSError("broker unreachable"))
+    producer = JudgeVerdictProducer("localhost:19092", "judge-verdicts")
+    producer.inject_producer(fake_kafka)
+    verdict = await FlashJudge(mode="disabled").evaluate(_make_event())
+
+    with pytest.raises(OSError, match="broker unreachable"):
+        await producer.emit(verdict)
+
+    fake_kafka.send_and_wait.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_a_failed_flash_verdict_emit_leaves_the_source_offset_uncommitted() -> None:
+    """End to end through the consumer, wired as finsentry/consumer/main.py wires it.
+    Offset 101 cannot emit its verdict, so the commit stops at 101 (next to read after
+    100) and never covers 101 or 102. A restart redelivers both, so 102 is judged and
+    emitted twice (at-least-once) and the commit then reaches 103."""
+    from aiokafka import TopicPartition
+
+    from tests.consumer.test_rag_event_consumer import _make_consumer, _make_kafka_msg
+
+    class _FlakyKafka:
+        def __init__(self, broken_key: bytes | None) -> None:
+            self.broken_key = broken_key
+            self.sent: list[bytes] = []
+
+        async def send_and_wait(self, topic: str, value: bytes, key: bytes) -> None:
+            if key == self.broken_key:
+                raise OSError("broker unreachable")
+            self.sent.append(key)
+
+    async def _consume(offsets: list[int], kafka: _FlakyKafka) -> list[dict[Any, int]]:
+        messages = [
+            _make_kafka_msg(
+                _make_event(app_trace_id=f"trace-{o}").model_dump(mode="json"), offset=o
+            )
+            for o in offsets
+        ]
+        consumer = _make_consumer(messages, max_attempts=2)
+        commits: list[dict[Any, int]] = []
+
+        async def _commit(committed: dict[Any, int]) -> None:
+            commits.append(dict(committed))
+
+        consumer._consumer.commit.side_effect = _commit
+        judge = FlashJudge(mode="disabled")
+        producer = JudgeVerdictProducer(bootstrap_servers="unused", topic="judge-verdicts")
+        producer.inject_producer(kafka)
+
+        async def _handle(event: RagResponseEvent) -> None:
+            verdict = await judge.evaluate(event)
+            await producer.emit(verdict)
+
+        consumer.set_handler(_handle)
+        await consumer.start()
+        await consumer.run()
+        return commits
+
+    tp = TopicPartition("rag-responses", 0)
+
+    broken = _FlakyKafka(broken_key=b"trace-101")
+    assert await _consume([100, 101, 102], broken) == [{tp: 101}]
+    # 102 was processed and emitted, but it is held behind 101, not lost.
+    assert sorted(broken.sent) == [b"trace-100", b"trace-102"]
+
+    healthy = _FlakyKafka(broken_key=None)
+    assert await _consume([101, 102], healthy) == [{tp: 102}, {tp: 103}]
+    assert sorted(healthy.sent) == [b"trace-101", b"trace-102"]
+    assert (broken.sent + healthy.sent).count(b"trace-102") == 2
 
 
 @pytest.mark.anyio
