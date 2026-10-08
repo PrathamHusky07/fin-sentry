@@ -21,7 +21,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "Fin-Sentry",
   description:
-    "An AI reliability and evaluation platform for financial RAG: guardrails on the request path, judges on a separate evaluation plane, and a preserved record of every execution.",
+    "An AI reliability and evaluation platform for production LLM systems, demonstrated on financial RAG: guardrails on the request path, judges on a separate evaluation plane, and a preserved record of every execution.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

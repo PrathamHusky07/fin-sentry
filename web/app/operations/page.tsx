@@ -3,7 +3,7 @@ import { LiveOperations } from "@/components/live-operations";
 import { fetchCalibrationHealth, fetchRecentTraces } from "@/lib/overview-data";
 
 export const metadata: Metadata = {
-  title: "Live Operations — Fin-Sentry",
+  title: "Live Operations | Fin-Sentry",
 };
 
 export default async function OperationsPage() {

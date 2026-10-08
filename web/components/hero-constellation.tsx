@@ -234,7 +234,7 @@ function Constellation({
               fontSize={12}
               className="fill-text-secondary"
             >
-              Reliability for financial RAG
+              AI reliability and evaluation
             </text>
           </>
         ) : null}

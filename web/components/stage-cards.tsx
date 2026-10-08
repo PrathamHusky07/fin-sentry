@@ -1,11 +1,14 @@
-import Link from "next/link";
 import { ConceptIcon, type ConceptId } from "@/components/concept-icons";
+import { StageLink } from "@/components/stage-link";
+import { stageAnchor } from "@/lib/architecture-data";
 
 interface Stage {
   id: ConceptId;
   title: string;
   body: string;
   href: string;
+  /** Used below the wide breakpoint, where the destination shows an outline. */
+  narrowHref?: string;
   cta: string;
   tone: "accent" | "signal" | "neutral";
 }
@@ -15,7 +18,8 @@ const STAGES: Stage[] = [
     id: "guard",
     title: "Guard",
     body: "Input rails check the question and output rails check the answer. A rail that errors blocks the request.",
-    href: "/architecture#request-path",
+    href: `/architecture#${stageAnchor("input")}`,
+    narrowHref: `/architecture#${stageAnchor("input", "outline")}`,
     cta: "See the rails",
     tone: "accent",
   },
@@ -23,7 +27,8 @@ const STAGES: Stage[] = [
     id: "retrieve",
     title: "Retrieve",
     body: "Closest filing chunks come from pgvector. Every chunk is checked for trust, injection and PII first.",
-    href: "/architecture#request-path",
+    href: `/architecture#${stageAnchor("retrieval")}`,
+    narrowHref: `/architecture#${stageAnchor("retrieval", "outline")}`,
     cta: "See retrieval",
     tone: "accent",
   },
@@ -31,7 +36,8 @@ const STAGES: Stage[] = [
     id: "generate",
     title: "Generate",
     body: "One model call answers in JSON under a time budget and a circuit breaker.",
-    href: "/architecture#request-path",
+    href: `/architecture#${stageAnchor("generation")}`,
+    narrowHref: `/architecture#${stageAnchor("generation", "outline")}`,
     cta: "See the budget",
     tone: "accent",
   },
@@ -71,6 +77,15 @@ const TONE_LIFT = {
   neutral: "lift-accent",
 } as const;
 
+// The `.lift` hover border and background are in the components layer, so the
+// card's own border and background utilities win. These restore the tone
+// response on hover with variants that sit above them.
+const TONE_HOVER = {
+  accent: "hover:border-accent/40 hover:bg-surface-hover",
+  signal: "hover:border-signal/40 hover:bg-surface-hover",
+  neutral: "hover:border-accent/40 hover:bg-surface-hover",
+} as const;
+
 /**
  * Five stages of one answer's life, in order. Each card opens the part of
  * the product that shows it. Static copy only: no counts, no status.
@@ -80,9 +95,10 @@ export function StageCards() {
     <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {STAGES.map((stage, i) => (
         <li key={stage.id} className="relative">
-          <Link
+          <StageLink
             href={stage.href}
-            className={`lift ${TONE_LIFT[stage.tone]} reveal-host border-line bg-background-elevated/70 group relative flex h-full flex-col overflow-hidden rounded-xl border p-5`}
+            narrowHref={stage.narrowHref}
+            className={`lift ${TONE_LIFT[stage.tone]} ${TONE_HOVER[stage.tone]} reveal-host border-line bg-background-elevated/70 group relative flex h-full flex-col overflow-hidden rounded-xl border p-5`}
           >
             <span
               aria-hidden="true"
@@ -113,7 +129,7 @@ export function StageCards() {
               {stage.cta}
               <span aria-hidden="true">→</span>
             </span>
-          </Link>
+          </StageLink>
         </li>
       ))}
     </ol>

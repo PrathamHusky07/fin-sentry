@@ -4,7 +4,7 @@ import { FlowChain } from "@/components/flow-chain";
 import { PageHeader } from "@/components/page-header";
 
 export const metadata: Metadata = {
-  title: "Red Team — Fin-Sentry",
+  title: "Red Team | Fin-Sentry",
 };
 
 /**

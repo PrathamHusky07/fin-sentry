@@ -9,8 +9,14 @@ import {
   type NodeDetail,
 } from "@/components/arch/node-model";
 import { ArchLegend, LaneOutline } from "@/components/arch/svg-parts";
-import { NODES, REQUEST_PATH, type NodeId } from "@/lib/architecture-data";
+import {
+  NODES,
+  REQUEST_PATH,
+  stageAnchor,
+  type NodeId,
+} from "@/lib/architecture-data";
 import { LAYERS } from "@/lib/architecture-layers";
+import { useHash } from "@/lib/use-hash";
 
 interface Stage {
   id: NodeId;
@@ -144,8 +150,11 @@ function Station({ stage }: { stage: Stage }) {
   const state = useNodeState(stage.id);
   const events = useNodeEvents(stage.id);
   const lit = state === "active";
+  const anchor = stageAnchor(stage.id);
+  const targeted = useHash() === anchor;
   return (
     <li
+      id={anchor}
       data-state={state}
       className={`relative flex flex-col items-center text-center transition-opacity duration-[var(--dur-base)] ease-[var(--ease-soft)] ${state === "dim" ? "opacity-35" : "opacity-100"}`}
     >
@@ -156,7 +165,7 @@ function Station({ stage }: { stage: Stage }) {
       >
         <span
           aria-hidden="true"
-          className={`border-accent relative z-10 h-5 w-5 rounded-full border-[3px] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease)] ${lit ? "bg-accent scale-125 shadow-[0_0_18px_var(--glow-accent)]" : "bg-background"}`}
+          className={`border-accent relative z-10 h-5 w-5 rounded-full border-[3px] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease)] ${lit || targeted ? "bg-accent scale-125 shadow-[0_0_18px_var(--glow-accent)]" : "bg-background"}`}
         />
         <span className="text-text-primary mt-3 text-[15px] font-semibold">
           {stage.name}
@@ -170,7 +179,7 @@ function Station({ stage }: { stage: Stage }) {
         className={`h-4 w-px transition-colors duration-[var(--dur-base)] ${lit ? "bg-accent" : "bg-border-strong"}`}
       />
       <div
-        className={`w-full flex-1 rounded-lg border p-3 text-left transition-colors duration-[var(--dur-base)] ${lit ? "border-accent/60 bg-surface" : state === "related" ? "border-accent/30 bg-surface/80" : "border-border bg-surface/60"}`}
+        className={`w-full flex-1 rounded-lg border p-3 text-left transition-colors duration-[var(--dur-base)] ${lit || targeted ? "border-accent/60 bg-surface" : state === "related" ? "border-accent/30 bg-surface/80" : "border-border bg-surface/60"}`}
       >
         {stage.drawer.heading ? (
           <p className="text-text-tertiary mb-2 text-xs leading-snug">

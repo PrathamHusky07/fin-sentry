@@ -181,3 +181,19 @@ test.describe("Architecture interactions", () => {
     await expect(first).toHaveAttribute("aria-expanded", "false");
   });
 });
+
+test("browser tab titles use one separator and no em-dash", async ({
+  page,
+}) => {
+  const titles: [string, string][] = [
+    ["/architecture", "Architecture | Fin-Sentry"],
+    ["/investigations", "Investigations | Fin-Sentry"],
+    ["/operations", "Live Operations | Fin-Sentry"],
+    ["/overview", "Overview | Fin-Sentry"],
+    ["/red-team", "Red Team | Fin-Sentry"],
+  ];
+  for (const [route, title] of titles) {
+    await page.goto(route);
+    await expect(page).toHaveTitle(title);
+  }
+});

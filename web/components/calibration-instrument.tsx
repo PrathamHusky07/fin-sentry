@@ -123,16 +123,20 @@ function digits(m: MarkerInfo): number {
  * entry line, the recovery line and the healthy baseline, with the one real
  * kappa on the same axis. It answers "why is the judge in this state".
  * Each marker is a focusable control that explains itself on hover or
- * focus. The zones sweep in once on entry; nothing here moves afterward. It
- * is one point in time. There is no trend line because only one reading
- * exists on record.
+ * focus, and a click or tap pins the explanation until it is clicked again
+ * or Escape is pressed. The zones sweep in once on entry; nothing here moves
+ * afterward. It is one point in time. There is no trend line because only
+ * one reading exists on record.
  */
 export function CalibrationInstrument({
   health,
 }: {
   health: CalibrationHealthResponse | null;
 }) {
-  const [active, setActive] = useState<MarkerId | null>(null);
+  const [hovered, setHovered] = useState<MarkerId | null>(null);
+  const [focused, setFocused] = useState<MarkerId | null>(null);
+  const [pinned, setPinned] = useState<MarkerId | null>(null);
+  const active = hovered ?? focused ?? pinned;
   const now = useNow();
 
   if (!health) {
@@ -202,6 +206,12 @@ export function CalibrationInstrument({
               role="group"
               aria-label={`Kappa ${health.kappa.toFixed(3)} on a scale from ${SCALE_MIN} to ${SCALE_MAX}. Drift entry threshold ${entry.toFixed(2)}, recovery threshold ${recovery.toFixed(2)}, healthy baseline ${health.healthy_baseline_kappa.toFixed(3)}. Each marker explains itself on focus.`}
               className="relative mt-20 mb-24 h-3"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setPinned(null);
+                  setHovered(null);
+                }
+              }}
             >
               <div className="bg-surface absolute inset-0 overflow-hidden rounded-full">
                 <div className="enter-sweep absolute inset-0">
@@ -231,15 +241,22 @@ export function CalibrationInstrument({
                     key={m.id}
                     type="button"
                     aria-label={`${m.label} ${m.value.toFixed(digits(m))}. ${m.meaning}`}
+                    aria-pressed={pinned === m.id}
                     onPointerEnter={(e) => {
-                      if (e.pointerType === "mouse") setActive(m.id);
+                      if (e.pointerType === "mouse") setHovered(m.id);
                     }}
                     onPointerLeave={(e) => {
-                      if (e.pointerType === "mouse") setActive(null);
+                      if (e.pointerType === "mouse") setHovered(null);
                     }}
-                    onFocus={() => setActive(m.id)}
-                    onBlur={() => setActive(null)}
-                    onClick={() => setActive((a) => (a === m.id ? null : m.id))}
+                    onFocus={(e) => {
+                      // A click or tap also focuses the button, and the pin
+                      // handles that. Only keyboard focus shows it here.
+                      if (e.currentTarget.matches(":focus-visible")) {
+                        setFocused(m.id);
+                      }
+                    }}
+                    onBlur={() => setFocused(null)}
+                    onClick={() => setPinned((p) => (p === m.id ? null : m.id))}
                     className={`group absolute top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full ${isKappa ? "enter-fade z-10" : ""}`}
                     style={
                       {

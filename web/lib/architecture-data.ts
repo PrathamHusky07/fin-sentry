@@ -264,6 +264,16 @@ export const PLANE_NODES: Record<Plane, NodeId[]> = {
   evidence: ["store", "investigation", "mcp"],
 };
 
+/** DOM id of a request-path stage. The wide pipeline and the narrow outline
+ * are both in the page, so each has its own id and a link picks the one that
+ * is visible. */
+export function stageAnchor(
+  id: NodeId,
+  variant: "wide" | "outline" = "wide",
+): string {
+  return variant === "wide" ? `stage-${id}` : `stage-${id}-outline`;
+}
+
 /** Nodes directly connected to `id` by any edge, plus `id` itself. */
 export function relatedNodes(id: NodeId): Set<NodeId> {
   const related = new Set<NodeId>([id]);

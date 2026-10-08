@@ -69,10 +69,9 @@ export const DECISIONS: Decision[] = [
       "The dashboard can say how far the second opinion can be trusted, and when that reading was taken.",
   },
   {
-    title:
-      "Keep generation local, move the second opinion off the request path",
+    title: "Bound generation, move the second opinion off the request path",
     problem:
-      "Judging inline would put a hosted model’s latency and failures into every answer a user waits for.",
+      "An unbounded model call and inline judging would put a slow or failing dependency into every answer a user waits for.",
     decision:
       "The model call is bounded: a 20 second budget, a 15 second cap per attempt, and a circuit breaker that opens for 30 seconds after five failures. The gateway then publishes one event and moves on. A flash judge scores every answer, and a deterministic one-in-ten sample gets the frontier review.",
     tradeoff:

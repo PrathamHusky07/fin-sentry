@@ -15,7 +15,7 @@ import {
 } from "@/lib/overview-data";
 
 export const metadata: Metadata = {
-  title: "Overview — Fin-Sentry",
+  title: "Overview | Fin-Sentry",
 };
 
 /**

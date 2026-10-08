@@ -9,7 +9,7 @@ import { ReasonList } from "@/components/arch/reason-list";
 import { LAYERS, type Layer } from "@/lib/architecture-layers";
 
 export const metadata: Metadata = {
-  title: "Architecture — Fin-Sentry",
+  title: "Architecture | Fin-Sentry",
 };
 
 const DIAGRAM: Record<Layer["id"], React.ReactNode> = {

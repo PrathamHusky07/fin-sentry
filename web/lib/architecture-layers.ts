@@ -1,3 +1,5 @@
+import { stageAnchor, type NodeId } from "@/lib/architecture-data";
+
 /**
  * Prose for the four architecture layers. Every statement was read from the
  * backend source, not checked by running the system. The `outline` is the
@@ -11,7 +13,7 @@ export interface Reason {
 
 export interface OutlineLane {
   caption: string;
-  steps: { label: string; sub: string }[];
+  steps: { label: string; sub: string; anchor?: string }[];
 }
 
 export interface Layer {
@@ -27,6 +29,8 @@ export interface Layer {
   reasons: Reason[];
 }
 
+const A = (id: NodeId) => stageAnchor(id, "outline");
+
 export const LAYERS: Layer[] = [
   {
     id: "request-path",
@@ -39,25 +43,41 @@ export const LAYERS: Layer[] = [
         caption:
           "One request, answered or blocked before anything is evaluated",
         steps: [
-          { label: "Client", sub: "asks a question about a filing" },
-          { label: "Gateway", sub: "the single front door" },
           {
+            anchor: A("client"),
+            label: "Client",
+            sub: "asks a question about a filing",
+          },
+          {
+            anchor: A("gateway"),
+            label: "Gateway",
+            sub: "the single front door",
+          },
+          {
+            anchor: A("input"),
             label: "Input rails",
             sub: "prompt injection, PII, hazard taxonomy. A failing rail blocks the request.",
           },
           {
+            anchor: A("retrieval"),
             label: "Retrieval",
             sub: "vector search, then a check on every chunk for source trust, injection and PII",
           },
           {
+            anchor: A("generation"),
             label: "Generation",
             sub: "a local model, with a 20 second budget, 15 seconds per attempt and a circuit breaker",
           },
           {
+            anchor: A("output"),
             label: "Output rails",
             sub: "schema and citations, regulated phrases, then a faithfulness check below 0.7",
           },
-          { label: "Response", sub: "an answer or a named block" },
+          {
+            anchor: A("response"),
+            label: "Response",
+            sub: "an answer or a named block",
+          },
         ],
       },
     ],

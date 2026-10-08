@@ -62,6 +62,24 @@ test.describe("Landing page", () => {
     expect(errors).toEqual([]);
   });
 
+  test("the hero presents an AI reliability platform with financial RAG as the reference workload", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const intro = page.getByText(/AI reliability and evaluation platform/);
+    await expect(intro).toContainText("production LLM systems");
+    await expect(intro).toContainText("reference workload");
+    await expect(page.locator("body")).not.toContainText(
+      /sits in front of a RAG endpoint/,
+    );
+    const group = page.getByRole("group", {
+      name: /Fin-Sentry system constellation/,
+    });
+    await expect(group).toContainText("AI reliability and evaluation");
+    await expect(group).not.toContainText("financial RAG");
+    await expect(page).toHaveTitle("Fin-Sentry");
+  });
+
   test("the decision navigator lists six decisions and selecting one changes the panel", async ({
     page,
   }) => {
@@ -88,6 +106,14 @@ test.describe("Landing page", () => {
     await controls.nth(2).press("ArrowDown");
     await expect(controls.nth(3)).toBeFocused();
     await expect(controls.nth(3)).toHaveAttribute("aria-current", "true");
+    await controls.nth(5).click();
+    await expect(controls.nth(5)).toContainText(
+      "Bound generation, move the second opinion off the request path",
+    );
+    await expect(page.locator("#decision-panel-5")).toContainText(
+      "20 second budget",
+    );
+    await expect(page.getByText(/Keep generation local/)).toHaveCount(0);
     await expect(page.getByText(/Known limits/i)).toHaveCount(0);
     await expect(page.getByText(/does not do yet/i)).toHaveCount(0);
   });

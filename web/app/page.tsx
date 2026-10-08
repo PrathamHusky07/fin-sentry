@@ -30,9 +30,13 @@ export default function LandingPage() {
           </h1>
           <div className="rise rise-2 mt-6 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <p className="text-text-secondary max-w-2xl text-lg leading-relaxed text-pretty">
-              Fin-Sentry sits in front of a RAG endpoint that answers questions
-              about SEC filings. Rails guard the request, judges score each
-              answer after it is sent, and every execution stays inspectable.
+              Fin-Sentry is an AI reliability and evaluation platform for
+              production LLM systems. It guards each request and scores each
+              response with judges that run off the request path. It calibrates
+              the second-opinion judge against labeled data and keeps every
+              execution inspectable. Financial RAG over SEC filings is the
+              reference workload used to prove it, and the only workload
+              demonstrated here.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link

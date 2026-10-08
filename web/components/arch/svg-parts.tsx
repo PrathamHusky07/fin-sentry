@@ -8,6 +8,7 @@ import {
   useNodeHandlers,
   useNodeState,
 } from "@/components/arch/node-model";
+import { useHash } from "@/lib/use-hash";
 
 export type Tone = "request" | "stream" | "evaluation" | "evidence" | "muted";
 
@@ -329,8 +330,12 @@ export function ArchLegend({ items }: { items: EdgeStyle[] }) {
 export function LaneOutline({
   lanes,
 }: {
-  lanes: { caption: string; steps: { label: string; sub: string }[] }[];
+  lanes: {
+    caption: string;
+    steps: { label: string; sub: string; anchor?: string }[];
+  }[];
 }) {
+  const hash = useHash();
   return (
     <div className="space-y-8">
       {lanes.map((lane) => (
@@ -339,20 +344,30 @@ export function LaneOutline({
             {lane.caption}
           </h3>
           <ol className="border-border-strong mt-3 ml-1 border-l pl-5">
-            {lane.steps.map((step) => (
-              <li key={step.label} className="relative pb-5 last:pb-0">
-                <span
-                  aria-hidden="true"
-                  className="bg-background border-text-secondary absolute top-1.5 -left-[1.62rem] h-3 w-3 rounded-full border-2"
-                />
-                <p className="text-text-primary text-base font-semibold">
-                  {step.label}
-                </p>
-                <p className="text-text-secondary text-base leading-snug">
-                  {step.sub}
-                </p>
-              </li>
-            ))}
+            {lane.steps.map((step) => {
+              const targeted =
+                step.anchor !== undefined && step.anchor === hash;
+              return (
+                <li
+                  key={step.label}
+                  id={step.anchor}
+                  className="relative pb-5 last:pb-0"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`absolute top-1.5 -left-[1.62rem] h-3 w-3 rounded-full border-2 transition-colors duration-[var(--dur-base)] ${targeted ? "bg-accent border-accent" : "bg-background border-text-secondary"}`}
+                  />
+                  <p
+                    className={`text-base font-semibold ${targeted ? "text-accent" : "text-text-primary"}`}
+                  >
+                    {step.label}
+                  </p>
+                  <p className="text-text-secondary text-base leading-snug">
+                    {step.sub}
+                  </p>
+                </li>
+              );
+            })}
           </ol>
         </section>
       ))}
