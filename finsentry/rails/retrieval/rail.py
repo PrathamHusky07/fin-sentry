@@ -18,7 +18,8 @@ downstream LLM.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 import psycopg
 
@@ -62,6 +63,33 @@ def _get_prompt_guard() -> PromptGuard2Rail:
     return _prompt_guard
 
 
+@dataclass(frozen=True)
+class ChunkDrop:
+    """One chunk the rail dropped, and the check that dropped it."""
+
+    chunk_id: str
+    check: Literal["source-trust", "prompt-guard"]
+    detail: str
+    malicious_probability: float | None = None
+
+
+@dataclass(frozen=True)
+class ChunkRedaction:
+    """One kept chunk whose text had PII entities redacted."""
+
+    chunk_id: str
+    entity_types: list[str]
+
+
+@dataclass
+class RetrievalReport:
+    """What check_chunks_reported did: the survivors plus every decision it made."""
+
+    kept: list[Any]
+    drops: list[ChunkDrop] = field(default_factory=list)
+    redactions: list[ChunkRedaction] = field(default_factory=list)
+
+
 class RetrievalRail:
     """Filter and sanitise retrieved chunks before RAG generation.
 
@@ -77,7 +105,11 @@ class RetrievalRail:
         self._db_url = db_url
 
     def check_chunks(self, chunks: list[Any]) -> list[Any]:
-        """Filter chunks. Returns a new list with unsafe chunks dropped.
+        """Filter chunks. Returns a new list with unsafe chunks dropped."""
+        return self.check_chunks_reported(chunks).kept
+
+    def check_chunks_reported(self, chunks: list[Any]) -> RetrievalReport:
+        """Filter chunks and report each drop and redaction with the check behind it.
 
         chunks: list of objects with attributes chunk_id, ticker, filing_type,
         filing_date, text, similarity_score, and optionally source_url.
@@ -86,7 +118,7 @@ class RetrievalRail:
         Opens a short-lived psycopg connection for the source-trust DB lookup;
         closed when this method returns.
         """
-        result: list[Any] = []
+        report = RetrievalReport(kept=[])
 
         with psycopg.connect(self._db_url, autocommit=True) as conn:
             for chunk in chunks:
@@ -110,6 +142,7 @@ class RetrievalRail:
                     log.info(
                         "source-trust DROP chunk_id=%s reason=%s", chunk_id, reason
                     )
+                    report.drops.append(ChunkDrop(chunk_id, "source-trust", reason))
                     continue
 
                 # --- Check 2: prompt-guard injection check ---
@@ -122,6 +155,14 @@ class RetrievalRail:
                         chunk_id,
                         malicious_prob,
                         _RETRIEVAL_INJECTION_THRESHOLD,
+                    )
+                    report.drops.append(
+                        ChunkDrop(
+                            chunk_id,
+                            "prompt-guard",
+                            f"malicious probability at or above {_RETRIEVAL_INJECTION_THRESHOLD}",
+                            malicious_prob,
+                        )
                     )
                     continue
 
@@ -147,7 +188,8 @@ class RetrievalRail:
                         redacted_types,
                     )
                     chunk.text = anonymized.text
+                    report.redactions.append(ChunkRedaction(chunk_id, redacted_types))
 
-                result.append(chunk)
+                report.kept.append(chunk)
 
-        return result
+        return report
