@@ -1,0 +1,215 @@
+{
+  "experiment": "C",
+  "label": "as-is",
+  "events_published": 12,
+  "source_trace": "8d03c4bf-c4d1-452a-be80-fad342554cdc",
+  "group_members_at_start": 1,
+  "group_members_at_end": 1,
+  "baseline_lag": {
+    "at_utc": "2026-10-08T19:08:54.600112+00:00",
+    "total_lag": 0,
+    "end_offset": 281,
+    "committed_offset": 281,
+    "monitor_ok": true
+  },
+  "marks": {
+    "consumer_stopped_utc": "2026-10-08T19:08:59.640687+00:00",
+    "burst_published_utc": "2026-10-08T19:08:59.732600+00:00",
+    "consumer_restarted_utc": "2026-10-08T19:09:24.686781+00:00",
+    "caught_up_utc": "2026-10-08T19:09:58.863848+00:00"
+  },
+  "lag_timeline": [
+    {
+      "at_utc": "2026-10-08T19:08:59.816783+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:02.940407+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:06.076357+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:09.185538+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:12.310057+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:15.431358+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:18.557466+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:21.675919+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:27.773357+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:30.881153+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:33.994782+00:00",
+      "total_lag": 12,
+      "end_offset": 293,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:09:37.094228+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 3
+    },
+    {
+      "at_utc": "2026-10-08T19:09:40.204521+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 5
+    },
+    {
+      "at_utc": "2026-10-08T19:09:43.317651+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 5
+    },
+    {
+      "at_utc": "2026-10-08T19:09:46.427684+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 5
+    },
+    {
+      "at_utc": "2026-10-08T19:09:49.541842+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 10
+    },
+    {
+      "at_utc": "2026-10-08T19:09:52.657149+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 10
+    },
+    {
+      "at_utc": "2026-10-08T19:09:55.764513+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 10
+    },
+    {
+      "at_utc": "2026-10-08T19:09:58.863848+00:00",
+      "total_lag": 0,
+      "end_offset": 293,
+      "committed_offset": 293,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 12
+    }
+  ],
+  "peak_lag_observed": 12,
+  "traces_with_exactly_one_rag_event_row": 12,
+  "traces_with_exactly_one_flash_verdict_row": 12,
+  "caught_up": true,
+  "trace_ids": [
+    "99f9d6b4-acc0-4fcf-9406-3c40db0a05c9",
+    "7dc95ec3-2c39-4337-8f0d-7618db9cce77",
+    "93ef52da-6e96-4fad-9377-1c35e8d10b87",
+    "20ef7ec6-bc7b-4d53-a4ea-d91bf3cf02a7",
+    "35a187a9-be79-404d-a6d8-dfd07781c9a2",
+    "d9c46dfc-0aa4-4b4e-a837-6cc9a0f327a7",
+    "c12e7d45-a2e4-4952-8b70-74e1f3d134fe",
+    "12a33d46-26fc-4130-8297-10bc0019a810",
+    "baab62ed-cdab-4faa-ac42-a807f46ae7cc",
+    "e3c6c33f-73f1-4cae-aa8d-70e39e791bf4",
+    "cd34cc94-90a4-49c3-8bb7-f24c1161582e",
+    "772aee8d-5029-4789-b638-6bc5575a1804"
+  ],
+  "flash_verdict_statuses": [
+    "complete"
+  ]
+}

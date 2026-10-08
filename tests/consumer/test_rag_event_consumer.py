@@ -306,3 +306,52 @@ async def test_consumer_from_env_reads_env_vars() -> None:
     assert c._bootstrap_servers == "redpanda:9092"
     assert c._topic == "custom-topic"
     assert c._group_id == "custom-group"
+
+
+@pytest.mark.anyio
+async def test_consumer_stops_fetching_while_every_slot_is_busy() -> None:
+    """With max_concurrency=2 and handlers that never finish, the loop may pull at
+    most 2 in-flight messages plus the one waiting for a slot. Before the fix it
+    fetched all of them at once and Kafka lag read 0 with the work still queued."""
+    messages = [_make_kafka_msg(_make_event().model_dump(), offset=i) for i in range(10)]
+    pulled = 0
+    consumer = _make_consumer([])
+    release = asyncio.Event()
+
+    async def _counting_aiter() -> Any:
+        nonlocal pulled
+        for msg in messages:
+            pulled += 1
+            yield msg
+
+    consumer._consumer.__aiter__ = lambda self: _counting_aiter()
+    consumer._semaphore = asyncio.Semaphore(2)
+
+    async def _blocked_handler(ev: RagResponseEvent) -> None:
+        await release.wait()
+
+    consumer.set_handler(_blocked_handler)
+    run = asyncio.create_task(consumer.run())
+    await asyncio.sleep(0.2)
+
+    assert pulled <= 3, f"fetch loop pulled {pulled} messages with 2 slots busy"
+
+    release.set()
+    await asyncio.wait_for(run, timeout=5)
+    assert pulled == 10
+
+
+@pytest.mark.anyio
+async def test_consumer_releases_the_slot_when_the_handler_raises() -> None:
+    messages = [_make_kafka_msg(_make_event().model_dump(), offset=i) for i in range(6)]
+    consumer = _make_consumer(messages, max_concurrency=1)
+    seen = 0
+
+    async def _failing_handler(ev: RagResponseEvent) -> None:
+        nonlocal seen
+        seen += 1
+        raise RuntimeError("judge exploded")
+
+    consumer.set_handler(_failing_handler)
+    await asyncio.wait_for(consumer.run(), timeout=5)
+    assert seen == 6

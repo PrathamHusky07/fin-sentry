@@ -7,7 +7,9 @@ a registered handler, and enforces bounded concurrency via asyncio.Semaphore.
 Design decisions:
 - One consumer per process; consumer group is KAFKA_CONSUMER_GROUP env var.
 - asyncio.Semaphore(5) caps concurrent in-flight handler tasks so that a slow
-  judge (30s Gemini call) does not queue unboundedly.
+  judge (30s Gemini call) does not queue unboundedly. The slot is taken before
+  the task is spawned, so a saturated pool stops the fetch loop and the backlog
+  stays in Redpanda, where consumer lag can see it.
 - Graceful shutdown: on SIGTERM/SIGINT, stop() is called which sets
   _shutdown_event; the run loop drains the semaphore before exiting.
 - schema_version != "1.0" events are logged at WARNING and dropped; the
@@ -106,8 +108,9 @@ class RagEventConsumer:
 
         pending: set[asyncio.Task[None]] = set()
 
-        async def _bounded_handle_and_commit(msg: Any, event: RagResponseEvent) -> None:
-            async with self._semaphore:
+        async def _handle_and_commit(msg: Any, event: RagResponseEvent) -> None:
+            # The caller already holds a semaphore slot for this task.
+            try:
                 if self._handler is not None:
                     try:
                         await self._handler(event)
@@ -122,6 +125,8 @@ class RagEventConsumer:
                     await self._consumer.commit()
                 except Exception:
                     log.exception("Commit failed for offset %s", msg.offset)
+            finally:
+                self._semaphore.release()
 
         try:
             async for msg in self._consumer:
@@ -131,7 +136,11 @@ class RagEventConsumer:
                 if event is None:
                     await self._consumer.commit()  # drop invalid event but advance offset
                     continue
-                task = asyncio.create_task(_bounded_handle_and_commit(msg, event))
+                # Take the slot before spawning the task, so a slow judge stops the
+                # fetch loop instead of piling up tasks. Kafka lag then measures the
+                # real backlog, which is what the frontier sampling controller reads.
+                await self._semaphore.acquire()
+                task = asyncio.create_task(_handle_and_commit(msg, event))
                 pending.add(task)
                 task.add_done_callback(pending.discard)
         finally:

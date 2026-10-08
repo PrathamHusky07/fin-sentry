@@ -1,0 +1,244 @@
+{
+  "experiment": "C",
+  "label": "as-is",
+  "events_published": 16,
+  "source_trace": "8d03c4bf-c4d1-452a-be80-fad342554cdc",
+  "baseline_lag": {
+    "at_utc": "2026-10-08T19:05:10.840576+00:00",
+    "total_lag": 0,
+    "end_offset": 265,
+    "committed_offset": 265,
+    "monitor_ok": true
+  },
+  "marks": {
+    "consumer_stopped_utc": "2026-10-08T19:05:15.861244+00:00",
+    "burst_published_utc": "2026-10-08T19:05:15.968908+00:00",
+    "consumer_restarted_utc": "2026-10-08T19:05:40.965982+00:00",
+    "caught_up_utc": "2026-10-08T19:06:24.461394+00:00"
+  },
+  "lag_timeline": [
+    {
+      "at_utc": "2026-10-08T19:05:16.093278+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:19.220092+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:22.374310+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:25.498997+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:28.629263+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:31.755802+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:34.845665+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:37.949856+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_down",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:44.056472+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:47.177974+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:50.268533+00:00",
+      "total_lag": 16,
+      "end_offset": 281,
+      "committed_offset": 265,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 0
+    },
+    {
+      "at_utc": "2026-10-08T19:05:53.379024+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 5
+    },
+    {
+      "at_utc": "2026-10-08T19:05:56.518011+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 5
+    },
+    {
+      "at_utc": "2026-10-08T19:05:59.625222+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 5
+    },
+    {
+      "at_utc": "2026-10-08T19:06:02.733230+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 9
+    },
+    {
+      "at_utc": "2026-10-08T19:06:05.814306+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 10
+    },
+    {
+      "at_utc": "2026-10-08T19:06:08.924907+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 10
+    },
+    {
+      "at_utc": "2026-10-08T19:06:12.043975+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 11
+    },
+    {
+      "at_utc": "2026-10-08T19:06:15.125898+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 15
+    },
+    {
+      "at_utc": "2026-10-08T19:06:18.238861+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 15
+    },
+    {
+      "at_utc": "2026-10-08T19:06:21.351804+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 15
+    },
+    {
+      "at_utc": "2026-10-08T19:06:24.461394+00:00",
+      "total_lag": 0,
+      "end_offset": 281,
+      "committed_offset": 281,
+      "monitor_ok": true,
+      "phase": "consumer_recovering",
+      "verdict_traces": 16
+    }
+  ],
+  "peak_lag_observed": 16,
+  "traces_with_exactly_one_rag_event_row": 16,
+  "traces_with_exactly_one_flash_verdict_row": 7,
+  "caught_up": true,
+  "trace_ids": [
+    "96838814-61ae-4b3a-8b50-3baeb4a5f560",
+    "d4af355b-ba19-4c99-b231-d3df4b4015a9",
+    "d1341492-8e8b-4bf4-bad9-0dab2fa477d2",
+    "36562847-63d8-429d-a0f4-a1723dedc8c3",
+    "5ec7219d-cd50-4ee4-a54a-dc39a292f50d",
+    "a1e1b707-6791-40ac-874f-c570db3d14b3",
+    "adab9c02-c82b-4f10-8fee-35c7991f07fa",
+    "6e4780ce-c907-4fda-aad9-0dbea4fd1976",
+    "7ee7846c-0790-4407-8ba3-b9f82e83d18d",
+    "17ac6be1-c1aa-4f3e-9bf6-3fbe8198a7f4",
+    "7853f722-623a-43cd-8963-363896c86f67",
+    "45cdd554-5805-45d6-bf7f-ba500df2bb2b",
+    "a776780a-6f5d-4452-a08c-28a76991fa05",
+    "40188653-4dd9-4a72-91a8-6ca59ce57dd9",
+    "1c50a6b7-941c-4b6d-b8fa-a82043b93347",
+    "128e7dbf-1758-4804-880e-2e2f3461a23a"
+  ],
+  "flash_verdict_statuses": [
+    "complete"
+  ]
+}
