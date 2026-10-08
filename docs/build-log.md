@@ -1,5 +1,110 @@
 # Build Log
 
+## 2026-10-08: Day 9 reliability core, measured
+
+Model: Sonnet 5.5 for the whole session. Nothing here needed Opus.
+
+Runtime. The host gateway (:8000), dashboard (:8081) and both consumers had been
+started after the last commit, so none was stale. All routes returned 200 and the
+AMZN disagreement row came back with risingwave_connected true. The dashboard was
+restarted after the classifier fix and the gateway after the faithfulness fix.
+The three Docker gateway replicas behind nginx (:8088) are a day old and return
+404 for the history route. They were left alone and are not on the path the
+frontend uses.
+
+Correctness commits.
+- `8f0c1d1` RAG delivery status is now the first judge-state discriminator in
+  both `_classify_judge_state` and the SQL filter. A blocked or errored request
+  with a stray complete or partial verdict is blocked_before_evaluation. On real
+  data nothing changes, because the flash judge never scores non-success events.
+  A sqlite grid test proves the five SQL predicates select exactly what the
+  classifier labels, and the live RisingWave test now runs all five filters.
+- `8f0c1d1` The throughput-history e2e spec accepts 200 (shape validated) or 503
+  (honest unavailable state). A 404, a 500 or a malformed 200 fails the test. It
+  was run against the stale :8088 topology and failed on the 404 as intended.
+  No other e2e spec had a tolerant status branch.
+- `7744e47` Guard opens the Overview reliability pipeline, Retrieve opens the
+  persisted Amazon trace and its retrieved evidence, Generate opens Live
+  Operations. The four evidence screenshots were recaptured from the production
+  build. The old operations.png still said there was no stored history.
+
+Experiments. Runner `scripts/reliability_experiment.py`. Failures are injected by
+restarting a consumer with `GEMINI_MODEL=gemini-nonexistent-fault-injection`, so
+Vertex returns a real 404. Evidence is in `docs/measurements/reliability/`.
+
+A. Flash judge failure (`exp-a-flash-judge-failure.json`). Question: does an
+evaluation outage stay off the request path and read as judge_failed. Baseline:
+2 of 2 delivered, 2 of 2 evaluated. Injected: 5 queries, 3 delivered, all 3
+judge_failed with skipped_upstream_error on every metric, exactly one event row
+and one verdict row each. The 2 non-delivered requests were the gateway's own
+low_faithfulness block, unrelated to the injection, and read
+blocked_before_evaluation. Recovered: 1 of 3 delivered and evaluated, 2 blocked
+by gateway rails (low_faithfulness and schema_violation). Failed traces were not replayed, so they stay judge_failed.
+
+B. Frontier judge failure (`exp-b-*.json`). The gateway mints its own trace ids,
+so a request cannot be steered into the 1 in 10 sample. A uuid was drawn until
+the real hash said sampled, then a copy of one real answer was published under
+it, prefixed so it never passes for organic traffic. Injected: the row persists as
+ensemble_insufficient with a model_error carrying the real 404 text and null
+evidence. The drawer reads "Sampled, but no real judge evidence is persisted",
+the disagreement list does not contain it, and the unsampled control has no
+frontier row. Recovered: ensemble_supported with real gemini-rubric evidence.
+
+C. Backpressure (`exp-c-*.json`). Flash consumer stopped, 12 constructed events
+published, lag read through the production lag monitor. Peak lag 12, held for the
+whole outage, 12 of 12 event rows and 12 of 12 verdict rows afterward, caught up.
+Finding: on the original consumer, lag fell to 0 while only 3 of 12 verdicts
+existed, because the loop spawned a task per message before taking a semaphore
+slot and fetched everything at once. `2c4cb84` takes the slot first. On the fixed
+consumer lag steps 12, 2, 0 beside real progress. Lag still undercounts by up to
+the 5 in-flight events, because commit covers the fetch position. A first run
+(`...contaminated-second-member.json`) is kept as evidence of a different cause.
+Two terminal shells started a second consumer mid-run, a rebalance followed, and
+14 of 16 traces got a duplicate verdict. That is at-least-once delivery, not a
+code defect. The run script now refuses to start unless the group has one member.
+
+D. Adaptive sampling (`exp-d-*.json`, `0f3fe1d`). Signal is the frontier group's
+Kafka lag from the existing lag monitor, polled every 5 seconds. The rate is 1 in
+10 and drops to 1 in 100 after 3 consecutive readings at or above the entry lag.
+It returns after 5 consecutive readings at or below the recovery lag. Readings in
+between reset both streaks. An unreadable monitor holds the rate. Spec defaults
+are 1000 and 200. The hash base is kept, and the reduced sample is a strict subset
+of the normal one. 16 unit tests cover the drop, the recovery, a single reading,
+alternating readings, the gap, determinism and the subset property.
+Live, with entry 8 and recovery 2: a burst of 30 drained in about 15 seconds and
+never held lag for 3 readings, so the rate did not move (kept as measured). A
+burst of 48 dropped the rate at lag 20 after 15 seconds and restored it 25
+seconds later. 30 of 48 events were evaluated and 18 were
+skipped while the rate was reduced. A probe of 6 afterward evaluated 6 of 6.
+
+Defects found while running the experiments.
+- `79da851` The peer retriever ran concurrent embedding calls on one model that
+  sits on the MPS device. Several sampled events at once segfaulted the frontier
+  consumer. Encodes now run one at a time, with a test that fails without it.
+- `b2812f9` The faithfulness rail held one cost budget for the process lifetime.
+  Each trace reported cumulative spend, and after 5 dollars the rail would have
+  failed open with skipped_budget. Each check now builds its own budget. Live check:
+  the second of two requests reported 2 calls and 0.006562 dollars, no carry-over.
+  The cost is that no cumulative spend gate remains on the request path.
+
+Traffic. 14 gateway queries (12 in the experiments, 2 for the final check), 169
+constructed events that are copies of one real answer (3 in B, 40 in C, 126 in D
+including failed attempts), no corpus and no company sweep. Judge spend at the
+per-call rate is on the order of one dollar of Vertex credit. That figure is an
+estimate, and the judge usage view holds the measured one. The load also left
+extra rows in the stored history and trace list. The live regression tests do the
+same on every run.
+
+Not done. The UI shows none of the experiment results. They are files, and a page
+for them needs a new read route and a provenance label, which is a separate
+decision. Drift controller wiring is still deferred. Kafka lag still undercounts
+the in-flight events. The controller thresholds come from two new env vars,
+FRONTIER_LAG_ENTRY_THRESHOLD and FRONTIER_LAG_RECOVERY_THRESHOLD.
+
+Verification. pytest 652 passed, ruff check and mypy clean, tsc, eslint, prettier,
+vitest (47) and Playwright (82) pass. `ruff format --check` still flags
+files that were unformatted before this session.
+
 ## 2026-10-07 (close-out): Day 9 frontend close-out and Tier 1 backend correctness
 
 Frontend commit first, backend commits after, one frontend follow-up at the end.
