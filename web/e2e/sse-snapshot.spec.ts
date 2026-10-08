@@ -29,7 +29,7 @@ test("Live Operations receives a real snapshot over SSE and labels every readout
   await expect(page.getByText(/Flash judge only/).first()).toBeVisible();
 
   await expect(
-    page.getByText("Request activity as it arrives", { exact: true }),
+    page.getByText("Request buckets, last hour", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Calibration" }),

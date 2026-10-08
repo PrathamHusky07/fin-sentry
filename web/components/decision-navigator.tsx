@@ -1,6 +1,11 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 import { DECISIONS, type Decision } from "@/lib/decisions";
 
 const TOTAL = DECISIONS.length;
@@ -12,28 +17,29 @@ function pad(n: number): string {
 /** One decision as an argument: the problem, what was decided, then what it
  * cost and what it made true. The words are the persisted text, unedited. */
 function DecisionBody({ decision }: { decision: Decision }) {
+  const step = (n: number) => ({ "--i": n }) as CSSProperties;
   return (
     <div className="space-y-7">
-      <div>
+      <div className="dn-part" style={step(1)}>
         <p className="text-text-tertiary text-sm">Problem</p>
         <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
           {decision.problem}
         </p>
       </div>
-      <div className="border-accent/60 border-l-2 pl-5">
+      <div className="dn-part border-accent/60 border-l-2 pl-5" style={step(2)}>
         <p className="text-accent text-sm">Decision</p>
         <p className="text-text-primary mt-1.5 text-lg leading-relaxed">
           {decision.decision}
         </p>
       </div>
       <div className="grid gap-x-8 gap-y-7 sm:grid-cols-2">
-        <div>
+        <div className="dn-part" style={step(3)}>
           <p className="text-text-tertiary text-sm">Tradeoff</p>
           <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
             {decision.tradeoff}
           </p>
         </div>
-        <div>
+        <div className="dn-part" style={step(4)}>
           <p className="text-text-tertiary text-sm">Consequence</p>
           <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
             {decision.consequence}
@@ -84,13 +90,13 @@ export function DecisionNavigator() {
         <div className="relative">
           <span
             aria-hidden="true"
-            className="border-line-hover bg-surface-active/80 absolute inset-x-0 top-0 rounded-xl border shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_10%,transparent),0_18px_40px_-26px_var(--glow-accent)] transition-transform duration-[var(--dur-base)] ease-[var(--ease)]"
+            className="border-accent/30 bg-surface-active absolute inset-x-0 top-0 rounded-xl border shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_16%,transparent),0_20px_44px_-24px_var(--glow-accent)] transition-transform duration-[var(--dur-base)] ease-[var(--ease)]"
             style={{
               height: `${100 / TOTAL}%`,
               transform: `translateY(${selected * 100}%)`,
             }}
           >
-            <span className="bg-accent absolute top-3 bottom-3 left-0 w-0.5 rounded-full" />
+            <span className="bg-accent absolute top-3 bottom-3 left-0 w-[3px] rounded-full" />
           </span>
           <ul
             onKeyDown={onKeyDown}
@@ -108,19 +114,32 @@ export function DecisionNavigator() {
                   aria-current={selected === i ? "true" : undefined}
                   aria-controls={`decision-panel-${i}`}
                   onClick={() => setSelected(i)}
-                  className={`flex h-full min-h-14 w-full items-start gap-4 rounded-xl px-5 py-4 text-left transition-colors duration-[var(--dur-fast)] ${
+                  className={`group relative flex h-full min-h-14 w-full items-start gap-4 rounded-xl px-5 py-4 text-left transition-colors duration-[var(--dur-fast)] ${
                     selected === i
                       ? "text-text-primary"
                       : "text-text-secondary hover:text-text-primary"
                   }`}
                 >
+                  {/* The preview plate: what a row becomes under the pointer
+                      before it is chosen. Lighter than the selected plate,
+                      and absent on the selected row, which has its own. */}
                   <span
                     aria-hidden="true"
-                    className={`mt-0.5 font-mono text-sm tabular-nums transition-colors ${selected === i ? "text-accent" : "text-text-tertiary"}`}
+                    className={`border-line bg-surface-hover/60 pointer-events-none absolute inset-0 rounded-xl border opacity-0 transition-opacity duration-[var(--dur-base)] ease-[var(--ease-soft)] ${selected === i ? "" : "group-hover:opacity-100 group-focus-visible:opacity-100"}`}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className={`bg-accent/60 pointer-events-none absolute top-4 bottom-4 left-0 w-0.5 origin-center scale-y-0 rounded-full transition-transform duration-[var(--dur-base)] ease-[var(--ease)] ${selected === i ? "" : "group-hover:scale-y-100 group-focus-visible:scale-y-100"}`}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className={`relative mt-0.5 font-mono text-sm tabular-nums transition-colors ${selected === i ? "text-accent" : "text-text-tertiary group-hover:text-accent/80"}`}
                   >
                     {pad(i + 1)}
                   </span>
-                  <span className="text-base leading-snug font-medium text-balance">
+                  <span
+                    className={`relative text-base leading-snug text-balance transition-transform duration-[var(--dur-base)] ease-[var(--ease)] ${selected === i ? "font-semibold" : "font-medium group-hover:translate-x-0.5"}`}
+                  >
                     {decision.title}
                   </span>
                 </button>
@@ -129,7 +148,11 @@ export function DecisionNavigator() {
           </ul>
         </div>
 
-        <div className="border-line bg-background-elevated/60 grid rounded-2xl border p-8 xl:p-10">
+        <div className="border-line bg-background-elevated/60 relative grid rounded-2xl border p-8 shadow-[var(--elev-2)] xl:p-10">
+          <span
+            aria-hidden="true"
+            className="via-accent/40 absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent to-transparent"
+          />
           {DECISIONS.map((decision, i) => {
             const open = selected === i;
             return (
@@ -140,16 +163,21 @@ export function DecisionNavigator() {
                 aria-labelledby={`decision-tab-${i}`}
                 aria-hidden={!open}
                 inert={!open}
-                className={`col-start-1 row-start-1 transition-[opacity,transform] duration-[var(--dur-base)] ease-[var(--ease)] ${
-                  open
-                    ? "translate-y-0 opacity-100"
-                    : "pointer-events-none translate-y-2 opacity-0"
+                data-open={open}
+                className={`col-start-1 row-start-1 transition-opacity duration-[var(--dur-base)] ease-[var(--ease-soft)] ${
+                  open ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
               >
-                <p className="eyebrow">
+                <p
+                  className="eyebrow dn-part"
+                  style={{ "--i": 0 } as CSSProperties}
+                >
                   Decision {pad(i + 1)} of {pad(TOTAL)}
                 </p>
-                <h3 className="text-text-primary mt-2 mb-7 text-2xl leading-tight font-semibold tracking-tight text-balance">
+                <h3
+                  className="dn-part text-text-primary mt-2 mb-7 text-2xl leading-tight font-semibold tracking-tight text-balance"
+                  style={{ "--i": 0 } as CSSProperties}
+                >
                   {decision.title}
                 </h3>
                 <DecisionBody decision={decision} />

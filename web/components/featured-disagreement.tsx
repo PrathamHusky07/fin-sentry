@@ -208,8 +208,17 @@ export function FeaturedDisagreement({
   return (
     <section
       aria-labelledby="featured-heading"
-      className="state-field border-disagreement/40 bg-disagreement/[0.04] relative overflow-hidden rounded-2xl border p-6 sm:p-8"
-      style={{ "--field": "var(--disagreement)" } as CSSProperties}
+      className="state-field instrument bg-disagreement/[0.04] overflow-hidden rounded-2xl p-6 sm:p-8"
+      style={
+        {
+          "--field": "var(--disagreement)",
+          "--tone": "var(--disagreement)",
+          "--rest-border": "rgb(183 148 244 / 0.4)",
+          "--wake": "72%",
+          "--lift": "2px",
+          "--grow": 1.002,
+        } as CSSProperties
+      }
     >
       <p className="text-disagreement text-sm font-medium">
         The case the second judge exists for

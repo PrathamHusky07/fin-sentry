@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -13,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { StatusDot } from "@/components/status-dot";
-import type { ThroughputHistoryPoint } from "@/lib/use-metrics-snapshot";
+import type { ActivityBucket } from "@/lib/throughput-history";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
 const BUCKET_MS = 60_000;
@@ -23,9 +24,13 @@ const GAP_MS = 90_000;
 
 interface ChartPoint {
   t: number;
+  /** Requests for a stored bucket. A live bucket carries its count in
+   * `liveRequests`, so the two draw as separately colored bars in one slot. */
   requests: number | null;
+  liveRequests: number | null;
   avg: number | null;
   p95: number | null;
+  source: ActivityBucket["source"] | null;
 }
 
 function clock(t: number): string {
@@ -35,28 +40,38 @@ function clock(t: number): string {
 
 /** One point per real bucket, with a null point inserted wherever buckets
  * are more than GAP_MS apart so the line breaks instead of interpolating. */
-function toPoints(history: ThroughputHistoryPoint[]): ChartPoint[] {
+function toPoints(buckets: ActivityBucket[]): ChartPoint[] {
   const points: ChartPoint[] = [];
-  history.forEach((h, i) => {
-    const t = new Date(h.windowEnd).getTime();
-    const previous = i > 0 ? new Date(history[i - 1].windowEnd).getTime() : t;
+  buckets.forEach((b, i) => {
+    const t = new Date(b.windowEnd).getTime();
+    const previous = i > 0 ? new Date(buckets[i - 1].windowEnd).getTime() : t;
     if (i > 0 && t - previous > GAP_MS) {
       points.push({
         t: previous + BUCKET_MS,
         requests: null,
+        liveRequests: null,
         avg: null,
         p95: null,
+        source: null,
       });
     }
+    const isLive = b.source === "live";
     points.push({
       t,
-      requests: h.totalRequests,
-      avg: h.avgLatencyMs,
-      p95: h.p95LatencyMs,
+      requests: isLive ? null : b.totalRequests,
+      liveRequests: isLive ? b.totalRequests : null,
+      avg: b.avgLatencyMs,
+      p95: b.p95LatencyMs,
+      source: b.source,
     });
   });
   return points;
 }
+
+const SOURCE_LABEL = {
+  stored: "Stored bucket",
+  live: "Live bucket",
+} as const;
 
 function ChartTooltip({
   active,
@@ -65,19 +80,34 @@ function ChartTooltip({
   unit,
 }: {
   active?: boolean;
-  payload?: { name?: string; value?: number | null }[];
+  payload?: {
+    name?: string;
+    value?: number | null;
+    payload?: ChartPoint;
+  }[];
   label?: number;
   unit: string;
 }) {
   if (!active || !payload?.length || label === undefined) return null;
+  const source = payload[0].payload?.source ?? null;
+  // A stacked pair of bars reports both; only the one that has a value is a
+  // real reading for this bucket.
+  const rows = payload.filter((p) => p.value != null || source === null);
   return (
     <div className="floating rounded-lg px-4 py-3 text-sm">
       <p className="text-text-tertiary font-mono text-xs">
         Bucket ending {clock(label)} UTC
       </p>
-      {payload.map((p) => (
+      {source ? (
         <p
-          key={p.name}
+          className={`mt-1 text-xs font-medium ${source === "live" ? "text-signal" : "text-accent"}`}
+        >
+          {SOURCE_LABEL[source]}
+        </p>
+      ) : null}
+      {rows.map((p, i) => (
+        <p
+          key={`${p.name}-${i}`}
           className="text-text-primary tabular-metric mt-1.5 flex items-baseline justify-between gap-6"
         >
           <span className="text-text-secondary">{p.name}</span>
@@ -93,23 +123,34 @@ function ChartTooltip({
 
 const AXIS_TICK = { fontSize: 12, fill: "var(--text-tertiary)" };
 
+/** What the paragraph under the charts says, from the real series alone. */
+function caption(buckets: ActivityBucket[]): string {
+  if (buckets.length === 0) {
+    return "No bucket is available yet. Stored history or the first snapshot fills this in.";
+  }
+  const hasLive = buckets.some((b) => b.source === "live");
+  const count =
+    buckets.length === 1
+      ? "One bucket in the last hour, so the latency chart shows a single point. A line needs a second bucket, and the metrics view advances once a minute."
+      : `${buckets.length} buckets in the last hour. Missing minutes stay empty and the line breaks across them.`;
+  const bars = hasLive
+    ? "Blue bars are stored buckets and the cyan bar is the live one."
+    : "Every bar is a stored bucket. None is live right now.";
+  return `${count} ${bars} The next section holds the full stored history.`;
+}
+
 /**
- * Requests and latency per one-minute bucket, built only from buckets that
- * arrived over the real SSE connection while this page was open. It never
- * backfills, never smooths, and never draws across missing minutes. With
- * fewer than two buckets it shows the empty axes and the one real point
- * rather than a manufactured line.
+ * Requests and latency per one-minute bucket for the last hour. The series is
+ * the stored buckets merged with the buckets received over the SSE stream,
+ * keyed on window end so a bucket in both is drawn once (see
+ * mergeActivityBuckets). It never smooths, never fills a missing minute and
+ * never draws across one. Only the newest bucket can be live, and only while
+ * the stream is open and that bucket is fresh; every other bar is stored and
+ * says so. With a single bucket it says plainly what it is waiting for.
  */
-export function ActivityChart({
-  history,
-  live,
-}: {
-  history: ThroughputHistoryPoint[];
-  /** True only while the stream is open and the newest bucket is fresh. */
-  live: boolean;
-}) {
+export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
   const reducedMotion = usePrefersReducedMotion();
-  const points = toPoints(history);
+  const points = useMemo(() => toPoints(buckets), [buckets]);
   const times = points.map((p) => p.t);
   const domain: [number, number] =
     times.length >= 2
@@ -118,11 +159,11 @@ export function ActivityChart({
         ? [times[0] - 5 * BUCKET_MS, times[0] + 5 * BUCKET_MS]
         : [0, 1];
 
-  const sparse = history.length < 2;
-  const newest = history.length > 0 ? history[history.length - 1] : null;
+  const newest = buckets.length > 0 ? buckets[buckets.length - 1] : null;
   const newestT = newest ? new Date(newest.windowEnd).getTime() : null;
+  const liveEdge = newest?.source === "live";
   const edge =
-    live && newestT !== null ? (
+    liveEdge && newestT !== null ? (
       <ReferenceLine
         x={newestT}
         stroke="var(--signal)"
@@ -154,20 +195,45 @@ export function ActivityChart({
   return (
     <div>
       <div className="grid gap-y-2">
-        <figure>
+        <figure id="activity-requests" className="target-ring">
           <figcaption className="text-text-secondary flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
-            <span>Requests per bucket</span>
-            {live && newest ? (
-              <span className="text-signal flex items-center gap-2">
-                <StatusDot color="signal" live />
-                Live edge: newest bucket ended {clock(newestT ?? 0)} UTC
+            <span className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              <span>Requests per bucket</span>
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="bg-accent h-3 w-3 rounded-sm opacity-70"
+                />
+                Stored
               </span>
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="bg-signal h-3 w-3 rounded-sm"
+                />
+                Live
+              </span>
+            </span>
+            {newest ? (
+              liveEdge ? (
+                <span className="text-signal flex items-center gap-2">
+                  <StatusDot color="signal" live />
+                  {buckets.length === 1
+                    ? `Live, waiting for the next bucket. Newest ended ${clock(newestT ?? 0)} UTC`
+                    : `Live edge: newest bucket ended ${clock(newestT ?? 0)} UTC`}
+                </span>
+              ) : (
+                <span className="text-text-tertiary flex items-center gap-2">
+                  <StatusDot color="neutral" />
+                  Not live. Newest bucket ended {clock(newestT ?? 0)} UTC
+                </span>
+              )
             ) : null}
           </figcaption>
           <div
             className="mt-2 h-44"
             role="img"
-            aria-label={`Requests per one-minute bucket. ${history.length} ${history.length === 1 ? "bucket" : "buckets"} received.`}
+            aria-label={`Requests per one-minute bucket, stored and live. ${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} in the last hour.`}
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
@@ -193,7 +259,19 @@ export function ActivityChart({
                 <Bar
                   dataKey="requests"
                   name="requests"
+                  stackId="requests"
                   fill="var(--accent)"
+                  fillOpacity={0.7}
+                  maxBarSize={24}
+                  radius={[4, 4, 0, 0]}
+                  activeBar={{ fill: "var(--text-primary)", fillOpacity: 1 }}
+                  isAnimationActive={!reducedMotion}
+                />
+                <Bar
+                  dataKey="liveRequests"
+                  name="requests"
+                  stackId="requests"
+                  fill="var(--signal)"
                   maxBarSize={24}
                   radius={[4, 4, 0, 0]}
                   activeBar={{ fill: "var(--text-primary)" }}
@@ -204,7 +282,7 @@ export function ActivityChart({
           </div>
         </figure>
 
-        <figure className="mt-4">
+        <figure id="activity-latency" className="target-ring mt-4">
           <figcaption className="text-text-secondary flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
             <span>Latency per bucket, milliseconds</span>
             <span className="flex items-center gap-2">
@@ -237,7 +315,7 @@ export function ActivityChart({
           <div
             className="mt-2 h-52"
             role="img"
-            aria-label={`Average and p95 latency per one-minute bucket. ${history.length} ${history.length === 1 ? "bucket" : "buckets"} received.`}
+            aria-label={`Average and p95 latency per one-minute bucket. ${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} in the last hour.`}
           >
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
@@ -308,37 +386,35 @@ export function ActivityChart({
       </div>
 
       <p className="text-text-secondary mt-5 max-w-3xl text-base leading-relaxed">
-        {history.length === 0
-          ? "No bucket has arrived yet. The first snapshot fills this in."
-          : sparse
-            ? "One bucket has arrived since this page opened, so it is drawn as a single point. A line needs a second bucket, and the metrics view advances once a minute."
-            : `${history.length} buckets have arrived since this page opened. Missing minutes stay empty and the line breaks across them.`}{" "}
-        This chart holds only what arrived over the stream. Stored history is in
-        the next section.
+        {caption(buckets)}
       </p>
 
-      {history.length > 0 ? (
+      {buckets.length > 0 ? (
         <details className="mt-3">
           <summary className="text-accent hover:text-text-primary inline-flex min-h-11 cursor-pointer items-center text-sm underline underline-offset-4">
             View the buckets as a table
           </summary>
           <table className="mt-2 w-full max-w-xl text-left text-sm">
             <caption className="sr-only">
-              One-minute buckets received over the stream
+              One-minute buckets in the last hour, stored and live
             </caption>
             <thead>
               <tr className="text-text-tertiary">
                 <th className="py-2 font-normal">Bucket ended (UTC)</th>
+                <th className="py-2 font-normal">Source</th>
                 <th className="py-2 text-right font-normal">Requests</th>
                 <th className="py-2 text-right font-normal">Avg ms</th>
                 <th className="py-2 text-right font-normal">p95 ms</th>
               </tr>
             </thead>
             <tbody>
-              {history.map((h) => (
+              {buckets.map((h) => (
                 <tr key={h.windowEnd} className="border-border border-t">
                   <td className="tabular-metric text-text-secondary py-2">
                     {clock(new Date(h.windowEnd).getTime())}
+                  </td>
+                  <td className="text-text-secondary py-2">
+                    {SOURCE_LABEL[h.source]}
                   </td>
                   <td className="tabular-metric text-text-primary py-2 text-right">
                     {h.totalRequests ?? "no data"}

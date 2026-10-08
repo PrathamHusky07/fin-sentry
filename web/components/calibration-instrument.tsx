@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { formatUtc, relativeTime } from "@/lib/format";
+import { CALIBRATION_POSITION_TONE } from "@/lib/labels";
 import { useNow } from "@/lib/use-now";
 import type {
   CalibrationHealthResponse,
@@ -177,194 +178,211 @@ export function CalibrationInstrument({
         </p>
       </div>
 
-      <p className="text-text-primary mt-6 max-w-3xl text-xl leading-snug font-medium text-balance">
-        <span className="text-text-tertiary block text-sm font-normal">
-          Can the frontier judge be trusted as a second opinion?
-        </span>
-        {trustLine(health)}
-      </p>
+      <div
+        className="instrument group/shell bg-background-elevated/50 mt-6 rounded-2xl p-6 sm:p-8"
+        style={
+          {
+            "--tone": `var(--${CALIBRATION_POSITION_TONE[health.position]})`,
+            "--lift": "1px",
+            "--grow": 1.003,
+          } as CSSProperties
+        }
+      >
+        <p className="text-text-primary max-w-3xl text-xl leading-snug font-medium text-balance">
+          <span className="text-text-tertiary block text-sm font-normal">
+            Can the frontier judge be trusted as a second opinion?
+          </span>
+          {trustLine(health)}
+        </p>
 
-      <div className="mt-8 grid gap-x-16 gap-y-10 lg:grid-cols-[18rem_1fr]">
-        <div>
-          <p className="text-text-tertiary text-sm">Cohen&rsquo;s kappa</p>
-          <p className="tabular-metric text-text-primary mt-2 text-6xl font-semibold tracking-tight">
-            {health.kappa !== null ? health.kappa.toFixed(3) : "n/a"}
-          </p>
-          <p className={`mt-3 text-base font-medium ${text.tone}`}>
-            {health.state ? `State: ${health.state}` : "No state recorded"}
-          </p>
-          <p className="text-text-secondary mt-1 text-sm">
-            {health.window_n !== null
-              ? `${health.window_n} labeled rows scored (minimum ${health.min_n})`
-              : `Minimum ${health.min_n} labeled rows`}
-          </p>
-        </div>
+        <div className="mt-8 grid gap-x-16 gap-y-10 lg:grid-cols-[18rem_1fr]">
+          <div>
+            <p className="text-text-tertiary text-sm">Cohen&rsquo;s kappa</p>
+            <p className="tabular-metric text-text-primary mt-2 text-6xl font-semibold tracking-tight">
+              {health.kappa !== null ? health.kappa.toFixed(3) : "n/a"}
+            </p>
+            <p className={`mt-3 text-base font-medium ${text.tone}`}>
+              {health.state ? `State: ${health.state}` : "No state recorded"}
+            </p>
+            <p className="text-text-secondary mt-1 text-sm">
+              {health.window_n !== null
+                ? `${health.window_n} labeled rows scored (minimum ${health.min_n})`
+                : `Minimum ${health.min_n} labeled rows`}
+            </p>
+          </div>
 
-        <div>
-          {health.kappa !== null ? (
-            <div
-              role="group"
-              aria-label={`Kappa ${health.kappa.toFixed(3)} on a scale from ${SCALE_MIN} to ${SCALE_MAX}. Drift entry threshold ${entry.toFixed(2)}, recovery threshold ${recovery.toFixed(2)}, healthy baseline ${health.healthy_baseline_kappa.toFixed(3)}. Each marker explains itself on focus.`}
-              className="relative mt-20 mb-24 h-3"
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setPinned(null);
-                  setHovered(null);
-                }
-              }}
-            >
-              <div className="bg-surface absolute inset-0 overflow-hidden rounded-full">
-                <div className="enter-sweep absolute inset-0">
-                  <div
-                    className="bg-failure/35 absolute inset-y-0 left-0"
-                    style={{ width: `${pct(entry)}%` }}
-                  />
-                  <div
-                    className="bg-warning/35 absolute inset-y-0"
-                    style={{
-                      left: `${pct(entry)}%`,
-                      width: `${pct(recovery) - pct(entry)}%`,
-                    }}
-                  />
-                  <div
-                    className="bg-positive/30 absolute inset-y-0 right-0"
-                    style={{ left: `${pct(recovery)}%` }}
-                  />
-                </div>
-              </div>
-
-              {markers.map((m) => {
-                const isActive = active === m.id;
-                const isKappa = m.id === "kappa";
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    aria-label={`${m.label} ${m.value.toFixed(digits(m))}. ${m.meaning}`}
-                    aria-pressed={pinned === m.id}
-                    onPointerEnter={(e) => {
-                      if (e.pointerType === "mouse") setHovered(m.id);
-                    }}
-                    onPointerLeave={(e) => {
-                      if (e.pointerType === "mouse") setHovered(null);
-                    }}
-                    onFocus={(e) => {
-                      // A click or tap also focuses the button, and the pin
-                      // handles that. Only keyboard focus shows it here.
-                      if (e.currentTarget.matches(":focus-visible")) {
-                        setFocused(m.id);
-                      }
-                    }}
-                    onBlur={() => setFocused(null)}
-                    onClick={() => setPinned((p) => (p === m.id ? null : m.id))}
-                    className={`group absolute top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full ${isKappa ? "enter-fade z-10" : ""}`}
-                    style={
-                      {
-                        left: `${pct(m.value)}%`,
-                        "--i": 14,
-                      } as React.CSSProperties
-                    }
-                  >
-                    {isKappa ? (
-                      <span
-                        className={`bg-text-primary border-background block h-6 w-1.5 rounded-full border-2 transition-transform duration-[var(--dur-base)] ease-[var(--ease)] ${isActive ? "scale-y-125 scale-x-150" : ""}`}
-                      />
-                    ) : (
-                      <span
-                        className={`block h-5 transition-[width,background-color] duration-[var(--dur-base)] ${m.id === "baseline" ? "border-text-tertiary border-l border-dashed" : `w-px ${isActive ? "bg-text-primary scale-x-[3]" : "bg-text-secondary"}`}`}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-
-              {markers
-                .filter((m) => m.id !== "kappa")
-                .map((m) => (
-                  <div
-                    key={m.id}
-                    aria-hidden="true"
-                    className={`absolute top-full pt-3 transition-opacity duration-[var(--dur-base)] ${m.id === "entry" ? "-translate-x-full" : m.id === "baseline" ? "" : "-translate-x-1/2"} ${active && active !== m.id ? "opacity-40" : "opacity-100"}`}
-                    style={{ left: `${pct(m.value)}%` }}
-                  >
-                    <p className="text-text-secondary text-xs whitespace-nowrap">
-                      {m.label}
-                    </p>
-                    <p className="tabular-metric text-text-primary text-sm">
-                      {m.value.toFixed(digits(m))}
-                    </p>
-                  </div>
-                ))}
-
+          <div>
+            {health.kappa !== null ? (
               <div
-                aria-hidden="true"
-                className="absolute bottom-full -translate-x-1/2 pb-2"
-                style={{ left: `${pct(health.kappa)}%` }}
-              >
-                <p className="tabular-metric text-text-primary text-sm font-semibold whitespace-nowrap">
-                  kappa {health.kappa.toFixed(3)}
-                </p>
-              </div>
-
-              <div
-                aria-hidden="true"
-                className="text-text-tertiary absolute top-full right-0 left-0 mt-16 flex justify-between font-mono text-[11px]"
-              >
-                <span>{SCALE_MIN.toFixed(2)}</span>
-                <span>
-                  scale {SCALE_MIN.toFixed(2)} to {SCALE_MAX.toFixed(2)}, not
-                  the full kappa range
-                </span>
-                <span>{SCALE_MAX.toFixed(2)}</span>
-              </div>
-
-              <div
-                aria-live="polite"
-                className="pointer-events-none absolute z-20"
-                style={{
-                  left: `${info ? Math.min(78, Math.max(22, pct(info.value))) : 50}%`,
-                  bottom: "calc(100% + 2.75rem)",
+                role="group"
+                aria-label={`Kappa ${health.kappa.toFixed(3)} on a scale from ${SCALE_MIN} to ${SCALE_MAX}. Drift entry threshold ${entry.toFixed(2)}, recovery threshold ${recovery.toFixed(2)}, healthy baseline ${health.healthy_baseline_kappa.toFixed(3)}. Each marker explains itself on focus.`}
+                className="relative mt-20 mb-24 h-3"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setPinned(null);
+                    setHovered(null);
+                  }
                 }}
               >
-                {info ? (
-                  <div className="floating swap-in w-72 -translate-x-1/2 rounded-lg px-4 py-3">
-                    <p className="text-text-primary text-sm font-semibold">
-                      {info.label}{" "}
-                      <span className="tabular-metric text-text-secondary font-normal">
-                        {info.value.toFixed(digits(info))}
-                      </span>
-                    </p>
-                    <p className="text-text-secondary mt-1 text-sm leading-snug">
-                      {info.meaning}
-                    </p>
+                <div className="bg-surface absolute inset-0 overflow-hidden rounded-full">
+                  <div className="pointer-events-none absolute inset-0 bg-white/10 opacity-0 transition-opacity duration-[var(--dur-base)] group-focus-within/shell:opacity-100 group-hover/shell:opacity-100" />
+                  <div className="enter-sweep absolute inset-0">
+                    <div
+                      className="bg-failure/35 absolute inset-y-0 left-0"
+                      style={{ width: `${pct(entry)}%` }}
+                    />
+                    <div
+                      className="bg-warning/35 absolute inset-y-0"
+                      style={{
+                        left: `${pct(entry)}%`,
+                        width: `${pct(recovery) - pct(entry)}%`,
+                      }}
+                    />
+                    <div
+                      className="bg-positive/30 absolute inset-y-0 right-0"
+                      style={{ left: `${pct(recovery)}%` }}
+                    />
                   </div>
-                ) : null}
+                </div>
+
+                {markers.map((m) => {
+                  const isActive = active === m.id;
+                  const isKappa = m.id === "kappa";
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      aria-label={`${m.label} ${m.value.toFixed(digits(m))}. ${m.meaning}`}
+                      aria-pressed={pinned === m.id}
+                      onPointerEnter={(e) => {
+                        if (e.pointerType === "mouse") setHovered(m.id);
+                      }}
+                      onPointerLeave={(e) => {
+                        if (e.pointerType === "mouse") setHovered(null);
+                      }}
+                      onFocus={(e) => {
+                        // A click or tap also focuses the button, and the pin
+                        // handles that. Only keyboard focus shows it here.
+                        if (e.currentTarget.matches(":focus-visible")) {
+                          setFocused(m.id);
+                        }
+                      }}
+                      onBlur={() => setFocused(null)}
+                      onClick={() =>
+                        setPinned((p) => (p === m.id ? null : m.id))
+                      }
+                      className={`group absolute top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full ${isKappa ? "enter-fade z-10" : ""}`}
+                      style={
+                        {
+                          left: `${pct(m.value)}%`,
+                          "--i": 14,
+                        } as React.CSSProperties
+                      }
+                    >
+                      {isKappa ? (
+                        <span
+                          className={`bg-text-primary border-background block h-6 w-1.5 rounded-full border-2 transition-transform duration-[var(--dur-base)] ease-[var(--ease)] ${isActive ? "scale-y-125 scale-x-150" : ""}`}
+                        />
+                      ) : (
+                        <span
+                          className={`block h-5 transition-[width,background-color] duration-[var(--dur-base)] ${m.id === "baseline" ? "border-text-tertiary border-l border-dashed" : `w-px ${isActive ? "bg-text-primary scale-x-[3]" : "bg-text-secondary"}`}`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+
+                {markers
+                  .filter((m) => m.id !== "kappa")
+                  .map((m) => (
+                    <div
+                      key={m.id}
+                      aria-hidden="true"
+                      className={`absolute top-full pt-3 transition-opacity duration-[var(--dur-base)] ${m.id === "entry" ? "-translate-x-full" : m.id === "baseline" ? "" : "-translate-x-1/2"} ${active && active !== m.id ? "opacity-40" : "opacity-100"}`}
+                      style={{ left: `${pct(m.value)}%` }}
+                    >
+                      <p className="text-text-secondary text-xs whitespace-nowrap">
+                        {m.label}
+                      </p>
+                      <p className="tabular-metric text-text-primary text-sm">
+                        {m.value.toFixed(digits(m))}
+                      </p>
+                    </div>
+                  ))}
+
+                <div
+                  aria-hidden="true"
+                  className="absolute bottom-full -translate-x-1/2 pb-2"
+                  style={{ left: `${pct(health.kappa)}%` }}
+                >
+                  <p className="tabular-metric text-text-primary text-sm font-semibold whitespace-nowrap">
+                    kappa {health.kappa.toFixed(3)}
+                  </p>
+                </div>
+
+                <div
+                  aria-hidden="true"
+                  className="text-text-tertiary absolute top-full right-0 left-0 mt-16 flex justify-between font-mono text-[11px]"
+                >
+                  <span>{SCALE_MIN.toFixed(2)}</span>
+                  <span>
+                    scale {SCALE_MIN.toFixed(2)} to {SCALE_MAX.toFixed(2)}, not
+                    the full kappa range
+                  </span>
+                  <span>{SCALE_MAX.toFixed(2)}</span>
+                </div>
+
+                <div
+                  aria-live="polite"
+                  className="pointer-events-none absolute z-20"
+                  style={{
+                    left: `${info ? Math.min(78, Math.max(22, pct(info.value))) : 50}%`,
+                    bottom: "calc(100% + 2.75rem)",
+                  }}
+                >
+                  {info ? (
+                    <div className="floating swap-in w-72 -translate-x-1/2 rounded-lg px-4 py-3">
+                      <p className="text-text-primary text-sm font-semibold">
+                        {info.label}{" "}
+                        <span className="tabular-metric text-text-secondary font-normal">
+                          {info.value.toFixed(digits(info))}
+                        </span>
+                      </p>
+                      <p className="text-text-secondary mt-1 text-sm leading-snug">
+                        {info.meaning}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
 
-          <p className={`text-lg font-medium ${text.tone}`}>{text.headline}</p>
-          <p className="text-text-secondary mt-2 max-w-2xl text-base leading-relaxed">
-            {interpretation(health)}
-          </p>
+            <p className={`text-lg font-medium ${text.tone}`}>
+              {text.headline}
+            </p>
+            <p className="text-text-secondary mt-2 max-w-2xl text-base leading-relaxed">
+              {interpretation(health)}
+            </p>
+          </div>
         </div>
-      </div>
 
-      <dl className="border-border mt-10 grid gap-x-10 gap-y-4 border-t pt-6 text-sm sm:grid-cols-[auto_1fr]">
-        <dt className="text-text-tertiary">Persisted</dt>
-        <dd className="text-text-secondary">
-          {health.state_as_of
-            ? `${formatUtc(health.state_as_of)}${now !== null ? `, ${relativeTime(health.state_as_of, now)}` : ""}`
-            : "No timestamp recorded"}
-        </dd>
-        <dt className="text-text-tertiary">Provenance</dt>
-        <dd className="text-text-secondary max-w-3xl">
-          One manual canary run read from a file on disk. It is not a scheduled
-          or continuously running monitor, and no earlier readings are
-          persisted, so there is no trend to draw. The service reports: &ldquo;
-          {health.note}&rdquo;
-        </dd>
-      </dl>
+        <dl className="border-border mt-10 grid gap-x-10 gap-y-4 border-t pt-6 text-sm sm:grid-cols-[auto_1fr]">
+          <dt className="text-text-tertiary">Persisted</dt>
+          <dd className="text-text-secondary">
+            {health.state_as_of
+              ? `${formatUtc(health.state_as_of)}${now !== null ? `, ${relativeTime(health.state_as_of, now)}` : ""}`
+              : "No timestamp recorded"}
+          </dd>
+          <dt className="text-text-tertiary">Provenance</dt>
+          <dd className="text-text-secondary max-w-3xl">
+            One manual canary run read from a file on disk. It is not a
+            scheduled or continuously running monitor, and no earlier readings
+            are persisted, so there is no trend to draw. The service reports:
+            &ldquo;
+            {health.note}&rdquo;
+          </dd>
+        </dl>
+      </div>
     </section>
   );
 }

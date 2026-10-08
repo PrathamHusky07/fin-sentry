@@ -414,6 +414,133 @@ svg :focus-visible {
     animation: pulse-live 2.4s var(--ease-soft) infinite;
   }
 
+  /* A whole surface that wakes under the pointer or focus: the border takes
+     on its tone, a faint radial field fades in from above, and the surface
+     rises a pixel or two. It owns its border (a utility on the element would
+     outrank this layer), and it carries no hover background, so it never
+     reads as a button. For instruments and cards that are inspected, not
+     opened. `--lift` and `--grow` tune the rise per use, and a card with a
+     strong resting edge sets `--rest-border` and a higher `--wake`. */
+  .instrument {
+    --tone: var(--accent);
+    position: relative;
+    isolation: isolate;
+    border: 1px solid var(--rest-border, var(--line));
+    transition:
+      transform var(--dur-base) var(--ease),
+      border-color var(--dur-base) var(--ease),
+      box-shadow var(--dur-base) var(--ease);
+  }
+
+  .instrument::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(
+      ellipse 70% 80% at 50% 0%,
+      color-mix(in srgb, var(--tone) 11%, transparent),
+      transparent 72%
+    );
+    transition: opacity var(--dur-base) var(--ease-soft);
+  }
+
+  .instrument:focus-within {
+    border-color: color-mix(
+      in srgb,
+      var(--tone) var(--wake, 34%),
+      var(--line-hover)
+    );
+  }
+
+  .instrument:focus-within::after {
+    opacity: 1;
+  }
+
+  @media (hover: hover) {
+    .instrument:hover {
+      border-color: color-mix(
+        in srgb,
+        var(--tone) var(--wake, 34%),
+        var(--line-hover)
+      );
+      box-shadow:
+        var(--elev-2),
+        0 0 0 1px color-mix(in srgb, var(--tone) 10%, transparent);
+    }
+
+    .instrument:hover::after {
+      opacity: 1;
+    }
+  }
+
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .instrument:hover {
+      transform: translateY(calc(var(--lift, 1px) * -1))
+        scale(var(--grow, 1.002));
+    }
+  }
+
+  /* A small floating panel owned by a `.reveal-host`: it shows what a
+     cell already knows when the host is pointed at or focused, and nothing
+     else. Pure CSS, absolute, so it never moves the layout. */
+  .peek {
+    position: absolute;
+    z-index: 40;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity var(--dur-fast) var(--ease-soft),
+      transform var(--dur-fast) var(--ease);
+  }
+
+  .reveal-host:hover > .peek,
+  .reveal-host:focus-within > .peek {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 90ms;
+  }
+
+  /* The landing mark for an in-page link: a ring that fades, so the eye
+     finds the thing the link named. Under reduced motion the ring stays,
+     still and quiet, for as long as the link target is current. */
+  .target-ring {
+    border-radius: 0.75rem;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .target-ring:target {
+      animation: target-ring 1800ms var(--ease-soft);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .target-ring:target {
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--signal) 45%, transparent);
+    }
+  }
+
+  /* One part of a multi-part panel. When its panel closes the part drops
+     and fades at once, and when the panel opens each part follows the one
+     before it by --i steps, so a decision reads title, problem, decision,
+     consequence instead of landing as a block. */
+  .dn-part {
+    transition:
+      opacity var(--dur-base) var(--ease-soft),
+      transform var(--dur-base) var(--ease);
+    transition-delay: calc(var(--i, 0) * 60ms);
+  }
+
+  [data-open="false"] .dn-part {
+    opacity: 0;
+    transform: translateY(8px);
+    transition-delay: 0ms;
+  }
+
   /* ---------- One-shot reveals ----------
 
      Each runs once on mount and uses `backwards` fill, so after it ends the
@@ -519,6 +646,20 @@ svg :focus-visible {
   }
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+@keyframes target-ring {
+  0%,
+  45% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--signal) 60%, transparent),
+      0 0 0 8px color-mix(in srgb, var(--signal) 10%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px transparent,
+      0 0 0 8px transparent;
   }
 }
 
@@ -747,6 +888,25 @@ svg :focus-visible {
     transparent 72%
   );
   pointer-events: none;
+  opacity: 0.85;
+  transform-origin: 28% 50%;
+  transition:
+    opacity var(--dur-base) var(--ease-soft),
+    transform var(--dur-slow) var(--ease);
+}
+
+/* The field answers the pointer: it brightens and widens a little. It is
+   the same field at the same hue, so it never claims a different state. */
+.state-field:hover::before,
+.state-field:focus-within::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .state-field:hover::before,
+  .state-field:focus-within::before {
+    transform: scale(1.06);
+  }
 }
 
 /* Thin, quiet scrollbars inside dense panels. */

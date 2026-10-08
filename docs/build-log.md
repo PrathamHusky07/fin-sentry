@@ -1,5 +1,43 @@
 # Build Log
 
+## 2026-10-08 (later): Day 9 frontend completion, interaction hierarchy
+
+Model: Sonnet 5.5. Frontend only. No backend file, data path, corpus or model run.
+
+Origin fix first (commit 28fd55b). The Next dev server now proxies /ops/* to the
+gateway, so the browser stays same-origin. The gateway CORS allowlist names only
+http://localhost:3000, which is why the pages showed no data from 127.0.0.1. Next
+gzip also buffered the proxied SSE stream, so compress is off.
+
+Interaction hierarchy. The existing vocabulary was carried to the surfaces that
+lacked it, by tier. Tier 1: connection strip cells reveal what each value rests
+on, the three readouts are instruments with a real in-page link to the chart that
+draws them, the calibration surface wakes as one shell around its unchanged
+markers, the system state number has a state-colored field, rail and an
+investigate link. Tier 2: eval cards, featured disagreement card, request-flow
+rows. Tier 4: decision navigator preview plate and staggered panel. New CSS
+primitives are `instrument`, `peek`, `target-ring` and `dn-part`. `state-field`
+gained a hover response. Nothing animates a metric value.
+
+Activity chart. The history merge shipped. mergeActivityBuckets seeds the chart
+from the stored buckets, merges received buckets on window_end, keeps a trailing
+hour anchored to the newest bucket and never fills a missing minute. Only the
+newest bucket can be live, and only while the stream is open and the bucket is
+fresh. Eight Vitest cases cover it. The chart opened with 23 real stored bars and
+said "Not live" because the newest bucket ended two hours earlier.
+
+Navigation checked before wiring. Judge tiers in disagreement opens
+/investigations?disagreement=true. Delivered answers judged scrolls to the
+Evaluation coverage heading, because judge_state takes one value and no filter
+means "complete or partial".
+
+Red Team focus failures. They were the Next.js Dev Tools button (tab stop six,
+outline none), which exists only under next dev. The suite passes 98 of 98 on a
+production build. /red-team was not changed.
+
+Still deferred to the next session: the five backend reliability findings in
+docs/internal/backend-followups.md.
+
 ## 2026-10-08: Day 9 reliability core, measured
 
 Model: Sonnet 5.5 for the whole session. Nothing here needed Opus.

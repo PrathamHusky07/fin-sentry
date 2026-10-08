@@ -43,3 +43,80 @@ export function historyRows(buckets: ThroughputBucket[]): HistoryRow[] {
 export function historyRequestTotal(rows: HistoryRow[]): number {
   return rows.reduce((sum, r) => sum + r.total, 0);
 }
+
+/** How far back from the newest bucket the activity chart reaches. The
+ * stored view can span days, and a chart that wide would shrink every
+ * one-minute bar to a hairline. Anchored to the newest bucket, not to the
+ * clock, so the same inputs always draw the same chart. */
+export const ACTIVITY_WINDOW_MS = 60 * 60_000;
+
+/** One bar of the activity chart. `stored` is a bucket the metrics view has
+ * persisted. `live` is the one newest bucket, and only while the stream is
+ * open and that bucket is fresh. Nothing else is ever called live. */
+export interface ActivityBucket {
+  windowEnd: string;
+  totalRequests: number | null;
+  avgLatencyMs: number | null;
+  p95LatencyMs: number | null;
+  source: "stored" | "live";
+}
+
+/** A bucket as it arrived over the stream. Mirrors ThroughputHistoryPoint in
+ * use-metrics-snapshot.ts, declared structurally so this module stays free of
+ * the client hook. */
+interface ReceivedBucket {
+  windowEnd: string;
+  totalRequests: number | null;
+  avgLatencyMs: number | null;
+  p95LatencyMs: number | null;
+}
+
+/**
+ * The activity chart's series: the stored buckets, then the buckets received
+ * over the stream, merged on window_end so a bucket present in both is drawn
+ * once. Where both sources hold the same bucket the received values win,
+ * because they were read later. Minutes without a bucket stay absent: there
+ * is no interpolation and no filling. The series is oldest first and limited
+ * to ACTIVITY_WINDOW_MS ending at its newest bucket.
+ *
+ * `liveEdge` is the caller's claim that the stream is open and the newest
+ * bucket is fresh. It is honored only when that newest bucket really arrived
+ * over the stream, so a bucket known only from storage is never called live.
+ */
+export function mergeActivityBuckets(
+  stored: ThroughputBucket[],
+  received: ReceivedBucket[],
+  liveEdge: boolean,
+): ActivityBucket[] {
+  const byTime = new Map<number, ActivityBucket>();
+  for (const b of stored) {
+    byTime.set(new Date(b.window_end).getTime(), {
+      windowEnd: b.window_end,
+      totalRequests: b.total_requests,
+      avgLatencyMs: b.avg_latency_ms,
+      p95LatencyMs: b.p95_latency_ms,
+      source: "stored",
+    });
+  }
+  let newestReceived = -Infinity;
+  for (const r of received) {
+    const t = new Date(r.windowEnd).getTime();
+    newestReceived = Math.max(newestReceived, t);
+    byTime.set(t, { ...r, source: "stored" });
+  }
+
+  const times = [...byTime.keys()].sort((a, b) => a - b);
+  if (times.length === 0) return [];
+  const newest = times[times.length - 1];
+  const series: ActivityBucket[] = [];
+  for (const t of times) {
+    const bucket = byTime.get(t);
+    if (!bucket || t < newest - ACTIVITY_WINDOW_MS) continue;
+    series.push(
+      liveEdge && t === newest && t === newestReceived
+        ? { ...bucket, source: "live" }
+        : bucket,
+    );
+  }
+  return series;
+}

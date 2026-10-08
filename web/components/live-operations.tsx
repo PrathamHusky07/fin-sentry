@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, type CSSProperties } from "react";
 import { ActivityChart } from "@/components/activity-chart";
 import { CalibrationInstrument } from "@/components/calibration-instrument";
 import { ConnectionStrip } from "@/components/connection-strip";
@@ -10,6 +11,7 @@ import { PageHeader } from "@/components/page-header";
 import { PersistedThroughput } from "@/components/persisted-throughput";
 import { formatUtc, relativeTime } from "@/lib/format";
 import type { ThroughputHistory } from "@/lib/metrics-snapshot";
+import { mergeActivityBuckets } from "@/lib/throughput-history";
 import type { CalibrationHealthResponse, TraceListItem } from "@/lib/trace-api";
 import { useMetricsSnapshot } from "@/lib/use-metrics-snapshot";
 import { useNow } from "@/lib/use-now";
@@ -47,24 +49,40 @@ export function LiveOperations({
   const bucket = snapshot?.throughput ?? null;
   const live = connectionState === "open" && bucket !== null && !bucket.stale;
 
+  // Stored buckets seed the chart and the received ones merge into the same
+  // series on window end. With no stored history this is the received buckets
+  // alone, exactly as the chart behaved before.
+  const activity = useMemo(
+    () => mergeActivityBuckets(history?.buckets ?? [], throughputHistory, live),
+    [history, throughputHistory, live],
+  );
+
+  // Each readout points at the chart that draws it. Average and p95 share the
+  // latency chart, so those two links land on the same figure.
   const readouts = [
     {
       label: "Throughput",
       value: fmt(bucket?.total_requests),
       unit: "requests",
       scope: "Gateway requests in the latest one-minute bucket",
+      target: "#activity-requests",
+      chart: "requests per bucket",
     },
     {
       label: "Average latency",
       value: fmt(bucket?.avg_latency_ms),
       unit: "ms",
       scope: "Mean request latency in the same bucket",
+      target: "#activity-latency",
+      chart: "latency per bucket",
     },
     {
       label: "p95 latency",
       value: fmt(bucket?.p95_latency_ms),
       unit: "ms",
       scope: "Approximate 95th percentile in the same bucket",
+      target: "#activity-latency",
+      chart: "latency per bucket",
     },
   ];
 
@@ -98,8 +116,31 @@ export function LiveOperations({
           </h2>
           <dl className="divide-border grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             {readouts.map((readout) => (
-              <div key={readout.label} className="px-6 py-7">
-                <dt className="text-text-secondary text-sm">{readout.label}</dt>
+              <div
+                key={readout.label}
+                className="row-reveal reveal-host group px-6 py-7"
+                style={
+                  {
+                    "--tone": bucket?.stale
+                      ? "var(--warning)"
+                      : "var(--signal)",
+                  } as CSSProperties
+                }
+              >
+                <dt className="text-text-secondary group-hover:text-text-primary text-sm transition-colors duration-[var(--dur-base)]">
+                  {/* The label is the link, and its overlay makes the whole
+                      cell the target. The dt is not transformed, so the
+                      overlay reaches the cell edges. */}
+                  <a
+                    href={readout.target}
+                    className="rounded-sm after:absolute after:inset-0 after:rounded-lg"
+                  >
+                    <span>{readout.label}</span>
+                    <span className="sr-only">
+                      , see {readout.chart} in the chart below
+                    </span>
+                  </a>
+                </dt>
                 <dd
                   className={`tabular-metric mt-2 text-6xl font-semibold tracking-tighter ${bucket?.stale ? "text-text-secondary" : "text-text-primary"}`}
                 >
@@ -110,8 +151,21 @@ export function LiveOperations({
                     </span>
                   ) : null}
                 </dd>
-                <dd className="text-text-tertiary mt-2 text-sm leading-snug">
+                <dd className="text-text-tertiary group-hover:text-text-secondary mt-2 text-sm leading-snug transition-colors duration-[var(--dur-base)]">
                   {readout.scope}
+                </dd>
+                <dd className="reveal-on-hover mt-3 text-sm leading-snug">
+                  {bucket?.window_start && bucket.window_end ? (
+                    <span className="text-text-tertiary block">
+                      Bucket {formatUtc(bucket.window_start)} to{" "}
+                      {formatUtc(bucket.window_end)}
+                      {bucket.stale ? ", stale" : ""}
+                    </span>
+                  ) : null}
+                  <span className="text-accent nudge inline-flex min-h-6 items-center gap-1.5 font-medium">
+                    See {readout.chart}
+                    <span aria-hidden="true">↓</span>
+                  </span>
                 </dd>
               </div>
             ))}
@@ -141,9 +195,9 @@ export function LiveOperations({
           </p>
         </section>
 
-        <div className="mt-16">
+        <InView className="mt-16">
           <EvalTelemetry snapshot={snapshot} />
-        </div>
+        </InView>
 
         <section
           aria-labelledby="chart-heading"
@@ -153,12 +207,14 @@ export function LiveOperations({
             id="chart-heading"
             className="text-text-primary text-2xl font-semibold tracking-tight"
           >
-            Request activity as it arrives
+            Request buckets, last hour
           </h2>
           <p className="text-text-secondary mt-2 mb-6 max-w-2xl text-base leading-relaxed">
-            Buckets that arrived over the stream while this page has been open.
+            The last hour of one-minute buckets. Stored buckets are read from
+            the metrics view, and the newest turns live while the stream is open
+            and that bucket is fresh.
           </p>
-          <ActivityChart history={throughputHistory} live={live} />
+          <ActivityChart buckets={activity} />
         </section>
 
         <section

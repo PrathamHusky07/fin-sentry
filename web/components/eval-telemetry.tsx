@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { formatUtc } from "@/lib/format";
 import type { MetricsSnapshot } from "@/lib/metrics-snapshot";
 
@@ -46,7 +46,7 @@ function Row({
       <div className="flex items-baseline justify-between gap-4">
         <dt className="text-text-secondary text-sm">{label}</dt>
         <dd
-          className={`tabular-metric text-xl font-medium ${stale ? "text-text-secondary" : "text-text-primary"}`}
+          className={`tabular-metric text-xl font-semibold ${stale ? "text-text-secondary" : "text-text-primary"}`}
         >
           {value ?? "no data"}
           {value && unit ? (
@@ -63,22 +63,46 @@ function Row({
   );
 }
 
+/** The color a card carries is what it measures, not how it is doing: the
+ * flash judge is accent, usage is info and the frontier tier is the
+ * disagreement hue, matching the Overview. A stale card trades its tone for
+ * warning, so staleness reads before the numbers do. */
+type GroupTone = "accent" | "info" | "disagreement";
+
 function Group({
   title,
   scope,
   stale,
+  tone,
+  index,
   children,
 }: {
   title: string;
   scope: string;
   stale: boolean | null;
+  tone: GroupTone;
+  /** Position in the row, for the entrance stagger. */
+  index: number;
   children: ReactNode;
 }) {
   return (
     <section
       aria-label={title}
-      className="border-line bg-background-elevated/70 hover:border-line-hover rounded-xl border p-5 transition-colors duration-[var(--dur-base)]"
+      data-stale={stale ? "true" : "false"}
+      className="instrument enter-up group bg-background-elevated/70 rounded-xl p-5"
+      style={
+        {
+          "--tone": stale ? "var(--warning)" : `var(--${tone})`,
+          "--lift": "2px",
+          "--grow": 1,
+          "--i": index,
+        } as CSSProperties
+      }
     >
+      <span
+        aria-hidden="true"
+        className={`absolute inset-x-5 top-0 h-0.5 origin-left scale-x-[0.14] rounded-full bg-[var(--tone)] transition-[transform,opacity] duration-[var(--dur-base)] ease-[var(--ease)] group-focus-within:scale-x-100 group-hover:scale-x-100 ${stale ? "opacity-50" : "opacity-80 group-hover:opacity-100"}`}
+      />
       <h3 className="text-text-primary text-base font-semibold">{title}</h3>
       <p className="text-text-tertiary mt-1 text-sm leading-snug">
         {scope}
@@ -165,6 +189,8 @@ export function EvalTelemetry({
           title="Flash judge, faithfulness"
           scope={scopeLine(faith?.window_end)}
           stale={faith?.stale ?? null}
+          tone="accent"
+          index={0}
         >
           <Row
             label="Verdicts"
@@ -193,6 +219,8 @@ export function EvalTelemetry({
           title="Flash judge, relevance"
           scope={scopeLine(rel?.window_end)}
           stale={rel?.stale ?? null}
+          tone="accent"
+          index={1}
         >
           <Row
             label="Verdicts"
@@ -215,6 +243,8 @@ export function EvalTelemetry({
           title="Judge usage"
           scope={scopeLine(tokens?.window_end)}
           stale={tokens?.stale ?? null}
+          tone="info"
+          index={2}
         >
           <Row
             label="Judge tokens"
@@ -243,6 +273,8 @@ export function EvalTelemetry({
               : "Summed over the window, no bucket in range"
           }
           stale={frontier?.stale ?? null}
+          tone="disagreement"
+          index={3}
         >
           <Row
             label="Verdicts"

@@ -174,9 +174,13 @@ export function SystemState({
       className="grid gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]"
     >
       <div
-        className="state-field self-center"
+        className="state-field group self-center"
         style={{ "--field": TONE_VAR[tone] } as CSSProperties}
       >
+        <span
+          aria-hidden="true"
+          className="absolute top-1 -left-3 bottom-1 w-0.5 origin-center scale-y-[0.35] rounded-full bg-[var(--field)] opacity-55 transition-[transform,opacity] duration-[var(--dur-base)] ease-[var(--ease)] group-focus-within:scale-y-100 group-focus-within:opacity-100 group-hover:scale-y-100 group-hover:opacity-100"
+        />
         <p
           className={`flex items-center gap-2 text-sm font-medium ${TONE_TEXT[tone]}`}
         >
@@ -184,53 +188,120 @@ export function SystemState({
           System state
         </p>
         <p
-          className={`tabular-metric mt-4 leading-[0.95] font-semibold tracking-tighter ${figureSize(figure)} ${TONE_TEXT[tone]}`}
+          className={`tabular-metric mt-4 origin-left leading-[0.95] font-semibold tracking-tighter transition-transform duration-[var(--dur-slow)] ease-[var(--ease)] motion-safe:group-hover:scale-[1.02] ${figureSize(figure)} ${TONE_TEXT[tone]}`}
         >
           {figure}
         </p>
         <p className="text-text-secondary mt-3 text-base">{figureNote}</p>
-        <h2 className="text-text-primary mt-8 max-w-xl text-2xl leading-tight font-semibold tracking-tight text-balance sm:text-3xl">
+        <span
+          aria-hidden="true"
+          className="mt-7 block h-0.5 w-10 origin-left rounded-full bg-[var(--field)] opacity-70 transition-transform duration-[var(--dur-base)] ease-[var(--ease)] group-hover:scale-x-[2.4]"
+        />
+        <h2 className="text-text-primary mt-6 max-w-xl text-2xl leading-tight font-semibold tracking-tight text-balance sm:text-3xl">
           {headline}
         </h2>
         <p className="text-text-secondary mt-4 max-w-xl text-base leading-relaxed">
           {subline}
         </p>
+        {overview && items.length > 0 ? (
+          <Link
+            href={items[0].href}
+            className="reveal-host text-accent hover:text-text-primary mt-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium transition-colors duration-[var(--dur-base)]"
+          >
+            {items[0].cta}
+            <span aria-hidden="true" className="nudge inline-block">
+              →
+            </span>
+          </Link>
+        ) : null}
       </div>
 
       <div className="space-y-4 self-center">
         <CalibrationSummary calibration={calibration} />
-        <dl className="border-line grid grid-cols-2 gap-x-6 rounded-xl border px-6 py-5">
-          <div>
+        <dl className="border-line grid grid-cols-2 gap-x-3 rounded-xl border px-3 py-3 sm:px-4">
+          <div
+            className="row-reveal reveal-host rounded-lg px-3 py-2.5"
+            style={{ "--tone": "var(--positive)" } as CSSProperties}
+          >
             <dt className="text-text-secondary text-sm">
-              <Tip definition="Delivered answers that have a complete or partial flash verdict, out of every delivered answer. Completion says nothing about whether the answers were right.">
+              <Tip
+                className="relative z-10"
+                definition="Delivered answers that have a complete or partial flash verdict, out of every delivered answer. Completion says nothing about whether the answers were right."
+              >
                 Delivered answers judged
               </Tip>
             </dt>
             <dd className="tabular-metric text-text-primary mt-1 text-2xl font-semibold">
-              {overview
-                ? `${overview.flow.deliveredComplete + overview.flow.deliveredPartial} of ${overview.flow.delivered}`
-                : "not available"}
+              {overview ? (
+                <Link
+                  href="#coverage-heading"
+                  className="rounded-sm after:absolute after:inset-0 after:rounded-lg"
+                >
+                  <span>{`${overview.flow.deliveredComplete + overview.flow.deliveredPartial} of ${overview.flow.delivered}`}</span>
+                  <span className="sr-only">
+                    , see evaluation coverage below
+                  </span>
+                </Link>
+              ) : (
+                "not available"
+              )}
             </dd>
             <dd className="text-text-tertiary mt-0.5 text-xs">
               complete or partial flash verdict
             </dd>
+            {overview ? (
+              <dd
+                aria-hidden="true"
+                className="reveal-on-hover text-accent mt-1.5 text-xs font-medium"
+              >
+                See evaluation coverage ↓
+              </dd>
+            ) : null}
           </div>
-          <div>
+          <div
+            className="row-reveal reveal-host rounded-lg px-3 py-2.5"
+            style={{ "--tone": "var(--disagreement)" } as CSSProperties}
+          >
             <dt className="text-text-secondary text-sm">
-              <Tip definition="Executions where the flash and frontier faithfulness scores differ by 0.5 or more. Only sampled answers have a frontier score.">
+              <Tip
+                className="relative z-10"
+                definition="Executions where the flash and frontier faithfulness scores differ by 0.5 or more. Only sampled answers have a frontier score."
+              >
                 Judge tiers in disagreement
               </Tip>
             </dt>
             <dd className="tabular-metric text-disagreement mt-1 text-2xl font-semibold">
-              {overview
-                ? `${overview.disagreementTraces.length}${overview.disagreementIsWindow ? "+" : ""}`
-                : "not available"}
+              {overview ? (
+                overview.disagreementTraces.length > 0 ? (
+                  <Link
+                    href="/investigations?disagreement=true"
+                    className="rounded-sm after:absolute after:inset-0 after:rounded-lg"
+                  >
+                    <span>{`${overview.disagreementTraces.length}${overview.disagreementIsWindow ? "+" : ""}`}</span>
+                    <span className="sr-only">
+                      , open these executions in Investigations
+                    </span>
+                  </Link>
+                ) : (
+                  `0${overview.disagreementIsWindow ? "+" : ""}`
+                )
+              ) : (
+                "not available"
+              )}
             </dd>
             <dd className="text-text-tertiary mt-0.5 text-xs">
               {overview?.disagreementIsWindow
                 ? "scores 0.5 apart or more, the query hit its limit"
                 : "scores 0.5 apart or more"}
             </dd>
+            {overview && overview.disagreementTraces.length > 0 ? (
+              <dd
+                aria-hidden="true"
+                className="reveal-on-hover text-accent mt-1.5 text-xs font-medium"
+              >
+                Open these executions →
+              </dd>
+            ) : null}
           </div>
         </dl>
       </div>

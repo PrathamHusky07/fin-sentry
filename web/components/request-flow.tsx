@@ -423,8 +423,13 @@ export function RequestFlow({
                 />
                 <span className="text-text-secondary">{s.label}</span>
               </span>
-              <span className="tabular-metric text-text-primary text-base">
-                {s.count}
+              <span className="flex items-baseline gap-3">
+                <span className="reveal-on-hover tabular-metric text-text-tertiary text-sm">
+                  {percent(s.count, stageTotal(s))} of {stageTotal(s)}
+                </span>
+                <span className="tabular-metric text-text-primary text-base">
+                  {s.count}
+                </span>
               </span>
             </Link>
           </li>
