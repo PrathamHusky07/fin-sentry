@@ -86,6 +86,21 @@ async def test_fetch_trace_list_search_and_filter_params_execute_against_real_ri
         assert len(rows) > 0, "snapshot assertion: expected at least one evaluated trace today"
         assert all(r["judge_state"] == "evaluated" for r in rows)
 
+        # Every public judge_state filter must plan and execute in RisingWave and return
+        # only rows the classifier labels with that same state.
+        for state in (
+            "never_evaluated",
+            "evaluated",
+            "partially_evaluated",
+            "blocked_before_evaluation",
+            "judge_failed",
+        ):
+            rows = await _fetch_trace_list(
+                limit=5, offset=0, ticker=None, rag_status=None, judge_state=state
+            )
+            assert _dao.last_query_failed is False, state
+            assert all(r["judge_state"] == state for r in rows), state
+
         rows = await _fetch_trace_list(
             limit=5, offset=0, ticker=None, rag_status=None, frontier_sampled=True
         )

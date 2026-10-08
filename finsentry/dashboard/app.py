@@ -438,14 +438,15 @@ _REAL_FRONTIER_JUDGE_ID: Literal["gemini-rubric"] = "gemini-rubric"
 
 
 def _classify_judge_state(judge_status: str | None, rag_status: str) -> JudgeState:
+    if rag_status != "success":
+        # RAG delivery status is the first discriminator. Blocked or errored means no
+        # answer was delivered, so there was nothing to judge, whatever the verdict row
+        # says (a stray complete/partial/failed row included). Never a judge error.
+        return "blocked_before_evaluation"
     if judge_status == "complete":
         return "evaluated"
     if judge_status == "partial":
         return "partially_evaluated"
-    if rag_status != "success":
-        # Blocked or errored: no answer was delivered, so there was nothing to judge,
-        # whether or not a failed verdict row exists. Never a judge error.
-        return "blocked_before_evaluation"
     if judge_status is None:
         return "never_evaluated"
     # judge_status == "failed" (or any other unrecognized status) on a delivered
@@ -458,13 +459,13 @@ def _classify_judge_state(judge_status: str | None, rag_status: str) -> JudgeSta
 # judge_verdicts.status / rag_events.status condition _classify_judge_state
 # derives it from -- the dashboard never stores judge_state itself.
 _JUDGE_STATE_TO_STATUS_SQL: dict[str, str] = {
-    "never_evaluated": "j.status IS NULL AND r.status = 'success'",
-    "evaluated": "j.status = 'complete'",
-    "partially_evaluated": "j.status = 'partial'",
-    "blocked_before_evaluation": (
-        "r.status != 'success' AND (j.status IS NULL OR j.status = 'failed')"
+    "never_evaluated": "r.status = 'success' AND j.status IS NULL",
+    "evaluated": "r.status = 'success' AND j.status = 'complete'",
+    "partially_evaluated": "r.status = 'success' AND j.status = 'partial'",
+    "blocked_before_evaluation": "r.status != 'success'",
+    "judge_failed": (
+        "r.status = 'success' AND j.status IS NOT NULL AND j.status NOT IN ('complete', 'partial')"
     ),
-    "judge_failed": "j.status = 'failed' AND r.status = 'success'",
 }
 
 

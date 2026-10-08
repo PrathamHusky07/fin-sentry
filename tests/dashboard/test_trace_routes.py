@@ -489,6 +489,14 @@ async def test_fetch_disagreement_trace_ids_flags_real_cross_tier_disagreement()
         # verdict row exists. This is never never_evaluated and never judge_failed.
         ("blocked", None, "blocked_before_evaluation"),
         ("error", None, "blocked_before_evaluation"),
+        # Contradictory rows: a verdict exists for a request that delivered no answer.
+        # RAG delivery status is the first discriminator, so these never read as
+        # evaluated or partially_evaluated.
+        ("blocked", "complete", "blocked_before_evaluation"),
+        ("blocked", "partial", "blocked_before_evaluation"),
+        ("error", "complete", "blocked_before_evaluation"),
+        ("error", "partial", "blocked_before_evaluation"),
+        ("success", "some-unrecognized-status", "judge_failed"),
     ],
 )
 def test_judge_state_follows_rag_status_and_verdict(
@@ -500,7 +508,7 @@ def test_judge_state_follows_rag_status_and_verdict(
 
 
 @pytest.mark.parametrize("rag_status", ["blocked", "error"])
-@pytest.mark.parametrize("judge_status", ["failed", None])
+@pytest.mark.parametrize("judge_status", ["failed", None, "complete", "partial"])
 def test_a_request_that_produced_no_answer_is_never_judge_failed(
     rag_status: str, judge_status: str | None
 ) -> None:
@@ -533,9 +541,11 @@ async def test_traces_list_error_request_with_no_verdict_is_blocked_before_evalu
 @pytest.mark.parametrize(
     ("judge_state", "must_contain"),
     [
-        ("judge_failed", ["j.status = 'failed'", "r.status = 'success'"]),
+        ("judge_failed", ["j.status NOT IN ('complete', 'partial')", "r.status = 'success'"]),
         ("never_evaluated", ["j.status IS NULL", "r.status = 'success'"]),
-        ("blocked_before_evaluation", ["r.status != 'success'", "j.status IS NULL"]),
+        ("blocked_before_evaluation", ["r.status != 'success'"]),
+        ("evaluated", ["r.status = 'success'", "j.status = 'complete'"]),
+        ("partially_evaluated", ["r.status = 'success'", "j.status = 'partial'"]),
     ],
 )
 async def test_judge_state_filter_matches_the_classification(
@@ -555,6 +565,33 @@ async def test_judge_state_filter_matches_the_classification(
     assert resp.status_code == 200
     for fragment in must_contain:
         assert fragment in captured["sql"]
+
+
+def test_judge_state_sql_filter_selects_exactly_what_the_classifier_labels() -> None:
+    """The public judge_state filter and _classify_judge_state must agree on every
+    (rag_status, judge_status) pair, including contradictory and unrecognized ones.
+    Each filter predicate is plain SQL, so run it against the full grid in sqlite3."""
+    import sqlite3
+
+    from finsentry.dashboard.app import _JUDGE_STATE_TO_STATUS_SQL, _classify_judge_state
+
+    rag_statuses = ["success", "blocked", "error"]
+    judge_statuses: list[str | None] = [None, "complete", "partial", "failed", "unrecognized"]
+    grid = [(r, j) for r in rag_statuses for j in judge_statuses]
+
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE pair (rag TEXT, judge TEXT)")
+    con.executemany("INSERT INTO pair VALUES (?, ?)", grid)
+
+    selected_by: dict[tuple[str, str | None], list[str]] = {pair: [] for pair in grid}
+    for state, predicate in _JUDGE_STATE_TO_STATUS_SQL.items():
+        sql = predicate.replace("r.status", "pair.rag").replace("j.status", "pair.judge")
+        for rag, judge in con.execute(f"SELECT rag, judge FROM pair WHERE {sql}"):
+            selected_by[(rag, judge)].append(state)
+
+    for (rag, judge), states in selected_by.items():
+        expected = _classify_judge_state(judge, rag)  # type: ignore[arg-type]
+        assert states == [expected], (rag, judge, states, expected)
 
 
 def _rag_detail_row(status: str) -> dict[str, Any]:
