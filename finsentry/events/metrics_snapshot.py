@@ -124,3 +124,33 @@ class MetricsSnapshot(BaseModel):
     tokens: TokenUsageMetrics | None = None
     cost: JudgeCostMetrics | None = None
     frontier: FrontierMetrics | None = None
+
+
+class ThroughputBucket(BaseModel):
+    """One persisted one-minute row of mv_request_throughput_1m."""
+
+    window_start: datetime
+    window_end: datetime
+    total_requests: int
+    success_count: int
+    blocked_count: int
+    error_count: int
+    avg_latency_ms: float | None = None
+    p95_latency_ms: float | None = None
+
+
+class ThroughputHistory(BaseModel):
+    """The most recent persisted throughput buckets, oldest first.
+
+    Only minutes that had at least one request have a bucket, so consecutive
+    buckets can be far apart. Nothing is filled in or interpolated.
+    `window_start` and `window_end` span the returned buckets and are None when
+    there are none. `generated_at` is when the rows were read, so a reader can
+    tell how old the history is."""
+
+    generated_at: datetime
+    risingwave_connected: bool
+    limit: int
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    buckets: list[ThroughputBucket]

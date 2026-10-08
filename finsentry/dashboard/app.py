@@ -14,6 +14,7 @@ Routes:
     GET /metrics           -> JSON payload (same data, machine-readable)
     GET /metrics/frontier  -> JSON frontier-tier verdict/disagreement counts (last 15m)
     GET /metrics/snapshot  -> typed MetricsSnapshot (internal contract for the gateway)
+    GET /metrics/throughput/history -> the latest persisted one-minute throughput buckets
     GET /health            -> {"status": "ok"}
     GET /backlog           -> JSON consumer lag report
 
@@ -34,7 +35,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from finsentry.consumer.lag_monitor import (
@@ -48,6 +49,8 @@ from finsentry.events.metrics_snapshot import (
     JudgeCostMetrics,
     MetricsSnapshot,
     RelevanceMetrics,
+    ThroughputBucket,
+    ThroughputHistory,
     ThroughputMetrics,
     TokenUsageMetrics,
     is_stale,
@@ -62,7 +65,7 @@ from finsentry.events.trace_api import (
     TraceListItem,
     TraceListResponse,
 )
-from finsentry.mcp._util import validate_limit
+from finsentry.mcp._util import MAX_LIMIT, validate_limit
 from finsentry.mcp.tools.drift import get_drift_report
 from finsentry.risingwave.dao import RisingWavePool
 
@@ -392,6 +395,35 @@ async def metrics_snapshot() -> MetricsSnapshot:
     """Internal contract for the gateway's SSE poller (Option C) -- not a
     public-facing route. See finsentry/events/metrics_snapshot.py."""
     return await _build_snapshot()
+
+
+@app.get("/metrics/throughput/history", response_model=ThroughputHistory)
+async def throughput_history(limit: int = Query(60, ge=1, le=MAX_LIMIT)) -> ThroughputHistory:
+    """The latest `limit` persisted rows of mv_request_throughput_1m, oldest
+    first. Read-only. Returns only buckets that exist: a minute with no
+    requests has no row, and nothing is filled in. Internal contract for the
+    gateway's /ops/metrics/throughput/history proxy."""
+    # LIMIT must be a const expression in RisingWave's streaming query planner,
+    # so it is inlined. `limit` is int-typed and range-checked by Query above.
+    rows = await _fetch_all(
+        f"""
+        SELECT window_start, window_end, total_requests, success_count, blocked_count,
+               error_count, ROUND(avg_latency_ms::numeric, 1) AS avg_latency_ms,
+               ROUND(p95_latency_ms::numeric, 1) AS p95_latency_ms
+        FROM mv_request_throughput_1m
+        ORDER BY window_start DESC
+        LIMIT {int(limit)}
+        """
+    )
+    buckets = [ThroughputBucket(**row) for row in reversed(rows)]
+    return ThroughputHistory(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        risingwave_connected=_dao.connected,
+        limit=limit,
+        window_start=buckets[0].window_start if buckets else None,
+        window_end=buckets[-1].window_end if buckets else None,
+        buckets=buckets,
+    )
 
 
 # ---------------------------------------------------------------------------

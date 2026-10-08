@@ -15,7 +15,7 @@ from typing import Any, Literal, cast
 import httpx
 import psycopg
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry.trace import StatusCode
@@ -28,7 +28,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from finsentry.events.metrics_snapshot import MetricsSnapshot
+from finsentry.events.metrics_snapshot import MetricsSnapshot, ThroughputHistory
 from finsentry.events.producer import RagEventProducer
 from finsentry.events.schema import RagResponseEvent
 from finsentry.events.trace_api import (
@@ -39,6 +39,7 @@ from finsentry.events.trace_api import (
 from finsentry.gateway.circuit_breaker import AsyncCircuitBreaker
 from finsentry.gateway.metrics_client import (
     fetch_calibration_health,
+    fetch_throughput_history,
     fetch_trace_detail,
     fetch_trace_list,
 )
@@ -373,6 +374,19 @@ async def ops_trace_detail(app_trace_id: str) -> TraceDetailResponse:
         return await fetch_trace_detail(_metrics_http_client, app_trace_id)
     except httpx.HTTPError:
         log.warning("dashboard /traces/%s unreachable", app_trace_id, exc_info=True)
+        return JSONResponse({"error": "metrics service unreachable"}, status_code=503)  # type: ignore[return-value]
+
+
+@app.get("/ops/metrics/throughput/history", response_model=ThroughputHistory)
+async def ops_throughput_history(limit: int = Query(60, ge=1, le=500)) -> ThroughputHistory:
+    """Persisted one-minute throughput buckets, oldest first. A read-only proxy
+    to the dashboard, like the trace routes above."""
+    if _metrics_http_client is None:
+        return JSONResponse({"error": "metrics client not initialised"}, status_code=503)  # type: ignore[return-value]
+    try:
+        return await fetch_throughput_history(_metrics_http_client, limit)
+    except httpx.HTTPError:
+        log.warning("dashboard /metrics/throughput/history unreachable", exc_info=True)
         return JSONResponse({"error": "metrics service unreachable"}, status_code=503)  # type: ignore[return-value]
 
 

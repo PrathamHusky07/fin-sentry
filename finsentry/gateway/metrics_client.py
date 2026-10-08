@@ -17,7 +17,7 @@ import os
 
 import httpx
 
-from finsentry.events.metrics_snapshot import MetricsSnapshot
+from finsentry.events.metrics_snapshot import MetricsSnapshot, ThroughputHistory
 from finsentry.events.trace_api import (
     CalibrationHealthResponse,
     TraceDetailResponse,
@@ -92,3 +92,17 @@ async def fetch_calibration_health(
     resp = await client.get(f"{METRICS_SERVICE_URL}/calibration/health", timeout=timeout)
     resp.raise_for_status()
     return CalibrationHealthResponse.model_validate(resp.json())
+
+
+async def fetch_throughput_history(
+    client: httpx.AsyncClient, limit: int, timeout: float = 5.0
+) -> ThroughputHistory:
+    """Fetch the latest persisted throughput buckets from the dashboard's
+    /metrics/throughput/history route. Raises httpx.HTTPError on any failure."""
+    resp = await client.get(
+        f"{METRICS_SERVICE_URL}/metrics/throughput/history",
+        params={"limit": limit},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return ThroughputHistory.model_validate(resp.json())
