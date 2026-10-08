@@ -11,6 +11,7 @@ from finsentry.rails.output.cost_governance import (
     _INPUT_USD_PER_M_TOKENS,
     _OUTPUT_USD_PER_M_TOKENS,
     CostBudget,
+    RequestCostBudget,
 )
 from finsentry.rails.output.faithfulness import FaithfulnessRail
 
@@ -73,6 +74,48 @@ def test_can_proceed_returns_ok_when_under_all_ceilings() -> None:
     assert reason == "ok"
 
 
+def test_request_budget_reports_only_its_own_calls_and_charges_the_ledger() -> None:
+    ledger = CostBudget()
+    first = RequestCostBudget(ledger)
+    second = RequestCostBudget(ledger)
+    first.record_call(1_000, 100, 0)
+    second.record_call(200, 50, 10)
+
+    assert first.report()["call_count"] == 1
+    assert second.report()["call_count"] == 1
+    assert second.report()["prompt_tokens_total"] == 200
+    assert ledger.report()["call_count"] == 2
+    assert ledger.report()["prompt_tokens_total"] == 1_200
+    assert ledger.report()["thoughts_tokens_total"] == 10
+    assert ledger.report()["run_total_usd"] == pytest.approx(
+        first.report()["run_total_usd"] + second.report()["run_total_usd"], abs=1e-6
+    )
+
+
+def test_request_budget_consults_the_ledger_for_cumulative_ceilings() -> None:
+    ledger = CostBudget(per_run_ceiling_usd=0.01, per_day_ceiling_usd=100.0)
+    ledger.record_call(20_000, 0, 0)  # $0.015, already over the run ceiling
+
+    allowed, reason = RequestCostBudget(ledger).can_proceed(0.001)
+    assert (allowed, reason) == (False, "per_run_ceiling_exceeded")
+
+    day_ledger = CostBudget(per_run_ceiling_usd=100.0, per_day_ceiling_usd=0.01)
+    day_ledger.record_call(20_000, 0, 0)
+    assert RequestCostBudget(day_ledger).can_proceed(0.001) == (False, "per_day_ceiling_exceeded")
+
+
+def test_request_budget_keeps_its_own_per_call_and_request_ceilings() -> None:
+    ledger = CostBudget()
+    assert RequestCostBudget(ledger, per_call_ceiling_usd=0.01).can_proceed(0.02) == (
+        False,
+        "per_call_ceiling_exceeded",
+    )
+    request = RequestCostBudget(ledger, per_run_ceiling_usd=0.001)
+    request.record_call(10_000, 0, 0)
+    assert request.can_proceed(0.001) == (False, "per_run_ceiling_exceeded")
+    assert ledger.can_proceed(0.001) == (True, "ok")  # the ledger itself still has room
+
+
 # ---------------------------------------------------------------------------
 # FaithfulnessRail integration tests for budget
 # ---------------------------------------------------------------------------
@@ -83,7 +126,7 @@ def _make_rail_with_tight_budget(
     per_run_usd: float = 5.0,
     per_day_usd: float = 25.0,
 ) -> FaithfulnessRail:
-    from finsentry.rails.output.cost_governance import CostBudget
+    from finsentry.rails.output.cost_governance import CostBudget, RequestCostBudget
 
     rail = FaithfulnessRail.__new__(FaithfulnessRail)
     rail._model_name = "gemini-3.6-flash"
@@ -92,7 +135,9 @@ def _make_rail_with_tight_budget(
     rail._enabled = True
     rail._mode = "developer"
     rail._client = MagicMock()
-    rail._budget_factory = lambda: CostBudget(
+    rail._ledger = CostBudget()
+    rail._budget_factory = lambda ledger: RequestCostBudget(
+        ledger,
         per_call_ceiling_usd=per_call_usd,
         per_run_ceiling_usd=per_run_usd,
         per_day_ceiling_usd=per_day_usd,

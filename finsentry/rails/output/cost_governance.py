@@ -9,9 +9,12 @@ Thinking tokens are billed at the output rate per Google Cloud Vertex AI pricing
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # gemini-3.6-flash Standard pricing through Dec 31, 2026
 # (from Google Cloud Vertex AI Agent Platform pricing page)
@@ -84,6 +87,10 @@ class CostBudget:
         """Check whether a call can proceed. Returns (allowed, reason)."""
         if projected_call_cost_usd > self._per_call:
             return False, "per_call_ceiling_exceeded"
+        return self.can_proceed_cumulative(projected_call_cost_usd)
+
+    def can_proceed_cumulative(self, projected_call_cost_usd: float = 0.0) -> tuple[bool, str]:
+        """The per-run and per-day check alone, without the per-call ceiling."""
         if self._run_total_usd + projected_call_cost_usd > self._per_run:
             return False, "per_run_ceiling_exceeded"
         if self._day_total_usd + projected_call_cost_usd > self._per_day:
@@ -119,3 +126,49 @@ class CostBudget:
                 "per_day_usd": self._per_day,
             },
         }
+
+
+class RequestCostBudget(CostBudget):
+    """One request's budget, charged against a shared process-local ledger.
+
+    Two kinds of accounting, kept apart on purpose:
+
+    - Request-local: this object's own totals. report() describes only this
+      request's calls, so a persisted cost report never includes another
+      request's spend.
+    - Process-local: the ledger, a plain CostBudget owned by the rail and shared
+      by every request in this process. can_proceed() also asks the ledger for its
+      cumulative per-run and per-day ceilings, so spend gates across requests, and
+      record_call() charges the ledger too. The per-call ceiling is a property of
+      one call and stays with the request.
+
+    The ledger lives in one process's memory. It resets on restart and is not
+    shared between gateway replicas, so N replicas can spend up to N times the
+    ceiling. A global ledger would need shared storage and is not built.
+    """
+
+    def __init__(
+        self,
+        ledger: CostBudget,
+        per_call_ceiling_usd: float = _PER_CALL_CEILING_USD,
+        per_run_ceiling_usd: float = _PER_RUN_CEILING_USD,
+        per_day_ceiling_usd: float = _PER_DAY_CEILING_USD,
+    ) -> None:
+        super().__init__(per_call_ceiling_usd, per_run_ceiling_usd, per_day_ceiling_usd)
+        self._ledger = ledger
+
+    def can_proceed(self, projected_call_cost_usd: float = 0.0) -> tuple[bool, str]:
+        allowed, reason = super().can_proceed(projected_call_cost_usd)
+        if not allowed:
+            return allowed, reason
+        allowed, reason = self._ledger.can_proceed_cumulative(projected_call_cost_usd)
+        if not allowed:
+            log.warning("Process cost ledger gated a call: %s %s", reason, self._ledger.report())
+        return allowed, reason
+
+    def record_call(
+        self, prompt_tokens: int, candidates_tokens: int, thoughts_tokens: int
+    ) -> CallRecord:
+        record = super().record_call(prompt_tokens, candidates_tokens, thoughts_tokens)
+        self._ledger.record_call(prompt_tokens, candidates_tokens, thoughts_tokens)
+        return record

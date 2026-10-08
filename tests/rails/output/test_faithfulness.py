@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from finsentry.rails.output.cost_governance import CostBudget, RequestCostBudget
 from finsentry.rails.output.faithfulness import (
     FaithfulnessRail,
     Mode,
@@ -34,6 +35,7 @@ def _make_rail(threshold: float = 0.7) -> FaithfulnessRail:
     rail._enabled = True
     rail._mode = "developer"
     rail._client = MagicMock()
+    rail._ledger = CostBudget()
     return rail
 
 
@@ -557,27 +559,106 @@ async def test_each_request_reports_only_its_own_cost() -> None:
     assert reports[1] == reports[0]
 
 
+_CLAIMS = json.dumps(["Revenue was $94.9B."])
+_VERDICT = json.dumps({"verdict": "yes", "rationale": "ok"})
+
+
+async def _check_with(
+    rail: FaithfulnessRail, responses: list[tuple[str, int, int, int]]
+) -> Any:
+    with patch.object(rail, "_generate", side_effect=_mock_generate(responses)):
+        return await rail.check("Revenue was $94.9B.", [_make_chunk("c1")])
+
+
+def _with_ledger(
+    rail: FaithfulnessRail,
+    ledger: CostBudget,
+    per_call_usd: float = 0.02,
+) -> None:
+    rail._ledger = ledger
+    rail._budget_factory = lambda shared: RequestCostBudget(
+        shared, per_call_ceiling_usd=per_call_usd
+    )
+
+
 @pytest.mark.asyncio
-async def test_one_requests_spend_does_not_gate_the_next() -> None:
-    """A request that runs a huge claim-extraction bill must not push the next
-    request into skipped_budget."""
+async def test_each_request_report_covers_only_its_own_calls() -> None:
     rail = _make_rail()
-    claims_response = json.dumps(["Revenue was $94.9B."])
-    verdict = json.dumps({"verdict": "yes", "rationale": "ok"})
-    huge_tokens = 2_000_000  # roughly $1.50 of input in one call
+    first = await _check_with(rail, [(_CLAIMS, 1_000, 30, 0), (_VERDICT, 50, 20, 0)])
+    second = await _check_with(rail, [(_CLAIMS, 100, 30, 0), (_VERDICT, 50, 20, 0)])
 
-    with patch.object(
-        rail,
-        "_generate",
-        side_effect=_mock_generate([(claims_response, huge_tokens, 30, 0), (verdict, 50, 20, 0)]),
-    ):
-        first = await rail.check("Revenue was $94.9B.", [_make_chunk("c1")])
-    with patch.object(
-        rail,
-        "_generate",
-        side_effect=_mock_generate([(claims_response, 100, 30, 0), (verdict, 50, 20, 0)]),
-    ):
-        second = await rail.check("Revenue was $94.9B.", [_make_chunk("c1")])
-
+    assert first.details["cost"]["call_count"] == 2
+    assert second.details["cost"]["call_count"] == 2
+    assert second.details["cost"]["prompt_tokens_total"] == 150
     assert first.details["cost"]["run_total_usd"] > second.details["cost"]["run_total_usd"]
     assert second.details["faithfulness_status"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_process_ledger_accumulates_spend_across_requests() -> None:
+    rail = _make_rail()
+    first = await _check_with(rail, [(_CLAIMS, 1_000, 30, 0), (_VERDICT, 50, 20, 0)])
+    second = await _check_with(rail, [(_CLAIMS, 100, 30, 0), (_VERDICT, 50, 20, 0)])
+
+    process = rail.process_cost_report()
+    assert process["call_count"] == 4
+    assert process["prompt_tokens_total"] == 1_000 + 50 + 100 + 50
+    assert process["run_total_usd"] == pytest.approx(
+        first.details["cost"]["run_total_usd"] + second.details["cost"]["run_total_usd"],
+        abs=1e-5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_cumulative_run_ceiling_gates_the_next_request_with_skipped_budget() -> None:
+    """One request pushes the process past the cumulative run ceiling. The next
+    request is then gated before it spends anything, and fails open like any other
+    budget skip."""
+    rail = _make_rail()
+    _with_ledger(rail, CostBudget(per_run_ceiling_usd=0.05), per_call_usd=1.0)
+
+    # About $0.075 of input in the first call, so the ledger is over 0.05 afterwards.
+    first = await _check_with(rail, [(_CLAIMS, 100_000, 30, 0), (_VERDICT, 100_000, 20, 0)])
+    assert first.details["faithfulness_status"] == "skipped_budget"
+    assert first.details["ceiling"] == "per_run_ceiling_exceeded"
+    spent_after_first = rail.process_cost_report()["run_total_usd"]
+
+    second = await _check_with(rail, [(_CLAIMS, 100, 30, 0), (_VERDICT, 50, 20, 0)])
+    assert second.outcome == "pass"  # fail-open, never a block
+    assert second.details["faithfulness_status"] == "skipped_budget"
+    assert second.details["ceiling"] == "per_run_ceiling_exceeded"
+    assert second.details["cost"]["call_count"] == 0  # gated before any call
+    assert rail.process_cost_report()["run_total_usd"] == spent_after_first
+
+
+@pytest.mark.asyncio
+async def test_cumulative_day_ceiling_gates_across_requests() -> None:
+    rail = _make_rail()
+    _with_ledger(rail, CostBudget(per_run_ceiling_usd=100.0, per_day_ceiling_usd=0.05), 1.0)
+
+    await _check_with(rail, [(_CLAIMS, 100_000, 30, 0), (_VERDICT, 100_000, 20, 0)])
+    second = await _check_with(rail, [(_CLAIMS, 100, 30, 0), (_VERDICT, 50, 20, 0)])
+
+    assert second.details["faithfulness_status"] == "skipped_budget"
+    assert second.details["ceiling"] == "per_day_ceiling_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_thinking_tokens_count_toward_the_process_ledger() -> None:
+    rail = _make_rail()
+    await _check_with(rail, [(_CLAIMS, 100, 30, 90), (_VERDICT, 50, 20, 45)])
+
+    assert rail.process_cost_report()["thoughts_tokens_total"] == 90 + 45
+
+
+@pytest.mark.asyncio
+async def test_per_call_ceiling_is_still_enforced_with_a_healthy_ledger() -> None:
+    rail = _make_rail()
+    _with_ledger(rail, CostBudget(), per_call_usd=0.001)
+
+    # The first call costs about $0.075, so the projection for the next call is over $0.001.
+    result = await _check_with(rail, [(_CLAIMS, 100_000, 30, 0), (_VERDICT, 50, 20, 0)])
+
+    assert result.details["faithfulness_status"] == "skipped_budget"
+    assert result.details["ceiling"] == "per_call_ceiling_exceeded"
+    assert result.details["cost"]["call_count"] == 1

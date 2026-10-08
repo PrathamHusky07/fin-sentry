@@ -50,7 +50,7 @@ from finsentry.judges.metrics.faithfulness_core import (
     _SkipError as _GeminiSkipError,
 )
 from finsentry.rails.base import RailDecision
-from finsentry.rails.output.cost_governance import CostBudget
+from finsentry.rails.output.cost_governance import CostBudget, RequestCostBudget
 
 Mode = Literal["vertex", "developer", "disabled"]
 
@@ -77,8 +77,9 @@ class FaithfulnessRail:
 
     name = "faithfulness"
     layer = "output"
-    # Builds the CostBudget for one request. Tests substitute tighter ceilings.
-    _budget_factory: Callable[[], CostBudget] = CostBudget
+    # Builds the CostBudget for one request from this rail's process-local ledger.
+    # Tests substitute tighter ceilings.
+    _budget_factory: Callable[[CostBudget], CostBudget] = RequestCostBudget
 
     def __init__(
         self,
@@ -93,6 +94,9 @@ class FaithfulnessRail:
         self._model_name = model_name
         self._threshold = threshold
         self._per_call_timeout = per_call_timeout_seconds
+        # Cumulative spend of this process, shared by every request. Process-local:
+        # it resets on restart and is not shared between gateway replicas.
+        self._ledger = CostBudget()
         self._mode = mode
         self._enabled = mode != "disabled"
         self._client: Any = None
@@ -119,15 +123,20 @@ class FaithfulnessRail:
             self._enabled = False
             self._mode = "disabled"
 
+    def process_cost_report(self) -> dict[str, Any]:
+        """Cumulative spend of this process across every request. Process-local."""
+        return self._ledger.report()
+
     async def check(
         self,
         answer_text: str,
         retrieved_chunks: list[Any],  # list[RetrievedChunk]; avoid circular import
         total_budget: float = _TOTAL_BUDGET,
     ) -> RailDecision:
-        # A fresh budget per request: each request's cost report covers only its own
-        # calls, and one request's spend never gates the next one.
-        budget = self._budget_factory()
+        # A fresh budget per request, so each request's cost report covers only its own
+        # calls. It is charged against the process-local ledger, which is what gates
+        # cumulative spend across requests.
+        budget = self._budget_factory(self._ledger)
         if not self._enabled:
             return self._to_rail_decision(
                 FaithfulnessResult(
