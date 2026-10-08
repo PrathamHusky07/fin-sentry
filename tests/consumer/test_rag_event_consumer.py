@@ -35,8 +35,12 @@ def _make_event(**overrides: Any) -> RagResponseEvent:
     return RagResponseEvent.model_validate(defaults)
 
 
-def _make_kafka_msg(payload: dict[str, Any] | bytes, offset: int = 0) -> MagicMock:
+def _make_kafka_msg(
+    payload: dict[str, Any] | bytes, offset: int = 0, partition: int = 0
+) -> MagicMock:
     msg = MagicMock()
+    msg.topic = "rag-responses"
+    msg.partition = partition
     if isinstance(payload, bytes):
         msg.value = payload
     else:
@@ -48,12 +52,15 @@ def _make_kafka_msg(payload: dict[str, Any] | bytes, offset: int = 0) -> MagicMo
 def _make_consumer(
     messages: list[MagicMock],
     max_concurrency: int = 5,
+    max_attempts: int = 3,
 ) -> RagEventConsumer:
     consumer = RagEventConsumer(
         bootstrap_servers="localhost:19092",
         topic="rag-responses",
         group_id="test-group",
         max_concurrency=max_concurrency,
+        max_attempts=max_attempts,
+        retry_delay_s=0,
     )
 
     fake_kafka = AsyncMock()
@@ -134,7 +141,7 @@ async def test_consumer_commits_after_each_message() -> None:
     async def _handler(ev: RagResponseEvent) -> None:
         call_log.append("handler")
 
-    msgs = [_make_kafka_msg(_make_event().model_dump()) for _ in range(3)]
+    msgs = [_make_kafka_msg(_make_event().model_dump(), offset=i) for i in range(3)]
     # max_concurrency=1 gives deterministic sequential ordering: handler then commit per message
     consumer = _make_consumer(msgs, max_concurrency=1)
 
@@ -241,9 +248,10 @@ async def test_consumer_bounded_concurrency_semaphore() -> None:
 
 @pytest.mark.anyio
 async def test_consumer_handler_exception_does_not_crash_consumer() -> None:
-    """A handler that raises must not propagate; subsequent messages are still processed."""
+    """A handler that raises must not propagate. The failed event is retried and the
+    next message is still processed."""
     events = [_make_event(), _make_event()]
-    msgs = [_make_kafka_msg(e.model_dump()) for e in events]
+    msgs = [_make_kafka_msg(e.model_dump(), offset=i) for i, e in enumerate(events)]
     received: list[str] = []
 
     call_count = 0
@@ -260,8 +268,8 @@ async def test_consumer_handler_exception_does_not_crash_consumer() -> None:
     await consumer.start()
     await consumer.run()
 
-    # Second event was processed despite first handler crash
-    assert len(received) == 1
+    # The first event failed once and was retried, so both were handled.
+    assert sorted(received) == sorted(e.event_id for e in events)
 
 
 @pytest.mark.anyio
@@ -344,7 +352,7 @@ async def test_consumer_stops_fetching_while_every_slot_is_busy() -> None:
 @pytest.mark.anyio
 async def test_consumer_releases_the_slot_when_the_handler_raises() -> None:
     messages = [_make_kafka_msg(_make_event().model_dump(), offset=i) for i in range(6)]
-    consumer = _make_consumer(messages, max_concurrency=1)
+    consumer = _make_consumer(messages, max_concurrency=1, max_attempts=1)
     seen = 0
 
     async def _failing_handler(ev: RagResponseEvent) -> None:
