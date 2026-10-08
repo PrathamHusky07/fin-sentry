@@ -1,0 +1,30 @@
+{
+  "captured_at_utc": "2026-10-08T19:03:13.926Z",
+  "note": "Frontier-related text lines read from the rendered trace drawer at /investigations?trace=<id> on the production build.",
+  "drawers": [
+    {
+      "phase": "injected",
+      "app_trace_id": "dd31d7cc-6620-4463-a053-744abed2da39",
+      "frontier_lines": [
+        "Frontier sampled",
+        "Point at a chunk to see how the answer and the frontier judge used it.",
+        "Frontier judge",
+        "frontier evaluated with no real judge recorded",
+        "Frontier judge",
+        "Sampled, but no real judge evidence is persisted",
+        "frontier evaluated with no real judge recorded"
+      ]
+    },
+    {
+      "phase": "recovered",
+      "app_trace_id": "157b5feb-1a7e-4803-bd20-88f12fc1da38",
+      "frontier_lines": [
+        "Frontier sampled",
+        "Point at a chunk to see how the answer and the frontier judge used it.",
+        "Frontier judge",
+        "Frontier reasoning, as persisted",
+        "Frontier judge"
+      ]
+    }
+  ]
+}

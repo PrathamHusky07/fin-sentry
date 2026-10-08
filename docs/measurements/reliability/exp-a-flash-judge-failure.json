@@ -1,0 +1,374 @@
+{
+  "experiment": "A",
+  "phases": [
+    {
+      "phase": "baseline",
+      "injection": "none: healthy stack, flash consumer on the default GEMINI_MODEL from .env",
+      "started_at_utc": "2026-10-08T18:54:47.559428+00:00",
+      "finished_at_utc": "2026-10-08T18:55:38.919819+00:00",
+      "requests": 2,
+      "delivered": 2,
+      "judge_state_counts": {
+        "evaluated": 2
+      },
+      "requests_detail": [
+        {
+          "ticker": "AAPL",
+          "query": "What was Apple's total net sales for fiscal year 2024?",
+          "sent_at_utc": "2026-10-08T18:54:47.582696+00:00",
+          "http_status": 200,
+          "client_latency_ms": 10182,
+          "app_trace_id": "8d03c4bf-c4d1-452a-be80-fad342554cdc",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "complete",
+                "faithfulness_status": "complete",
+                "answer_relevance_status": "complete",
+                "context_relevance_status": "complete",
+                "timestamp_utc": "2026-10-08T18:55:08.858525+00:00"
+              }
+            ],
+            "frontier_rows": [
+              {
+                "verdict": "ensemble_supported",
+                "disagreement_classification": "single_judge",
+                "timestamp_utc": "2026-10-08T18:55:01.849467+00:00"
+              }
+            ],
+            "frontier_deterministically_sampled": true
+          },
+          "public": {
+            "judge_state": "evaluated",
+            "frontier_sampled": true,
+            "frontier_note": "real gemini-rubric evidence for this trace",
+            "has_frontier_evidence": true
+          }
+        },
+        {
+          "ticker": "MSFT",
+          "query": "What was Microsoft's Intelligent Cloud segment revenue in its most recent 10-K filing?",
+          "sent_at_utc": "2026-10-08T18:54:57.765776+00:00",
+          "http_status": 200,
+          "client_latency_ms": 10843,
+          "app_trace_id": "222bc1cc-eb84-4933-9bb6-749b632caf06",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "complete",
+                "faithfulness_status": "complete",
+                "answer_relevance_status": "complete",
+                "context_relevance_status": "complete",
+                "timestamp_utc": "2026-10-08T18:55:22.617147+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "evaluated",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        }
+      ]
+    },
+    {
+      "phase": "injected",
+      "injection": "flash-judge consumer (python -m finsentry.consumer.main) restarted with GEMINI_MODEL=gemini-nonexistent-fault-injection; every Vertex call returns a real 404 from the API. Gateway, frontier consumer and all data untouched.",
+      "started_at_utc": "2026-10-08T18:55:59.932871+00:00",
+      "finished_at_utc": "2026-10-08T18:57:51.773238+00:00",
+      "requests": 5,
+      "delivered": 3,
+      "judge_state_counts": {
+        "blocked_before_evaluation": 2,
+        "judge_failed": 3
+      },
+      "requests_detail": [
+        {
+          "ticker": "NVDA",
+          "query": "What was NVIDIA's gross margin percentage in its most recent fiscal year 10-K filing?",
+          "sent_at_utc": "2026-10-08T18:55:59.953092+00:00",
+          "http_status": 422,
+          "client_latency_ms": 22766,
+          "app_trace_id": "d709dd6c-416b-48fc-a2cd-50b912684764",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "blocked",
+            "block_reason": "low_faithfulness",
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "failed",
+                "faithfulness_status": "skipped_non_success",
+                "answer_relevance_status": "skipped_non_success",
+                "context_relevance_status": "skipped_non_success",
+                "timestamp_utc": "2026-10-08T18:56:22.728834+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "blocked_before_evaluation",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        },
+        {
+          "ticker": "AMZN",
+          "query": "What was Amazon's total net sales for the quarter covered by its most recent 10-Q filing?",
+          "sent_at_utc": "2026-10-08T18:56:22.720087+00:00",
+          "http_status": 422,
+          "client_latency_ms": 24960,
+          "app_trace_id": "09c09ee1-e6b4-4571-be6a-937d5d4e1cbd",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "blocked",
+            "block_reason": "low_faithfulness",
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "failed",
+                "faithfulness_status": "skipped_non_success",
+                "answer_relevance_status": "skipped_non_success",
+                "context_relevance_status": "skipped_non_success",
+                "timestamp_utc": "2026-10-08T18:56:47.724794+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "blocked_before_evaluation",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        },
+        {
+          "ticker": "MSFT",
+          "query": "What was Microsoft's revenue for the quarter covered by its most recent 10-Q filing?",
+          "sent_at_utc": "2026-10-08T18:56:47.680566+00:00",
+          "http_status": 200,
+          "client_latency_ms": 9728,
+          "app_trace_id": "726e69ee-e783-48fc-b664-0bad4370a2d6",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "failed",
+                "faithfulness_status": "skipped_upstream_error",
+                "answer_relevance_status": "skipped_upstream_error",
+                "context_relevance_status": "skipped_upstream_error",
+                "timestamp_utc": "2026-10-08T18:56:59.298045+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "judge_failed",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        },
+        {
+          "ticker": "JPM",
+          "query": "What was JPMorgan Chase's return on tangible common equity (ROTCE) in its most recent fiscal year?",
+          "sent_at_utc": "2026-10-08T18:56:57.409104+00:00",
+          "http_status": 200,
+          "client_latency_ms": 13425,
+          "app_trace_id": "a0404aca-01ea-4e35-8645-ae1a8f107392",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "failed",
+                "faithfulness_status": "skipped_upstream_error",
+                "answer_relevance_status": "skipped_upstream_error",
+                "context_relevance_status": "skipped_upstream_error",
+                "timestamp_utc": "2026-10-08T18:57:11.055359+00:00"
+              }
+            ],
+            "frontier_rows": [
+              {
+                "verdict": "ensemble_refuted",
+                "disagreement_classification": "single_judge",
+                "timestamp_utc": "2026-10-08T18:57:17.246168+00:00"
+              }
+            ],
+            "frontier_deterministically_sampled": true
+          },
+          "public": {
+            "judge_state": "judge_failed",
+            "frontier_sampled": true,
+            "frontier_note": "real gemini-rubric evidence for this trace",
+            "has_frontier_evidence": true
+          }
+        },
+        {
+          "ticker": "JPM",
+          "query": "What was JPMorgan Chase's net income for the quarter covered by its most recent 10-Q filing?",
+          "sent_at_utc": "2026-10-08T18:57:10.834269+00:00",
+          "http_status": 200,
+          "client_latency_ms": 16376,
+          "app_trace_id": "514184b6-3e55-45a5-8e55-7d4d7a63f463",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "failed",
+                "faithfulness_status": "skipped_upstream_error",
+                "answer_relevance_status": "skipped_upstream_error",
+                "context_relevance_status": "skipped_upstream_error",
+                "timestamp_utc": "2026-10-08T18:57:27.497863+00:00"
+              }
+            ],
+            "frontier_rows": [
+              {
+                "verdict": "ensemble_supported",
+                "disagreement_classification": "single_judge",
+                "timestamp_utc": "2026-10-08T18:57:31.300281+00:00"
+              }
+            ],
+            "frontier_deterministically_sampled": true
+          },
+          "public": {
+            "judge_state": "judge_failed",
+            "frontier_sampled": true,
+            "frontier_note": "real gemini-rubric evidence for this trace",
+            "has_frontier_evidence": true
+          }
+        }
+      ]
+    },
+    {
+      "phase": "recovered",
+      "injection": "flash-judge consumer restarted with the default GEMINI_MODEL from .env (injection removed). The earlier failed traces were not replayed.",
+      "started_at_utc": "2026-10-08T18:58:15.698153+00:00",
+      "finished_at_utc": "2026-10-08T18:59:45.841874+00:00",
+      "requests": 3,
+      "delivered": 1,
+      "judge_state_counts": {
+        "blocked_before_evaluation": 2,
+        "evaluated": 1
+      },
+      "requests_detail": [
+        {
+          "ticker": "JPM",
+          "query": "How did JPMorgan Chase's provision for credit losses change between its most recent fiscal year and the prior fiscal year?",
+          "sent_at_utc": "2026-10-08T18:58:15.717287+00:00",
+          "http_status": 422,
+          "client_latency_ms": 27470,
+          "app_trace_id": "b0e16fef-aefa-4ea7-8ace-fc119ff4af8f",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "blocked",
+            "block_reason": "low_faithfulness",
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "failed",
+                "faithfulness_status": "skipped_non_success",
+                "answer_relevance_status": "skipped_non_success",
+                "context_relevance_status": "skipped_non_success",
+                "timestamp_utc": "2026-10-08T18:58:43.210555+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "blocked_before_evaluation",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        },
+        {
+          "ticker": "AMZN",
+          "query": "What risk factors does Amazon's most recent 10-K identify related to its fulfillment and logistics network?",
+          "sent_at_utc": "2026-10-08T18:58:43.193272+00:00",
+          "http_status": 422,
+          "client_latency_ms": 14586,
+          "app_trace_id": "aa11fe5f-c8ee-4ea4-acde-cd7003f1c3b9",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "blocked",
+            "block_reason": "schema_violation",
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "failed",
+                "faithfulness_status": "skipped_non_success",
+                "answer_relevance_status": "skipped_non_success",
+                "context_relevance_status": "skipped_non_success",
+                "timestamp_utc": "2026-10-08T18:58:57.790446+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "blocked_before_evaluation",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        },
+        {
+          "ticker": "JPM",
+          "query": "What was JPMorgan Chase's Consumer and Community Banking segment net income in its most recent 10-K filing?",
+          "sent_at_utc": "2026-10-08T18:58:57.780841+00:00",
+          "http_status": 200,
+          "client_latency_ms": 18405,
+          "app_trace_id": "925513d7-034a-4d95-a015-93c8c921253f",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "complete",
+                "faithfulness_status": "complete",
+                "answer_relevance_status": "complete",
+                "context_relevance_status": "complete",
+                "timestamp_utc": "2026-10-08T18:59:28.493417+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "evaluated",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        }
+      ]
+    }
+  ]
+}

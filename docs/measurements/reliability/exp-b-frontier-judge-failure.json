@@ -1,0 +1,152 @@
+{
+  "experiment": "B",
+  "phases": [
+    {
+      "phase": "injected",
+      "injection": "frontier consumer (python -m finsentry.consumer.frontier_consumer) restarted with GEMINI_MODEL=gemini-nonexistent-fault-injection. One constructed copy of real trace 8d03c4bf-c4d1-452a-be80-fad342554cdc published to rag-responses under a trace id whose real sampling hash was checked as sampled before sending.",
+      "started_at_utc": "2026-10-08T19:00:55.913786+00:00",
+      "finished_at_utc": "2026-10-08T19:01:26.363159+00:00",
+      "requests": 1,
+      "delivered": 1,
+      "judge_state_counts": {
+        "evaluated": 1
+      },
+      "requests_detail": [
+        {
+          "ticker": "AAPL",
+          "query": "[experiment candidate, copy of trace 8d03c4bf] What was Apple's total net sales for fiscal year 2024?",
+          "sent_at_utc": "2026-10-08T19:00:55.948192+00:00",
+          "http_status": null,
+          "source": "constructed copy of real trace 8d03c4bf-c4d1-452a-be80-fad342554cdc",
+          "sampling_hash_decision_before_send": true,
+          "app_trace_id": "dd31d7cc-6620-4463-a053-744abed2da39",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "complete",
+                "faithfulness_status": "complete",
+                "answer_relevance_status": "complete",
+                "context_relevance_status": "complete",
+                "timestamp_utc": "2026-10-08T19:01:08.010465+00:00"
+              }
+            ],
+            "frontier_rows": [
+              {
+                "verdict": "ensemble_insufficient",
+                "disagreement_classification": "all_unavailable",
+                "timestamp_utc": "2026-10-08T19:00:58.448061+00:00"
+              }
+            ],
+            "frontier_deterministically_sampled": true
+          },
+          "public": {
+            "judge_state": "evaluated",
+            "frontier_sampled": true,
+            "frontier_note": "frontier evaluated with no real judge recorded",
+            "has_frontier_evidence": false
+          }
+        }
+      ]
+    },
+    {
+      "phase": "injected-control-unsampled",
+      "injection": "same injected frontier consumer. Control: a constructed copy whose real sampling hash was checked as NOT sampled before sending.",
+      "started_at_utc": "2026-10-08T19:01:26.826502+00:00",
+      "finished_at_utc": "2026-10-08T19:01:57.150335+00:00",
+      "requests": 1,
+      "delivered": 1,
+      "judge_state_counts": {
+        "evaluated": 1
+      },
+      "requests_detail": [
+        {
+          "ticker": "AAPL",
+          "query": "[experiment candidate, copy of trace 8d03c4bf] What was Apple's total net sales for fiscal year 2024?",
+          "sent_at_utc": "2026-10-08T19:01:26.850430+00:00",
+          "http_status": null,
+          "source": "constructed copy of real trace 8d03c4bf-c4d1-452a-be80-fad342554cdc",
+          "sampling_hash_decision_before_send": false,
+          "app_trace_id": "03ec556e-bb4c-4807-ba55-dba3919ceef6",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "complete",
+                "faithfulness_status": "complete",
+                "answer_relevance_status": "complete",
+                "context_relevance_status": "complete",
+                "timestamp_utc": "2026-10-08T19:01:37.639058+00:00"
+              }
+            ],
+            "frontier_rows": [],
+            "frontier_deterministically_sampled": false
+          },
+          "public": {
+            "judge_state": "evaluated",
+            "frontier_sampled": false,
+            "frontier_note": "frontier not sampled for this trace",
+            "has_frontier_evidence": false
+          }
+        }
+      ]
+    },
+    {
+      "phase": "recovered",
+      "injection": "frontier consumer restarted with the default GEMINI_MODEL from .env (injection removed). One new constructed copy, sampling hash checked as sampled before sending. The earlier injected trace was not replayed.",
+      "started_at_utc": "2026-10-08T19:02:35.384334+00:00",
+      "finished_at_utc": "2026-10-08T19:03:06.352657+00:00",
+      "requests": 1,
+      "delivered": 1,
+      "judge_state_counts": {
+        "evaluated": 1
+      },
+      "requests_detail": [
+        {
+          "ticker": "AAPL",
+          "query": "[experiment candidate, copy of trace 8d03c4bf] What was Apple's total net sales for fiscal year 2024?",
+          "sent_at_utc": "2026-10-08T19:02:35.425002+00:00",
+          "http_status": null,
+          "source": "constructed copy of real trace 8d03c4bf-c4d1-452a-be80-fad342554cdc",
+          "sampling_hash_decision_before_send": true,
+          "app_trace_id": "157b5feb-1a7e-4803-bd20-88f12fc1da38",
+          "persisted": {
+            "rag_event_rows": 1,
+            "rag_status": "success",
+            "block_reason": null,
+            "error_kind": null,
+            "flash_verdict_rows": [
+              {
+                "status": "complete",
+                "faithfulness_status": "complete",
+                "answer_relevance_status": "complete",
+                "context_relevance_status": "complete",
+                "timestamp_utc": "2026-10-08T19:02:47.007606+00:00"
+              }
+            ],
+            "frontier_rows": [
+              {
+                "verdict": "ensemble_supported",
+                "disagreement_classification": "single_judge",
+                "timestamp_utc": "2026-10-08T19:02:40.050859+00:00"
+              }
+            ],
+            "frontier_deterministically_sampled": true
+          },
+          "public": {
+            "judge_state": "evaluated",
+            "frontier_sampled": true,
+            "frontier_note": "real gemini-rubric evidence for this trace",
+            "has_frontier_evidence": true
+          }
+        }
+      ]
+    }
+  ]
+}
