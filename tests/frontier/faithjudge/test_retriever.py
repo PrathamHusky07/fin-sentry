@@ -143,3 +143,36 @@ def test_retrieval_is_deterministic_on_a_fixed_index() -> None:
 
     assert first.peers == second.peers
     assert first.rejected == second.rejected
+
+
+def test_concurrent_retrievals_never_overlap_inside_the_embedding_model() -> None:
+    """The embedding model can live on a device that is not thread-safe, so the
+    retriever must run one encode at a time however many handlers call it."""
+    import threading
+    import time
+
+    retriever = _retriever()
+    state = {"active": 0, "peak": 0}
+    guard = threading.Lock()
+
+    def _slow_encode(*args: object, **kwargs: object) -> np.ndarray:
+        with guard:
+            state["active"] += 1
+            state["peak"] = max(state["peak"], state["active"])
+        time.sleep(0.05)
+        with guard:
+            state["active"] -= 1
+        return np.zeros((1, 384), dtype=np.float32)
+
+    retriever._embed_model.encode = _slow_encode
+
+    async def _run() -> None:
+        await asyncio.gather(*(retriever.retrieve(f"question {i}") for i in range(6)))
+
+    with patch(
+        "finsentry.frontier.faithjudge.retriever._retrieve_sync",
+        _patched_retrieve_sync([]),
+    ):
+        asyncio.run(_run())
+
+    assert state["peak"] == 1

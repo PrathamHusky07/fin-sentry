@@ -123,17 +123,21 @@ class FinanceBenchPeerRetriever:
         from sentence_transformers import SentenceTransformer
 
         self._embed_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+        # One encode at a time. The model may sit on the MPS device, and concurrent
+        # encodes from several handler threads segfault the process.
+        self._encode_lock = asyncio.Lock()
 
     async def retrieve(
         self, question: str, exclude_example_id: str | None = None
     ) -> PeerRetrievalResult:
         start = time.monotonic()
 
-        embedding: list[float] = (
-            await asyncio.to_thread(
-                lambda: self._embed_model.encode([question], show_progress_bar=False)
-            )
-        )[0].tolist()
+        async with self._encode_lock:
+            embedding: list[float] = (
+                await asyncio.to_thread(
+                    lambda: self._embed_model.encode([question], show_progress_bar=False)
+                )
+            )[0].tolist()
 
         candidates = await asyncio.to_thread(
             _retrieve_sync,
