@@ -27,8 +27,6 @@ def _make_chunk(chunk_id: str, text: str = "Revenue was $94.9B.") -> Any:
 
 
 def _make_rail(threshold: float = 0.7) -> FaithfulnessRail:
-    from finsentry.rails.output.cost_governance import CostBudget
-
     rail = FaithfulnessRail.__new__(FaithfulnessRail)
     rail._model_name = "gemini-3.6-flash"
     rail._threshold = threshold
@@ -36,7 +34,6 @@ def _make_rail(threshold: float = 0.7) -> FaithfulnessRail:
     rail._enabled = True
     rail._mode = "developer"
     rail._client = MagicMock()
-    rail._budget = CostBudget()
     return rail
 
 
@@ -539,3 +536,48 @@ async def test_faithfulness_handles_markdown_fenced_gemini_responses() -> None:
     assert decision.outcome == "pass"
     assert decision.details["score"] == 1.0
     assert decision.details["supported_claims"] == ["Revenue was $94.9B."]
+
+
+@pytest.mark.asyncio
+async def test_each_request_reports_only_its_own_cost() -> None:
+    """The cost report on a rail decision covers that request's calls, not the
+    process lifetime, so two identical requests report the same figures."""
+    rail = _make_rail()
+    claims_response = json.dumps(["Revenue was $94.9B."])
+    verdict = json.dumps({"verdict": "yes", "rationale": "context confirms"})
+    responses = [(claims_response, 100, 30, 20), (verdict, 50, 20, 10)]
+
+    reports = []
+    for _ in range(2):
+        with patch.object(rail, "_generate", side_effect=_mock_generate(list(responses))):
+            decision = await rail.check("Revenue was $94.9B.", [_make_chunk("c1")])
+        reports.append(decision.details["cost"])
+
+    assert reports[0]["call_count"] == 2
+    assert reports[1] == reports[0]
+
+
+@pytest.mark.asyncio
+async def test_one_requests_spend_does_not_gate_the_next() -> None:
+    """A request that runs a huge claim-extraction bill must not push the next
+    request into skipped_budget."""
+    rail = _make_rail()
+    claims_response = json.dumps(["Revenue was $94.9B."])
+    verdict = json.dumps({"verdict": "yes", "rationale": "ok"})
+    huge_tokens = 2_000_000  # roughly $1.50 of input in one call
+
+    with patch.object(
+        rail,
+        "_generate",
+        side_effect=_mock_generate([(claims_response, huge_tokens, 30, 0), (verdict, 50, 20, 0)]),
+    ):
+        first = await rail.check("Revenue was $94.9B.", [_make_chunk("c1")])
+    with patch.object(
+        rail,
+        "_generate",
+        side_effect=_mock_generate([(claims_response, 100, 30, 0), (verdict, 50, 20, 0)]),
+    ):
+        second = await rail.check("Revenue was $94.9B.", [_make_chunk("c1")])
+
+    assert first.details["cost"]["run_total_usd"] > second.details["cost"]["run_total_usd"]
+    assert second.details["faithfulness_status"] == "passed"

@@ -35,6 +35,7 @@ to RailDecision without duplicating the Es et al. logic.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any, Literal
 
 from finsentry.judges.metrics.faithfulness_core import (
@@ -76,6 +77,8 @@ class FaithfulnessRail:
 
     name = "faithfulness"
     layer = "output"
+    # Builds the CostBudget for one request. Tests substitute tighter ceilings.
+    _budget_factory: Callable[[], CostBudget] = CostBudget
 
     def __init__(
         self,
@@ -93,7 +96,6 @@ class FaithfulnessRail:
         self._mode = mode
         self._enabled = mode != "disabled"
         self._client: Any = None
-        self._budget = CostBudget()
         if not self._enabled:
             return
         from google import genai
@@ -123,6 +125,9 @@ class FaithfulnessRail:
         retrieved_chunks: list[Any],  # list[RetrievedChunk]; avoid circular import
         total_budget: float = _TOTAL_BUDGET,
     ) -> RailDecision:
+        # A fresh budget per request: each request's cost report covers only its own
+        # calls, and one request's spend never gates the next one.
+        budget = self._budget_factory()
         if not self._enabled:
             return self._to_rail_decision(
                 FaithfulnessResult(
@@ -134,7 +139,7 @@ class FaithfulnessRail:
                     total_output_tokens=0,
                     total_thoughts_tokens=0,
                     status="skipped_no_key",
-                    cost_report=self._budget.report(),
+                    cost_report=budget.report(),
                 )
             )
 
@@ -147,7 +152,7 @@ class FaithfulnessRail:
             answer_text=answer_text,
             chunk_texts=chunk_texts,
             generate_fn=self._generate,
-            cost_budget=self._budget,
+            cost_budget=budget,
             per_call_timeout=self._per_call_timeout,
             total_budget=total_budget,
         )

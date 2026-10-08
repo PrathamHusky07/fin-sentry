@@ -92,7 +92,7 @@ def _make_rail_with_tight_budget(
     rail._enabled = True
     rail._mode = "developer"
     rail._client = MagicMock()
-    rail._budget = CostBudget(
+    rail._budget_factory = lambda: CostBudget(
         per_call_ceiling_usd=per_call_usd,
         per_run_ceiling_usd=per_run_usd,
         per_day_ceiling_usd=per_day_usd,
