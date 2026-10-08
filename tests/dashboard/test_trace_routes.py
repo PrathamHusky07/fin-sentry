@@ -182,8 +182,8 @@ async def _dispatch_fetch_one(sql: str, params: tuple[Any, ...] = ()) -> dict[st
 
 @pytest.fixture(autouse=True)
 def _patch_fetch() -> Any:
-    p1 = patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_dispatch_fetch_all))
-    p2 = patch("finsentry.dashboard.app._fetch_one", AsyncMock(side_effect=_dispatch_fetch_one))
+    p1 = patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_dispatch_fetch_all))
+    p2 = patch("finsentry.dashboard.app._query_one", AsyncMock(side_effect=_dispatch_fetch_one))
     with p1, p2:
         yield
 
@@ -292,7 +292,7 @@ async def test_traces_list_judge_failed_on_successful_rag_classifies_as_judge_fa
         "judge_status": "failed",
     }
     with patch(
-        "finsentry.dashboard.app._fetch_all",
+        "finsentry.dashboard.app._query_all",
         AsyncMock(side_effect=lambda sql, params=(): [row] if "LEFT JOIN (" in sql else []),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -321,7 +321,7 @@ async def test_traces_list_unknown_judge_status_on_success_falls_back_to_judge_f
         "judge_status": "some_future_status",
     }
     with patch(
-        "finsentry.dashboard.app._fetch_all",
+        "finsentry.dashboard.app._query_all",
         AsyncMock(side_effect=lambda sql, params=(): [row] if "LEFT JOIN (" in sql else []),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -371,7 +371,7 @@ async def test_traces_list_q_param_adds_ilike_condition_on_query_and_trace_id() 
             return []
         return []
 
-    with patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_capture)):
+    with patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_capture)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/traces", params={"q": "amazon"})
 
@@ -389,7 +389,7 @@ async def test_traces_list_judge_state_param_filters_on_raw_status() -> None:
             return []
         return []
 
-    with patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_capture)):
+    with patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_capture)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/traces", params={"judge_state": "never_evaluated"})
 
@@ -406,7 +406,7 @@ async def test_traces_list_frontier_sampled_true_filters_to_sampled_ids() -> Non
             return [{"app_trace_id": "trace-evaluated"}]
         return []
 
-    with patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_dispatch)):
+    with patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_dispatch)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/traces", params={"frontier_sampled": "true"})
 
@@ -460,7 +460,7 @@ async def test_fetch_disagreement_trace_ids_flags_real_cross_tier_disagreement()
     async def _fetch_all_mock(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         return [agree_row, disagree_row, stub_only_row]
 
-    with patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_fetch_all_mock)):
+    with patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_fetch_all_mock)):
         result = await _fetch_disagreement_trace_ids()
 
     assert result == {"trace-disagree"}
@@ -529,7 +529,7 @@ async def test_traces_list_error_request_with_no_verdict_is_blocked_before_evalu
         "judge_status": None,
     }
     with patch(
-        "finsentry.dashboard.app._fetch_all",
+        "finsentry.dashboard.app._query_all",
         AsyncMock(side_effect=lambda sql, params=(): [row] if "LEFT JOIN (" in sql else []),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -558,7 +558,7 @@ async def test_judge_state_filter_matches_the_classification(
             captured["sql"] = sql
         return []
 
-    with patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_capture)):
+    with patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_capture)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/traces", params={"judge_state": judge_state})
 
@@ -654,8 +654,8 @@ async def test_trace_detail_and_list_agree_on_a_failed_verdict(
         return [list_row] if "LEFT JOIN (" in sql else []
 
     with (
-        patch("finsentry.dashboard.app._fetch_one", AsyncMock(side_effect=_one)),
-        patch("finsentry.dashboard.app._fetch_all", AsyncMock(side_effect=_all)),
+        patch("finsentry.dashboard.app._query_one", AsyncMock(side_effect=_one)),
+        patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_all)),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             detail = (await client.get("/traces/trace-x")).json()

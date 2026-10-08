@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from finsentry.risingwave.dao import RisingWavePool, risingwave_dsn
+import pytest
+
+from finsentry.risingwave.dao import (
+    RisingWavePool,
+    RisingWaveQueryError,
+    RisingWaveUnavailableError,
+    risingwave_dsn,
+)
 
 
 class _FakeCursor:
@@ -128,3 +135,28 @@ async def test_close_after_open_clears_connected_state() -> None:
 
     assert fake.closed is True
     assert not pool.connected
+
+
+async def test_query_methods_raise_on_an_unopened_pool() -> None:
+    pool = RisingWavePool()
+    with pytest.raises(RisingWaveUnavailableError):
+        await pool.query_one("SELECT 1")
+    with pytest.raises(RisingWaveUnavailableError):
+        await pool.query_all("SELECT 1")
+
+
+async def test_query_methods_raise_on_a_failed_query_without_leaking_its_text() -> None:
+    pool = RisingWavePool()
+    pool._pool = _FakePool(fail=True)
+    with pytest.raises(RisingWaveQueryError) as one:
+        await pool.query_one("SELECT 1")
+    with pytest.raises(RisingWaveQueryError) as many:
+        await pool.query_all("SELECT 1")
+    assert "simulated SQL error" not in str(one.value) + str(many.value)
+
+
+async def test_query_methods_return_empty_for_a_query_that_matched_nothing() -> None:
+    pool = RisingWavePool()
+    pool._pool = _FakePool(row=None, rows=[])
+    assert await pool.query_one("SELECT 1") is None
+    assert await pool.query_all("SELECT 1") == []

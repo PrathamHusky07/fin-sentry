@@ -31,7 +31,7 @@ def _row(minute: int, total: int = 1, errors: int = 0) -> dict[str, Any]:
 
 async def _get(rows: list[dict[str, Any]], **params: Any) -> Any:
     fetch = AsyncMock(return_value=rows)
-    with patch("finsentry.dashboard.app._fetch_all", fetch):
+    with patch("finsentry.dashboard.app._query_all", fetch):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/metrics/throughput/history", params=params)
     return resp, fetch

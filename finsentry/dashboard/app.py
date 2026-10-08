@@ -35,7 +35,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from finsentry.consumer.lag_monitor import (
@@ -67,7 +67,11 @@ from finsentry.events.trace_api import (
 )
 from finsentry.mcp._util import MAX_LIMIT, validate_limit
 from finsentry.mcp.tools.drift import get_drift_report
-from finsentry.risingwave.dao import RisingWavePool
+from finsentry.risingwave.dao import (
+    RisingWavePool,
+    RisingWaveQueryError,
+    RisingWaveUnavailableError,
+)
 
 load_dotenv()
 
@@ -126,6 +130,36 @@ async def _fetch_one(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] |
 
 async def _fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     return await _dao.fetch_all(sql, params)
+
+
+# The trace and throughput-history routes must not turn a failed query into an empty
+# result, because the UI reads empty as "nothing was persisted". Their helpers use
+# these raising variants, and the handlers below answer 503. A query that ran and
+# matched nothing still returns normally, as an empty 200.
+async def _query_one(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    return await _dao.query_one(sql, params)
+
+
+async def _query_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    return await _dao.query_all(sql, params)
+
+
+@app.exception_handler(RisingWaveUnavailableError)
+async def _risingwave_unavailable(
+    _request: Request, _exc: RisingWaveUnavailableError
+) -> JSONResponse:
+    return JSONResponse(
+        {"error": "risingwave_unavailable", "message": "RisingWave is not connected."},
+        status_code=503,
+    )
+
+
+@app.exception_handler(RisingWaveQueryError)
+async def _risingwave_query_failed(_request: Request, _exc: RisingWaveQueryError) -> JSONResponse:
+    return JSONResponse(
+        {"error": "risingwave_query_failed", "message": "A RisingWave query failed."},
+        status_code=503,
+    )
 
 
 async def _fetch_metrics() -> dict[str, Any]:
@@ -405,7 +439,7 @@ async def throughput_history(limit: int = Query(60, ge=1, le=MAX_LIMIT)) -> Thro
     gateway's /ops/metrics/throughput/history proxy."""
     # LIMIT must be a const expression in RisingWave's streaming query planner,
     # so it is inlined. `limit` is int-typed and range-checked by Query above.
-    rows = await _fetch_all(
+    rows = await _query_all(
         f"""
         SELECT window_start, window_end, total_requests, success_count, blocked_count,
                error_count, ROUND(avg_latency_ms::numeric, 1) AS avg_latency_ms,
@@ -518,7 +552,7 @@ async def _fetch_trace_list(
     # (retried evaluation, a re-score). DISTINCT would hide the fan-out
     # without fixing which verdict wins; the window function picks the same
     # row the detail endpoint would show.
-    rows = await _fetch_all(
+    rows = await _query_all(
         f"""
         SELECT r.app_trace_id, r.timestamp_utc, r.endpoint, r.ticker, r.query,
                r.status AS rag_status, r.block_reason, j.status AS judge_status
@@ -540,7 +574,7 @@ async def _fetch_trace_list(
     trace_ids = [r["app_trace_id"] for r in rows]
     sampled_ids_for_page: set[str] = set()
     if trace_ids:
-        sampled_rows = await _fetch_all(
+        sampled_rows = await _query_all(
             "SELECT DISTINCT app_trace_id FROM rag_frontier_verdicts WHERE app_trace_id = ANY(%s)",
             (trace_ids,),
         )
@@ -563,7 +597,7 @@ async def _fetch_trace_list(
 
 
 async def _fetch_frontier_sampled_ids() -> set[str]:
-    rows = await _fetch_all("SELECT DISTINCT app_trace_id FROM rag_frontier_verdicts")
+    rows = await _query_all("SELECT DISTINCT app_trace_id FROM rag_frontier_verdicts")
     return {r["app_trace_id"] for r in rows}
 
 
@@ -592,7 +626,7 @@ async def _fetch_disagreement_trace_ids() -> set[str]:
     data contract). Picks the latest-by-evaluation_ts frontier row per
     trace, same rule as _fetch_frontier_section, and only ever a real
     non-stub gemini-rubric entry via _real_frontier_evidence."""
-    rows = await _fetch_all(
+    rows = await _query_all(
         """
         SELECT r.app_trace_id, j.faithfulness_score AS flash_score,
                f.per_judge_results, f.evaluation_ts
@@ -633,7 +667,7 @@ async def _fetch_frontier_section(app_trace_id: str) -> FrontierSectionView:
     # Most recent row by evaluation_ts: confirmed against every real
     # duplicate-trace case today that this is the real gemini-rubric row,
     # never the earlier stub placeholder (see docs/build-log.md).
-    row = await _fetch_one(
+    row = await _query_one(
         """
         SELECT verdict, per_judge_results, evaluation_ts
         FROM rag_frontier_verdicts
@@ -673,7 +707,7 @@ async def _fetch_frontier_section(app_trace_id: str) -> FrontierSectionView:
 
 
 async def _fetch_trace_detail(app_trace_id: str) -> TraceDetailResponse:
-    rag_row = await _fetch_one(
+    rag_row = await _query_one(
         """
         SELECT app_trace_id, status, endpoint, ticker, query, answer, confidence,
                model_used, citations, retrieved_chunk_ids, block_reason, block_rail,
@@ -709,10 +743,10 @@ async def _fetch_trace_detail(app_trace_id: str) -> TraceDetailResponse:
                 sampled=False, evidence=None, note="frontier not sampled for this trace"
             ),
             risingwave_connected=_dao.connected,
-            note="no matching rag_events row" if _dao.connected else "RisingWave offline",
+            note="no matching rag_events row",
         )
 
-    judge_row = await _fetch_one(
+    judge_row = await _query_one(
         """
         SELECT status, timestamp_utc, faithfulness_score, faithfulness_status,
                answer_relevance_score, answer_relevance_status,

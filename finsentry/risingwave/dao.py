@@ -35,6 +35,15 @@ def risingwave_dsn() -> str:
     return f"postgresql://{user}@{host}:{port}/{db}"
 
 
+class RisingWaveUnavailableError(Exception):
+    """There is no connection pool, so no query could be attempted."""
+
+
+class RisingWaveQueryError(Exception):
+    """A query raised against an established pool: a SQL error or a dropped
+    connection, not an empty result."""
+
+
 class RisingWavePool:
     """Owns one async connection pool. A pool that failed to open (or was
     never opened) puts this object in offline mode: fetch_one/fetch_all
@@ -49,7 +58,10 @@ class RisingWavePool:
     (`connected` is True, `last_query_failed` is True). fetch_one/fetch_all's
     None/[] return contract is unchanged by this -- `last_query_failed` is
     additive state for callers that need to tell "no rows" apart from "the
-    query errored," not a replacement for it."""
+    query errored," not a replacement for it. It is one flag shared by every
+    caller, so concurrent requests can overwrite each other's reading. A caller
+    that must not mistake a failure for an empty result uses query_one/query_all,
+    which raise on the failing call itself."""
 
     def __init__(self) -> None:
         self._pool: Any = None
@@ -84,32 +96,54 @@ class RisingWavePool:
             await self._pool.close()
             self._pool = None
 
-    async def fetch_one(self, sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    async def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+        """Like fetch_one, but a failure raises instead of reading as no row.
+        None means the query ran and matched nothing."""
         if self._pool is None:
-            return None
+            raise RisingWaveUnavailableError("RisingWave is not connected")
         try:
             async with self._pool.connection() as conn:
                 async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
                     await cur.execute(sql, params)
                     row: dict[str, Any] | None = await cur.fetchone()
-                    self._last_query_failed = False
                     return row
-        except Exception:
+        except Exception as exc:
             log.exception("RisingWave query failed: %s", sql[:80])
-            self._last_query_failed = True
-            return None
+            raise RisingWaveQueryError("RisingWave query failed") from exc
 
-    async def fetch_all(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    async def query_all(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        """Like fetch_all, but a failure raises instead of reading as no rows.
+        An empty list means the query ran and matched nothing."""
         if self._pool is None:
-            return []
+            raise RisingWaveUnavailableError("RisingWave is not connected")
         try:
             async with self._pool.connection() as conn:
                 async with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
                     await cur.execute(sql, params)
                     rows: list[dict[str, Any]] = await cur.fetchall()
-                    self._last_query_failed = False
                     return rows
-        except Exception:
+        except Exception as exc:
             log.exception("RisingWave query failed: %s", sql[:80])
+            raise RisingWaveQueryError("RisingWave query failed") from exc
+
+    async def fetch_one(self, sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+        try:
+            row = await self.query_one(sql, params)
+        except RisingWaveUnavailableError:
+            return None
+        except RisingWaveQueryError:
+            self._last_query_failed = True
+            return None
+        self._last_query_failed = False
+        return row
+
+    async def fetch_all(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        try:
+            rows = await self.query_all(sql, params)
+        except RisingWaveUnavailableError:
+            return []
+        except RisingWaveQueryError:
             self._last_query_failed = True
             return []
+        self._last_query_failed = False
+        return rows
