@@ -25,6 +25,9 @@ Environment variables:
     GOOGLE_CLOUD_PROJECT
     GOOGLE_CLOUD_LOCATION        (default: global)
     GEMINI_API_KEY
+    FRONTIER_LAG_ENTRY_THRESHOLD   (default: 1000 — consumer lag at or above which
+                                    the sampling rate drops from 1 in 10 to 1 in 100)
+    FRONTIER_LAG_RECOVERY_THRESHOLD (default: 200 — lag at or below which it returns)
     FAITHJUDGE_PEER_RETRIEVAL_ENABLED (default: true — Day 5A M2 FaithJudge
                                         peer-example retrieval; requires
                                         DATABASE_URL, degrades to zero-shot
@@ -51,6 +54,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from finsentry.consumer.lag_monitor import ConsumerLagMonitor
 from finsentry.consumer.rag_event_consumer import RagEventConsumer
 from finsentry.events.schema import RagResponseEvent
 from finsentry.events.topics import RAG_FRONTIER_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
@@ -60,7 +64,12 @@ from finsentry.frontier.faithjudge.retriever import FinanceBenchPeerRetriever
 from finsentry.frontier.faithjudge.types import PeerRetriever
 from finsentry.frontier.orchestrator import FrontierOrchestrator
 from finsentry.frontier.protocol import FrontierJudge
-from finsentry.frontier.sampling import should_sample_for_frontier
+from finsentry.frontier.sampling import (
+    DEFAULT_ENTRY_LAG,
+    DEFAULT_RECOVERY_LAG,
+    AdaptiveSamplingController,
+    should_sample_for_frontier,
+)
 from finsentry.frontier.types import FrontierVerdictEvent
 from finsentry.rails.output.cost_governance import CostBudget
 
@@ -69,6 +78,7 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 _DEFAULT_FRONTIER_GROUP = "frontier-tier"
+_LAG_POLL_INTERVAL_S = 5.0
 
 
 class FrontierVerdictProducer:
@@ -178,8 +188,11 @@ async def _handle_event(
     orchestrator: FrontierOrchestrator,
     verdict_producer: FrontierVerdictProducer,
     peer_retriever: PeerRetriever | None = None,
+    sampler: AdaptiveSamplingController | None = None,
 ) -> None:
     """Sample, guard, retrieve peers, evaluate, and emit for one RagResponseEvent.
+
+    sampler carries the lag-driven rate. None means the fixed normal rate.
 
     The non-success guard mirrors FlashJudge's predicate (event.status ==
     "success" and event.answer) — a blocked/error event has no answer or
@@ -190,7 +203,12 @@ async def _handle_event(
     (see _build_peer_retriever) — evaluation then proceeds zero-shot, same
     as if retrieval had simply found no useful peers.
     """
-    if not should_sample_for_frontier(event.app_trace_id):
+    sampled = (
+        sampler.should_sample(event.app_trace_id)
+        if sampler is not None
+        else should_sample_for_frontier(event.app_trace_id)
+    )
+    if not sampled:
         return
     if not (event.status == "success" and event.answer):
         return
@@ -215,6 +233,17 @@ async def _handle_event(
     )
 
 
+async def _poll_lag(
+    sampler: AdaptiveSamplingController, monitor: ConsumerLagMonitor
+) -> None:
+    """Feed the sampler one reading of this consumer group's lag per interval.
+    An unreadable monitor becomes a None reading, which holds the current rate."""
+    while True:
+        report = await monitor.fetch_lag()
+        sampler.observe(report.total_lag if report.ok else None)
+        await asyncio.sleep(_LAG_POLL_INTERVAL_S)
+
+
 async def _run() -> None:
     logging.basicConfig(level=logging.INFO)
 
@@ -227,11 +256,16 @@ async def _run() -> None:
     verdict_producer = FrontierVerdictProducer(bootstrap_servers=bootstrap, topic=verdict_topic)
     consumer = RagEventConsumer(bootstrap_servers=bootstrap, topic=topic, group_id=group)
     peer_retriever = _build_peer_retriever()
+    sampler = AdaptiveSamplingController(
+        entry_lag=int(os.getenv("FRONTIER_LAG_ENTRY_THRESHOLD", str(DEFAULT_ENTRY_LAG))),
+        recovery_lag=int(os.getenv("FRONTIER_LAG_RECOVERY_THRESHOLD", str(DEFAULT_RECOVERY_LAG))),
+    )
+    lag_task = asyncio.create_task(_poll_lag(sampler, ConsumerLagMonitor(group, topic)))
 
     await verdict_producer.start()
 
     async def _handle(event: RagResponseEvent) -> None:
-        await _handle_event(event, orchestrator, verdict_producer, peer_retriever)
+        await _handle_event(event, orchestrator, verdict_producer, peer_retriever, sampler)
 
     consumer.set_handler(_handle)
 
@@ -247,6 +281,7 @@ async def _run() -> None:
     await consumer.start()
     log.info("Frontier consumer started — waiting for events")
     await consumer.run()
+    lag_task.cancel()
     await verdict_producer.stop()
     log.info("Frontier consumer exited cleanly")
 

@@ -7,6 +7,7 @@ from finsentry.consumer.frontier_consumer import FrontierVerdictProducer, _handl
 from finsentry.events.schema import RagResponseEvent
 from finsentry.frontier.faithjudge.types import PeerExample, PeerRetrievalResult
 from finsentry.frontier.orchestrator import FrontierOrchestrator
+from finsentry.frontier.sampling import AdaptiveSamplingController, should_sample_for_frontier
 from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, JudgeResult
 
 
@@ -197,3 +198,30 @@ async def test_enabled_peer_retrieval_reaches_the_judge_on_the_evaluation_input(
     assert retriever.call_count == 1
     assert len(judge.received_inputs) == 1
     assert judge.received_inputs[0].peer_retrieval is peer_result
+
+
+def _id_sampled_at_normal_rate_only() -> str:
+    for i in range(10_000):
+        candidate = f"00000000-0000-0000-0000-{i:012d}"
+        if should_sample_for_frontier(candidate, 10) and not should_sample_for_frontier(
+            candidate, 100
+        ):
+            return candidate
+    raise AssertionError("no such id")
+
+
+async def test_reduced_rate_skips_a_trace_the_normal_rate_would_evaluate() -> None:
+    trace_id = _id_sampled_at_normal_rate_only()
+    event = _event("success").model_copy(update={"app_trace_id": trace_id})
+    judge = _CountingJudge()
+    orchestrator = FrontierOrchestrator(judges=[judge])
+    producer = _RecordingVerdictProducer()
+    sampler = AdaptiveSamplingController(entry_lag=10, recovery_lag=2, entry_readings=1)
+
+    await _handle_event(event, orchestrator, producer, sampler=sampler)
+    assert judge.call_count == 1
+
+    sampler.observe(50)
+    assert sampler.denominator == 100
+    await _handle_event(event, orchestrator, producer, sampler=sampler)
+    assert judge.call_count == 1
