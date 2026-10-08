@@ -15,24 +15,25 @@ function hrefOf(markup: string, title: string): string {
 }
 
 describe("stage card destinations", () => {
-  // Server markup is what a phone sees before hydration: the outline ids.
   const markup = renderToStaticMarkup(<StageCards />);
+  const titles = ["Guard", "Retrieve", "Generate", "Judge", "Investigate"];
 
-  it("sends Guard, Retrieve and Generate to three different stages", () => {
-    const hrefs = ["Guard", "Retrieve", "Generate"].map((t) =>
-      hrefOf(markup, t),
+  it("sends Guard, Retrieve and Generate to three different product surfaces", () => {
+    expect(hrefOf(markup, "Guard")).toBe("/overview#flow-heading");
+    expect(hrefOf(markup, "Retrieve")).toBe(
+      "/investigations?trace=96bca4b5-f707-4a93-b421-2674032849b5",
     );
-    expect(new Set(hrefs).size).toBe(3);
-    expect(hrefs).toEqual([
-      `/architecture#${stageAnchor("input", "outline")}`,
-      `/architecture#${stageAnchor("retrieval", "outline")}`,
-      `/architecture#${stageAnchor("generation", "outline")}`,
-    ]);
+    expect(hrefOf(markup, "Generate")).toBe("/operations");
   });
 
-  it("keeps Judge and Investigate on their own routes", () => {
+  it("keeps Judge and Investigate on their own targets", () => {
     expect(hrefOf(markup, "Judge")).toBe("/architecture#evaluation-plane");
     expect(hrefOf(markup, "Investigate")).toBe("/investigations");
+  });
+
+  it("never gives two cards the same destination", () => {
+    const hrefs = titles.map((t) => hrefOf(markup, t));
+    expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 });
 

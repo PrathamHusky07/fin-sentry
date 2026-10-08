@@ -168,14 +168,14 @@ export default function LandingPage() {
                 href="/operations"
                 cta="Open live telemetry"
                 {...SHOT.operations}
-                alt="Live Operations, showing connection and freshness state, throughput and latency readouts, the calibration instrument and an operational timeline."
+                alt="Live Operations, showing connection and freshness state, throughput and latency readouts, evaluation telemetry, the live request chart and the start of the stored request history."
               />
               <figcaption className="text-text-secondary mt-4 text-base leading-relaxed">
                 <span className="text-text-primary font-medium">
                   Live Operations.
                 </span>{" "}
-                Stream freshness, latency, judge usage and the calibration
-                reading, each labeled with its scope.
+                Stream freshness, latency, judge usage, stored request history
+                and the calibration reading, each labeled with its scope.
               </figcaption>
             </figure>
           </div>

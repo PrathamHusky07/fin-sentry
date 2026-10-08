@@ -1,14 +1,17 @@
+import Link from "next/link";
 import { ConceptIcon, type ConceptId } from "@/components/concept-icons";
-import { StageLink } from "@/components/stage-link";
-import { stageAnchor } from "@/lib/architecture-data";
+
+/** A real persisted execution whose retrieved chunks the Retrieve card opens:
+ * the AMZN FY2024 net income question, five chunks retrieved. If the trace
+ * store is ever reset, the drawer says "Trace not found." rather than
+ * showing anything else. */
+const RETRIEVAL_TRACE_ID = "96bca4b5-f707-4a93-b421-2674032849b5";
 
 interface Stage {
   id: ConceptId;
   title: string;
   body: string;
   href: string;
-  /** Used below the wide breakpoint, where the destination shows an outline. */
-  narrowHref?: string;
   cta: string;
   tone: "accent" | "signal" | "neutral";
 }
@@ -18,27 +21,24 @@ const STAGES: Stage[] = [
     id: "guard",
     title: "Guard",
     body: "Input rails check the question and output rails check the answer. A rail that errors stops the request.",
-    href: `/architecture#${stageAnchor("input")}`,
-    narrowHref: `/architecture#${stageAnchor("input", "outline")}`,
-    cta: "See the rails",
+    href: "/overview#flow-heading",
+    cta: "See what was blocked",
     tone: "accent",
   },
   {
     id: "retrieve",
     title: "Retrieve",
     body: "Closest filing chunks come from pgvector. Every chunk is checked for trust, injection and PII first.",
-    href: `/architecture#${stageAnchor("retrieval")}`,
-    narrowHref: `/architecture#${stageAnchor("retrieval", "outline")}`,
-    cta: "See retrieval",
+    href: `/investigations?trace=${RETRIEVAL_TRACE_ID}`,
+    cta: "See retrieved evidence",
     tone: "accent",
   },
   {
     id: "generate",
     title: "Generate",
     body: "One model call answers in JSON under a time budget and a circuit breaker.",
-    href: `/architecture#${stageAnchor("generation")}`,
-    narrowHref: `/architecture#${stageAnchor("generation", "outline")}`,
-    cta: "See the budget",
+    href: "/operations",
+    cta: "See live latency",
     tone: "accent",
   },
   {
@@ -95,9 +95,8 @@ export function StageCards() {
     <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {STAGES.map((stage, i) => (
         <li key={stage.id} className="relative">
-          <StageLink
+          <Link
             href={stage.href}
-            narrowHref={stage.narrowHref}
             className={`lift ${TONE_LIFT[stage.tone]} ${TONE_HOVER[stage.tone]} reveal-host border-line bg-background-elevated/70 group relative flex h-full flex-col overflow-hidden rounded-xl border p-5`}
           >
             <span
@@ -129,7 +128,7 @@ export function StageCards() {
               {stage.cta}
               <span aria-hidden="true">→</span>
             </span>
-          </StageLink>
+          </Link>
         </li>
       ))}
     </ol>
