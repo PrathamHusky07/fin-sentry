@@ -1,5 +1,49 @@
 # Build Log
 
+## 2026-10-07 (close-out): Day 9 frontend close-out and Tier 1 backend correctness
+
+Frontend commit first, backend commits after, one frontend follow-up at the end.
+
+Frontend. The hero now presents an AI reliability and evaluation platform with
+financial RAG over SEC filings as the reference workload. The constellation
+center label and the sixth decision were reframed the same way. The Guard,
+Retrieve and Generate stage cards open their own request-path stage, with one
+anchor id per layout variant and a highlight on the targeted stage. Two defects
+turned up while verifying interaction. Stage card hover lost its tone border
+because a utility class outranked it, and a calibration marker tap or click
+cleared its own explanation, so touch never saw one. Both are fixed with tests.
+Route titles use a pipe instead of an em-dash.
+
+Backend, each with regression tests that inspect the published event, not only
+the HTTP body:
+- The 422 body carries only the rail, a reason code, the trace id and a fixed
+  message. Claim text and the evaluator's raw reply no longer reach the caller or
+  a blocked event.
+- Events carry the query the model saw. A block or failure before the input rails
+  finished is redacted with Presidio, or withheld if redaction cannot run.
+- Circuit open, downstream rejection and auth failures now emit an error event. A
+  per-request flag keeps every request to one terminal event.
+- A rail that fails closed is raised as an infrastructure failure and recorded as
+  an error. Only a rail's own decision is recorded as a block. Fail-closed rail
+  errors now return 503 instead of 403.
+- One 60 second deadline wraps the whole handler. The faithfulness rail is given
+  the time left, so it still fails open.
+- A request with no answer is blocked_before_evaluation with or without a verdict
+  row. The flash judge returns a failed verdict on an unexpected exception.
+- GET /ops/metrics/throughput/history returns the latest persisted one-minute
+  buckets, and Live Operations draws them in their own section.
+
+Deferred on purpose: drift controller wiring. It needs a scheduled canary runner
+and a shared or persisted controller state, and nothing like that exists. Corpus
+expansion is also deferred until a concrete evidence gap remains.
+
+Side effects to know about. The existing live regression test publishes a
+synthetic AAPL execution to the real stream each time it runs, and two such rows
+from this session are in the persisted data. The running gateway and dashboard
+predate these commits, so stored history shows its unavailable state until
+those containers are rebuilt.
+
+
 ## 2026-10-07 (later) — Frontend visual interaction system
 
 Frontend only. No backend code, database, schema, Docker service, model or

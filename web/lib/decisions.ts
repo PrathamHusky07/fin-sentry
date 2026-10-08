@@ -41,7 +41,7 @@ export const DECISIONS: Decision[] = [
     problem:
       "One failed label covered two different facts: a request stopped before there was anything to judge, and a judge that errored on an answer that was delivered fine.",
     decision:
-      "Evaluation has five states. The fifth, judge pipeline error, applies only when the request succeeded and the judge scored nothing. It has its own badge and its own filter.",
+      "Evaluation has five states. The fifth, judge pipeline error, applies only when the request succeeded and the judge scored nothing. A request that never produced an answer is never counted there, with or without a verdict row. It has its own badge and its own filter.",
     tradeoff:
       "No persisted execution has landed in that state yet, so it is exercised by tests and a data check, not by an incident.",
     consequence:
@@ -52,7 +52,7 @@ export const DECISIONS: Decision[] = [
     problem:
       "When the schema rail rejected a reply, the log recorded the first 500 characters of raw model output, and nothing could turn that off.",
     decision:
-      "The snippet is logged only when a diagnostic flag is set, and the default configuration leaves it unset. Two tests prove it is absent by default and present only with the flag.",
+      "The snippet is logged only when a diagnostic flag is set, and the default configuration leaves it unset. The 422 sent to the caller names the rail, a reason code and the trace id, never any part of the reply. Tests prove both.",
     tradeoff: "Debugging a malformed reply now takes an explicit opt-in.",
     consequence:
       "Forgetting the flag costs a debugging step, not model output sitting in the logs.",
@@ -64,7 +64,7 @@ export const DECISIONS: Decision[] = [
     decision:
       "The frontier judge is scored against a labeled financial hallucination benchmark with Cohen’s kappa. Drift begins at 0.43 and recovery requires 0.54, so the state has a gap to cross.",
     tradeoff:
-      "One manual reading is on record. The controller that applies the thresholds is built and tested but not yet wired into the gateway, and the flash judge is not calibrated.",
+      "One manual reading is on record. The controller that applies the thresholds is built and tested but not wired into the running pipeline, and the flash judge is not calibrated.",
     consequence:
       "The dashboard can say how far the second opinion can be trusted, and when that reading was taken.",
   },
@@ -73,7 +73,7 @@ export const DECISIONS: Decision[] = [
     problem:
       "An unbounded model call and inline judging would put a slow or failing dependency into every answer a user waits for.",
     decision:
-      "The model call is bounded: a 20 second budget, a 15 second cap per attempt, and a circuit breaker that opens for 30 seconds after five failures. The gateway then publishes one event and moves on. A flash judge scores every answer, and a deterministic one-in-ten sample gets the frontier review.",
+      "The model call is bounded: a 20 second budget, a 15 second cap per attempt, and a circuit breaker that opens for 30 seconds after five failures. A 60 second deadline covers the whole request. The gateway then publishes one event and moves on. A flash judge scores every answer, and a deterministic one-in-ten sample gets the frontier review.",
     tradeoff:
       "Delivery is at-most-once, so an event can be lost, and evaluation data is telemetry, not a ledger. The one check left on the path, request-time faithfulness, fails open when Gemini is unavailable.",
     consequence:

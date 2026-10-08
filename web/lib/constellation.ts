@@ -34,7 +34,7 @@ export const CONCEPTS: Concept[] = [
     plane: "Request path",
     tone: "accent",
     detail:
-      "Input rails check the question before retrieval. Output rails check the answer before it is sent. A rail that errors blocks the request instead of waving it through.",
+      "Input rails check the question before retrieval. Output rails check the answer before it is sent. A rail that errors stops the request instead of waving it through.",
     related: ["retrieve", "generate", "investigate"],
     primary: true,
   },

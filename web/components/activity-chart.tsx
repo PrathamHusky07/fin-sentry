@@ -313,7 +313,8 @@ export function ActivityChart({
           : sparse
             ? "One bucket has arrived since this page opened, so it is drawn as a single point. A line needs a second bucket, and the metrics view advances once a minute."
             : `${history.length} buckets have arrived since this page opened. Missing minutes stay empty and the line breaks across them.`}{" "}
-        There is no stored history behind this chart.
+        This chart holds only what arrived over the stream. Stored history is in
+        the next section.
       </p>
 
       {history.length > 0 ? (

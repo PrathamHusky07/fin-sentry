@@ -96,6 +96,7 @@ const ERROR_KIND_LABEL: Record<string, string> = {
   downstream_error: "Downstream error",
   input_rail_service_unavailable: "Input rail service unavailable",
   vector_search_failed: "Vector search failed",
+  request_deadline_exceeded: "Request deadline exceeded",
 };
 
 export function errorKindLabel(kind: string): string {

@@ -62,3 +62,29 @@ export interface MetricsSnapshot {
   cost: JudgeCostMetrics | null;
   frontier: FrontierMetrics | null;
 }
+
+/** One persisted one-minute row of the throughput view (GET
+ * /ops/metrics/throughput/history). Mirrors ThroughputBucket in
+ * finsentry/events/metrics_snapshot.py. */
+export interface ThroughputBucket {
+  window_start: string;
+  window_end: string;
+  total_requests: number;
+  success_count: number;
+  blocked_count: number;
+  error_count: number;
+  avg_latency_ms: number | null;
+  p95_latency_ms: number | null;
+}
+
+/** The latest persisted buckets, oldest first. Only minutes that had a
+ * request have a bucket. `generated_at` is when the rows were read, and the
+ * window spans the returned buckets (null when there are none). */
+export interface ThroughputHistory {
+  generated_at: string;
+  risingwave_connected: boolean;
+  limit: number;
+  window_start: string | null;
+  window_end: string | null;
+  buckets: ThroughputBucket[];
+}

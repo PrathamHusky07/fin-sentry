@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { BLOCK_STAGE_LABEL, blockStage } from "@/lib/labels";
+import {
+  BLOCK_STAGE_LABEL,
+  blockStage,
+  errorKindLabel,
+  outcomeLabel,
+} from "@/lib/labels";
 
 describe("blockStage", () => {
   it("keeps every reason the gateway emits at its real stage", () => {
@@ -20,5 +25,19 @@ describe("blockStage", () => {
   it("returns unknown for an unrecognized reason and labels it Unknown", () => {
     expect(blockStage("brand_new_reason")).toBe("unknown");
     expect(BLOCK_STAGE_LABEL.unknown).toBe("Unknown stage");
+  });
+});
+
+describe("errorKindLabel", () => {
+  it("names every error kind the gateway records, including the request deadline", () => {
+    expect(errorKindLabel("request_deadline_exceeded")).toBe(
+      "Request deadline exceeded",
+    );
+    expect(errorKindLabel("input_rail_service_unavailable")).toBe(
+      "Input rail service unavailable",
+    );
+    expect(outcomeLabel("error", null, null, "request_deadline_exceeded")).toBe(
+      "Error \u00b7 Request deadline exceeded",
+    );
   });
 });

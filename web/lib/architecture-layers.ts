@@ -84,7 +84,7 @@ export const LAYERS: Layer[] = [
     reasons: [
       {
         term: "Why input rails run first and fail closed",
-        body: "Hostile input should never reach retrieval or the model. The input, schema and phrase rails fail closed: if a rail errors, the request is blocked. The faithfulness rail fails open, so a Gemini outage degrades evaluation without stopping answers.",
+        body: "Hostile input should never reach retrieval or the model. The input, schema and phrase rails fail closed: if a rail errors, the request is stopped and recorded as an error, not as a policy block. The faithfulness rail fails open, so a Gemini outage degrades evaluation without stopping answers.",
       },
       {
         term: "Why retrieval has its own rail",
@@ -96,7 +96,7 @@ export const LAYERS: Layer[] = [
       },
       {
         term: "Why the model call is bounded",
-        body: "A 20 second budget and a breaker that opens after five failures keep a dead model from holding the gateway open. The budget covers the model call, not the whole request.",
+        body: "A 20 second budget and a breaker that opens after five failures keep a dead model from holding the gateway open. The budget covers the model call. A separate 60 second deadline covers the whole request, and the faithfulness check is told how much of it is left, so a slow Gemini makes that check fail open instead of failing the request.",
       },
     ],
   },

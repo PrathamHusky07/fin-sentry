@@ -88,7 +88,7 @@ export const NODES: Record<NodeId, ArchNode> = {
     sub: "injection, PII, hazard checks",
     summary:
       "NeMo Guardrails runs three checks: Prompt Guard 2 for prompt injection, Presidio to redact PII, and Llama Guard 3 for the hazard taxonomy.",
-    why: "Hostile or unsafe input should never reach retrieval or the model. These rails fail closed, so a rail that errors blocks the request instead of waving it through.",
+    why: "Hostile or unsafe input should never reach retrieval or the model. These rails fail closed, so a rail that errors stops the request instead of waving it through.",
     source: "finsentry/gateway/rails.py, finsentry/rails/input/",
   },
   retrieval: {

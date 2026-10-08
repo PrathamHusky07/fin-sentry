@@ -7,11 +7,10 @@ import type { MetricsSnapshot } from "@/lib/metrics-snapshot";
 export type SseConnectionState = "connecting" | "open" | "error";
 
 /** One real throughput bucket as it arrived live over SSE. LIVE provenance
- * -- never backfilled, never fetched as history (see
- * docs/internal/day9-frontend-data-contract.md's Contract v2 time-series
- * section: there is no backend route for historical buckets, so this
- * accumulates client-side from the snapshots that actually arrived while
- * the page was open). */
+ * -- never backfilled. This accumulates client-side from the snapshots that
+ * actually arrived while the page was open. Stored buckets come separately
+ * from GET /ops/metrics/throughput/history and are drawn by their own panel,
+ * so the two are never merged into one series. */
 export interface ThroughputHistoryPoint {
   windowEnd: string;
   totalRequests: number | null;

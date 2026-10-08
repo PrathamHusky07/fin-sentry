@@ -17,7 +17,7 @@ const STAGES: Stage[] = [
   {
     id: "guard",
     title: "Guard",
-    body: "Input rails check the question and output rails check the answer. A rail that errors blocks the request.",
+    body: "Input rails check the question and output rails check the answer. A rail that errors stops the request.",
     href: `/architecture#${stageAnchor("input")}`,
     narrowHref: `/architecture#${stageAnchor("input", "outline")}`,
     cta: "See the rails",

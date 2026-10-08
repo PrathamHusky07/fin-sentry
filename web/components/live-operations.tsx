@@ -7,7 +7,9 @@ import { ConnectionStrip } from "@/components/connection-strip";
 import { EvalTelemetry } from "@/components/eval-telemetry";
 import { InView } from "@/components/in-view";
 import { PageHeader } from "@/components/page-header";
+import { PersistedThroughput } from "@/components/persisted-throughput";
 import { formatUtc, relativeTime } from "@/lib/format";
+import type { ThroughputHistory } from "@/lib/metrics-snapshot";
 import type { CalibrationHealthResponse, TraceListItem } from "@/lib/trace-api";
 import { useMetricsSnapshot } from "@/lib/use-metrics-snapshot";
 import { useNow } from "@/lib/use-now";
@@ -23,16 +25,19 @@ function fmt(n: number | null | undefined): string | null {
 /**
  * Telemetry: what the system is doing right now, as a console. The SSE
  * connection feeds the freshness rail, the request readouts, the evaluation
- * telemetry and the activity chart. The calibration reading is persisted
- * data passed in from the server. The newest persisted execution is the one
+ * telemetry and the activity chart. The stored throughput history and the
+ * calibration reading are persisted data passed in from the server. The newest persisted execution is the one
  * fact folded in from the cut "recent events" list: it says how old the
  * last real request is, which the metrics bucket alone does not.
  */
 export function LiveOperations({
   calibration,
   newest,
+  history,
 }: {
   calibration: CalibrationHealthResponse | null;
+  /** The stored one-minute buckets, or null when the gateway did not return them. */
+  history: ThroughputHistory | null;
   /** The most recent persisted execution, or null when none or unavailable. */
   newest: TraceListItem | null;
 }) {
@@ -154,6 +159,23 @@ export function LiveOperations({
             Buckets that arrived over the stream while this page has been open.
           </p>
           <ActivityChart history={throughputHistory} live={live} />
+        </section>
+
+        <section
+          aria-labelledby="history-heading"
+          className="border-border mt-16 border-t pt-16"
+        >
+          <h2
+            id="history-heading"
+            className="text-text-primary text-2xl font-semibold tracking-tight"
+          >
+            Stored request history
+          </h2>
+          <p className="text-text-secondary mt-2 mb-6 max-w-2xl text-base leading-relaxed">
+            The latest one-minute buckets persisted by the metrics view. The
+            live bucket above is the newest row of the same view.
+          </p>
+          <PersistedThroughput history={history} />
         </section>
 
         <InView className="border-border mt-16 border-t pt-16">
