@@ -109,12 +109,14 @@ class FrontierVerdictProducer:
             await self._producer.stop()
 
     async def emit(self, verdict: FrontierVerdictEvent) -> None:
+        """Send the verdict and wait for the broker acknowledgement. A failure
+        raises, so the caller does not acknowledge the source event. The consumer
+        then retries it, which can emit a duplicate verdict (at-least-once)."""
         if self._producer is None:
-            log.warning(
-                "FrontierVerdictProducer: not started, dropping verdict for %s",
-                verdict.app_trace_id,
+            raise RuntimeError(
+                f"FrontierVerdictProducer not started, cannot emit verdict for "
+                f"{verdict.app_trace_id}"
             )
-            return
         try:
             await self._producer.send_and_wait(
                 self._topic,
@@ -125,6 +127,7 @@ class FrontierVerdictProducer:
             log.exception(
                 "FrontierVerdictProducer: failed to emit verdict for %s", verdict.app_trace_id
             )
+            raise
 
 
 def _build_judges() -> list[FrontierJudge]:
@@ -202,6 +205,14 @@ async def _handle_event(
     peer_retriever is None when peer retrieval is disabled or unconfigured
     (see _build_peer_retriever) — evaluation then proceeds zero-shot, same
     as if retrieval had simply found no useful peers.
+
+    A retrieval that RAISES is a different fact: it is not known whether peers
+    exist. The event is not judged zero-shot under the peer-example prompt. It is
+    recorded with an unavailable verdict that names the failure, so a sampled
+    event never leaves without a persisted explanation.
+
+    Nothing here swallows a failed emit. It propagates to RagEventConsumer, which
+    leaves the source offset uncommitted.
     """
     sampled = (
         sampler.should_sample(event.app_trace_id)
@@ -215,7 +226,16 @@ async def _handle_event(
 
     peer_retrieval = None
     if peer_retriever is not None:
-        peer_retrieval = await peer_retriever.retrieve(event.query)
+        try:
+            peer_retrieval = await peer_retriever.retrieve(event.query)
+        except Exception as exc:
+            log.exception("Peer retrieval failed for app_trace_id=%s", event.app_trace_id)
+            await verdict_producer.emit(
+                orchestrator.unavailable_verdict(
+                    event, f"peer retrieval failed: {type(exc).__name__}"
+                )
+            )
+            return
 
     try:
         verdict = await orchestrator.evaluate(event, peer_retrieval=peer_retrieval)

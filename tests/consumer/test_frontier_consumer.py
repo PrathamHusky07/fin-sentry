@@ -3,12 +3,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
+
 from finsentry.consumer.frontier_consumer import FrontierVerdictProducer, _handle_event
 from finsentry.events.schema import RagResponseEvent
 from finsentry.frontier.faithjudge.types import PeerExample, PeerRetrievalResult
 from finsentry.frontier.orchestrator import FrontierOrchestrator
 from finsentry.frontier.sampling import AdaptiveSamplingController, should_sample_for_frontier
-from finsentry.frontier.types import FrontierEvaluationInput, JudgeHealth, JudgeResult
+from finsentry.frontier.types import (
+    FrontierEvaluationInput,
+    FrontierVerdictEvent,
+    JudgeHealth,
+    JudgeResult,
+)
 
 
 class _CountingJudge:
@@ -225,3 +232,162 @@ async def test_reduced_rate_skips_a_trace_the_normal_rate_would_evaluate() -> No
     assert sampler.denominator == 100
     await _handle_event(event, orchestrator, producer, sampler=sampler)
     assert judge.call_count == 1
+
+
+class _FailingPeerRetriever:
+    dataset = "financebench"
+
+    async def retrieve(
+        self, question: str, exclude_example_id: str | None = None
+    ) -> PeerRetrievalResult:
+        raise ConnectionError("postgres is down")
+
+
+class _RaisingKafkaProducer:
+    """Stands in for AIOKafkaProducer. Counts the sends it was asked to make."""
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    async def send_and_wait(self, topic: str, value: bytes, key: bytes) -> None:
+        self.attempts += 1
+        raise OSError("broker unreachable")
+
+
+async def test_peer_retrieval_failure_records_an_unavailable_verdict_instead_of_dropping() -> None:
+    judge = _CountingJudge()
+    orchestrator = FrontierOrchestrator(judges=[judge])
+    producer = _RecordingVerdictProducer()
+
+    await _handle_event(
+        _event("success"), orchestrator, producer, peer_retriever=_FailingPeerRetriever()
+    )
+
+    assert len(producer.emitted) == 1
+    verdict = producer.emitted[0]
+    assert verdict.app_trace_id == _SAMPLED_TRACE_ID
+    assert verdict.verdict == "ensemble_insufficient"
+    assert verdict.disagreement_classification == "all_unavailable"
+    (result,) = verdict.per_judge_results
+    assert result.judge_id == "stub"
+    assert result.status == "unavailable"
+    assert result.faithfulness_score is None and result.evidence is None
+    assert result.error_detail == "peer retrieval failed: ConnectionError"
+    # The explanation survives the wire format the dashboard reads.
+    assert FrontierVerdictEvent.from_kafka_json(verdict.to_kafka_json()) == verdict
+
+
+async def test_peer_retrieval_failure_is_not_judged_as_if_no_peers_existed() -> None:
+    """A retrieval that raised means peers are unknown. A retrieval that succeeded and
+    found none is a legitimate zero-shot evaluation. The two must not be conflated."""
+    failed_judge = _CountingJudge()
+    failed = _RecordingVerdictProducer()
+    await _handle_event(
+        _event("success"),
+        FrontierOrchestrator(judges=[failed_judge]),
+        failed,
+        peer_retriever=_FailingPeerRetriever(),
+    )
+    assert failed_judge.call_count == 0
+
+    empty = PeerRetrievalResult(
+        peers=[],
+        rejected=[],
+        k=3,
+        similarity_threshold=0.75,
+        leakage_ceiling=0.95,
+        retrieval_latency_ms=1,
+    )
+    ok_judge = _CountingJudge()
+    ok = _RecordingVerdictProducer()
+    await _handle_event(
+        _event("success"),
+        FrontierOrchestrator(judges=[ok_judge]),
+        ok,
+        peer_retriever=_StubPeerRetriever(empty),
+    )
+    assert ok_judge.call_count == 1
+    assert ok.emitted[0].verdict == "ensemble_supported"
+    assert ok.emitted[0].per_judge_results[0].status == "success"
+
+
+async def test_a_failed_verdict_emit_propagates_instead_of_looking_processed() -> None:
+    judge = _CountingJudge()
+    kafka = _RaisingKafkaProducer()
+    producer = FrontierVerdictProducer(bootstrap_servers="unused", topic="verdicts")
+    producer.inject_producer(kafka)
+
+    with pytest.raises(OSError, match="broker unreachable"):
+        await _handle_event(_event("success"), FrontierOrchestrator(judges=[judge]), producer)
+
+    assert kafka.attempts == 1
+
+
+async def test_emit_before_the_producer_is_started_raises() -> None:
+    producer = FrontierVerdictProducer(bootstrap_servers="unused", topic="verdicts")
+    verdict = FrontierOrchestrator(judges=[]).unavailable_verdict(_event("success"), "x")
+    with pytest.raises(RuntimeError, match="not started"):
+        await producer.emit(verdict)
+
+
+async def test_failed_unavailable_verdict_emit_also_propagates() -> None:
+    producer = FrontierVerdictProducer(bootstrap_servers="unused", topic="verdicts")
+    producer.inject_producer(_RaisingKafkaProducer())
+
+    with pytest.raises(OSError):
+        await _handle_event(
+            _event("success"),
+            FrontierOrchestrator(judges=[_CountingJudge()]),
+            producer,
+            peer_retriever=_FailingPeerRetriever(),
+        )
+
+
+async def test_a_failed_verdict_emit_leaves_the_source_offset_uncommitted() -> None:
+    """End to end through the consumer: offset 101 cannot emit its verdict, so the
+    commit stops at 101 (next to read after 100) and never covers 101 or 102."""
+    from aiokafka import TopicPartition
+
+    from tests.consumer.test_rag_event_consumer import _make_consumer, _make_kafka_msg
+
+    class _FlakyProducer:
+        def __init__(self) -> None:
+            self.sent: list[bytes] = []
+
+        async def send_and_wait(self, topic: str, value: bytes, key: bytes) -> None:
+            if key == b"trace-101":
+                raise OSError("broker unreachable")
+            self.sent.append(key)
+
+    sampler = AdaptiveSamplingController(entry_lag=10, recovery_lag=2)
+    sampler.should_sample = lambda _trace_id: True  # type: ignore[method-assign]
+
+    messages = [
+        _make_kafka_msg(
+            _event("success").model_copy(update={"app_trace_id": f"trace-{o}"}).model_dump(),
+            offset=o,
+        )
+        for o in (100, 101, 102)
+    ]
+    consumer = _make_consumer(messages, max_attempts=2)
+    commits: list[dict[Any, int]] = []
+
+    async def _commit(offsets: dict[Any, int]) -> None:
+        commits.append(dict(offsets))
+
+    consumer._consumer.commit.side_effect = _commit
+    kafka = _FlakyProducer()
+    producer = FrontierVerdictProducer(bootstrap_servers="unused", topic="verdicts")
+    producer.inject_producer(kafka)
+    orchestrator = FrontierOrchestrator(judges=[_CountingJudge()])
+
+    async def _handle(ev: RagResponseEvent) -> None:
+        await _handle_event(ev, orchestrator, producer, sampler=sampler)
+
+    consumer.set_handler(_handle)
+    await consumer.start()
+    await consumer.run()
+
+    assert commits == [{TopicPartition("rag-responses", 0): 101}]
+    # 102 was processed and emitted, but it is held behind 101, not lost.
+    assert sorted(kafka.sent) == [b"trace-100", b"trace-102"]

@@ -138,8 +138,30 @@ class FrontierOrchestrator:
             len(self._judges),
         )
 
-        outcome = decide_ensemble(judge_results)
+        return self._verdict_event(rag_event, judge_results)
 
+    def unavailable_verdict(self, rag_event: RagResponseEvent, reason: str) -> FrontierVerdictEvent:
+        """Verdict for a sampled event that could not be evaluated, so it is still
+        recorded. Every registered judge is listed as unavailable with the reason,
+        and the ensemble reduction gives its usual all-unavailable outcome. No judge
+        ran, so no score or decision is claimed."""
+        results = [
+            JudgeResult(
+                judge_id=judge.judge_id,
+                judge_family=judge.judge_family,
+                methodology=judge.methodology,
+                status="unavailable",
+                error_detail=reason,
+            )
+            for judge in self._judges
+        ]
+        return self._verdict_event(rag_event, results)
+
+    @staticmethod
+    def _verdict_event(
+        rag_event: RagResponseEvent, judge_results: list[JudgeResult]
+    ) -> FrontierVerdictEvent:
+        outcome = decide_ensemble(judge_results)
         return FrontierVerdictEvent(
             app_trace_id=rag_event.app_trace_id,
             verdict=outcome.verdict,
