@@ -19,10 +19,10 @@ import {
   evaluatorStatus,
   expectationLabel,
   expectedLabel,
-  formatCost,
   formatDuration,
   gatewayProvenanceUnrecorded,
   isSafetyBoundSkip,
+  judgeAssistedModeMeaning,
   layerLabel,
   sentGatewayRequest,
   traceHref,
@@ -208,10 +208,7 @@ export function EvidenceBody({
           </p>
         ) : (
           <p className="text-text-secondary text-base leading-relaxed">
-            This was a judge-assisted execution. Detection depended on the
-            Gemini faithfulness judge. It made {e.gemini_calls} Gemini{" "}
-            {e.gemini_calls === 1 ? "call" : "calls"} at a recorded cost of{" "}
-            {formatCost(e.cost_usd)}.
+            {judgeAssistedModeMeaning(e)}
           </p>
         )}
         {continuation !== "not_recorded" ? (

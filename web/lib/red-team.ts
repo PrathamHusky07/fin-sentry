@@ -341,6 +341,26 @@ export function deterministicModeMeaning(e: ExecutionRecord): string {
   }
 }
 
+/** DERIVED from evaluatorStatus: what a judge-assisted execution did, by whether its
+ * result was obtained. Only a completed execution depended on the judge. When the
+ * evaluator was unavailable the judge may not have run, so the record's call count is
+ * stated as recorded and nothing is inferred from it. A safety-bound skip is handled
+ * before this is called. */
+export function judgeAssistedModeMeaning(e: ExecutionRecord): string {
+  const calls = `${e.gemini_calls} Gemini ${e.gemini_calls === 1 ? "call" : "calls"}`;
+  const recorded = `The record shows ${calls} at a recorded cost of ${formatCost(e.cost_usd)}.`;
+  switch (evaluatorStatus(e)) {
+    case "pending":
+      return "This is a judge-assisted execution that has not finished, so no result has been recorded and nothing has been exercised yet.";
+    case "unavailable":
+      return `This was a judge-assisted execution, but the evaluator could not run, so the defense was not assessed and the judge may not have run. ${recorded}`;
+    case "not_reached":
+      return "This was a judge-assisted execution, but the harness stopped before it reached the defense. No result was obtained.";
+    case "available":
+      return `This was a judge-assisted execution. Detection depended on the Gemini faithfulness judge. It made ${calls} at a recorded cost of ${formatCost(e.cost_usd)}.`;
+  }
+}
+
 export const SAFETY_BOUND_LABEL = "Not run (safety bound)";
 export const SAFETY_BOUND_MEANING =
   "This scenario was intentionally skipped to bound cost, because an earlier gateway scenario in the run had already continued past the input rails. The harness did not fail, and no defense was exercised.";

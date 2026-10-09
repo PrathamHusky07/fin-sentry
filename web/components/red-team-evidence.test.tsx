@@ -87,3 +87,48 @@ describe("deterministic Mode copy follows the outcome", () => {
     expect(html).toContain("was not run, so no defense was exercised");
   });
 });
+
+describe("judge-assisted Mode copy follows the outcome", () => {
+  const judged = (overrides: Partial<ExecutionRecord>) =>
+    execution({
+      mode: "judge_assisted",
+      gemini_calls: 2,
+      cost_usd: 0.0004,
+      ...overrides,
+    });
+  const DEPENDED = "Detection depended on the Gemini faithfulness judge";
+
+  it.each<Outcome>(["caught", "missed", "inconclusive"])(
+    "keeps the dependence wording and the recorded cost for a completed %s execution",
+    (outcome) => {
+      const html = modeSection(judged({ outcome }));
+      expect(html).toContain(DEPENDED);
+      expect(html).toContain("2 Gemini calls");
+    },
+  );
+
+  it("says the judge may not have run when the evaluator was unavailable", () => {
+    const html = modeSection(
+      judged({ outcome: "evaluator_unavailable", acting_layer: null }),
+    );
+    expect(html).not.toContain(DEPENDED);
+    expect(html).toContain("the judge may not have run");
+    expect(html).toContain("was not assessed");
+  });
+
+  it("says no result was obtained when the execution failed", () => {
+    const html = modeSection(
+      judged({ outcome: "execution_failed", acting_layer: null }),
+    );
+    expect(html).not.toContain(DEPENDED);
+    expect(html).toContain("No result was obtained");
+  });
+
+  it("does not describe a completed result for an execution that has not finished", () => {
+    const html = modeSection(
+      judged({ state: "running", outcome: null, expectation: null }),
+    );
+    expect(html).not.toContain(DEPENDED);
+    expect(html).toContain("has not finished");
+  });
+});
