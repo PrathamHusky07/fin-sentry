@@ -1,5 +1,77 @@
 # Build Log
 
+## 2026-10-08 (late): Day 10B Red Team evidence contracts and read-only MCP queries
+
+Model: Sonnet 5.5, no escalation. Run end to end as instructed. Three fixes to the Red Team
+evidence contracts, then four read-only MCP tools for the Day 11 investigation agent. No
+Gemini call was made by this session's work. The only live-stack action was the Playwright
+suite starting one OUT-001 run (pure Python rails) on the gateways already running.
+
+Fix 1, classifier trust boundary. Real gap. `classify` picked `caught if defense_acted else
+missed`, so an observation with both flags set and no `inconclusive_reason` classified as
+caught. No current executor reaches it: the gateway executor flips one flag to the other, and
+the other three return one flag per branch. The guard is for the next executor. Both-flags
+now returns inconclusive with "Contradictory observation: a defense acted and the attack
+also passed." Three new tests failed against the old `classify.py` (the raw both-flags case,
+the same case on a known-gap scenario, and the matrix row) and pass now. Commit `84cce48`.
+
+Fix 2, deterministic mode. Real gap in the label, not in the data path. A gateway scenario
+that no input rail stops goes on to embedding, retrieval, the local Ollama model, the
+inline Gemini faithfulness rail and an event the flash judge scores. Stopping that needs a
+red-team marker on the event or in the consumer, and both are frozen contracts. Decision:
+corrected and bounded, not enforced. The gateway executor now records
+`continued_past_input_rails` in the evidence. The runner allows one such request per run
+(`MAX_CONTINUED_GATEWAY_REQUESTS`). After it, the remaining gateway scenarios in that run are
+stored as execution_failed with a "Not run" reason and no further gateway request is sent.
+Scenarios of other executors still run. The wording in the console now says the runner made
+no model call of its own and, when the flag is set, that the faithfulness rail and the flash
+judge may have called Gemini and are capped by the rails' cost limits. Limits of the bound:
+it is per run, so repeated runs are bounded only by the rails' own cost ceilings, and the
+Gemini calls a continued request makes are not recorded on the red-team execution. Tests
+cover the missed gateway case with the judge path unreached. Commit `daf14c1`.
+
+Fix 3, single active run across processes. Real gap. The asyncio.Lock holds inside one
+process, and the check and the insert used separate connections, so two gateway replicas
+could both start a run. Migration 006 adds a partial unique index so at most one row is in
+the running state. It first closes all but the newest running run so the index can be built,
+and a test runs that cleanup. `create_run` maps the violation to `RunAlreadyActiveError` and
+`start_run` answers 409 with the winning run id. Finished runs are unconstrained, so history
+is kept, and the stale reclaim still frees the slot. Proof: two separate Python processes,
+each with its own lock, call the real `start_run` against the real test database. One starts,
+one gets 409, and one run row exists. This was run with natural timing and with the first
+active-run check forced to see nothing, so both processes pass the check and race to insert.
+With the index dropped from the test database all three of those tests fail. Two existing
+store tests created two running runs on purpose and were changed to finish the first run.
+Migration 006 is applied to the test database by the suite. It has not been applied to the
+`finsentry` development database. Until `python -m finsentry.db.migrate` runs there, that
+database has only the in-process lock. Commit `aa27fc7`.
+
+MCP. The server had five tools, all read-only: get_failing_traces,
+explain_guardrail_decision, get_judge_scores, search_prompt_injections, get_drift_report.
+Missing for an investigator: the Investigations list with its filters (including flash
+versus frontier disagreement), a trace's full persisted evidence (query, answer, citations,
+judge scores), and any view of stored red team executions. Added four tools, none writes:
+search_traces and get_trace_detail reuse the dashboard's own trace queries and response
+models, and list_red_team_executions and get_red_team_execution reuse the red team store and
+its record model. Pages are capped at 100. RisingWave being down raises an error instead of
+returning an empty list. The dashboard now takes its RisingWavePool from the MCP state module
+so one process holds one pool. All nine tools carry the read-only hint and a test enforces
+it. Tests also compare the red team store before and after the calls, and check that every
+RisingWave statement is a SELECT. `run_red_team_scenario` is still not registered. Starting
+a run from the agent is a Day 11 decision. Commit `8cbd3c2`.
+
+Verification. pytest 863 passed. ruff check clean. mypy clean on 100 source files. The 17
+Python files changed are ruff-formatted. `ruff format --check .` still flags 80 older files
+that this session did not touch. Frontend: Vitest 69 passed, tsc, eslint and prettier clean,
+`next build` passed, and the production Playwright suite passed 106 of 106 with one worker,
+including the cross-origin guard and the 375, 768 and 1440 checks. One rendering test was
+added for the new wording. The dev server on port 3000 was stopped for the build and not
+restarted.
+
+Deferred. GAP-001 stays a documented known gap. The gateway turning a dashboard 422 into a
+503 stays as it is, since none of the new tools go through that proxy. Next: apply migration
+006 to the development database, then Day 11.
+
 ## 2026-10-08 (night): Day 10A Red Team Console
 
 Model: Sonnet 5.5, no escalation. Day 9 closed operationally, then the console built on

@@ -161,7 +161,10 @@ function execution(
           ? "not_met"
           : "not_assessable",
     reason: `Fixture reason for ${outcome}.`,
-    evidence: { gateway_status: outcome === "missed" ? 200 : 403 },
+    evidence: {
+      gateway_status: outcome === "missed" ? 200 : 403,
+      continued_past_input_rails: outcome === "missed",
+    },
     trace_ref: null,
     gemini_calls: 0,
     cost_usd: 0,
@@ -315,6 +318,30 @@ test("RENDERING: the evidence drawer never credits a layer when the evaluator wa
     "no stored trace was found within the lookup window",
   );
   await expect(dialog.getByText("Caught", { exact: true })).toHaveCount(0);
+});
+
+test("RENDERING: a gateway request no input rail stopped says it may have reached Gemini, and a block does not", async ({
+  page,
+}) => {
+  await mockStore(page);
+  await page.goto("/red-team");
+  const rows = page.getByRole("table").locator("tbody tr");
+  const dialog = page.getByRole("dialog", { name: "Execution evidence" });
+
+  await rows.filter({ hasText: "Missed" }).first().getByRole("button").click();
+  await expect(dialog).toContainText(
+    "The runner made no model call of its own",
+  );
+  await expect(dialog).toContainText("No input rail stopped this request");
+  await expect(dialog).toContainText("Either can call Gemini");
+  await expect(dialog).not.toContainText("made no billable model calls");
+  await page.keyboard.press("Escape");
+
+  await rows.filter({ hasText: "Caught" }).first().getByRole("button").click();
+  await expect(dialog).toContainText(
+    "The runner made no model call of its own",
+  );
+  await expect(dialog).not.toContainText("No input rail stopped this request");
 });
 
 test("RENDERING: an unreachable store is shown as unknown, not as zero", async ({
