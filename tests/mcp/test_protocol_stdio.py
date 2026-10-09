@@ -34,6 +34,10 @@ _EXPECTED_TOOLS = {
     "get_judge_scores",
     "search_prompt_injections",
     "get_drift_report",
+    "search_traces",
+    "get_trace_detail",
+    "list_red_team_executions",
+    "get_red_team_execution",
 }
 
 
@@ -53,7 +57,7 @@ async def test_stdio_protocol_handshake_listing_call_and_validation() -> None:
         assert client.server_info.name == "finsentry-ops"
         assert client.server_info.version == "0.1.0"
 
-        # tools/list: exactly the five backed Day 7 tools, schemas exposed.
+        # tools/list: exactly the nine read-only tools, schemas exposed.
         listing = await client.list_tools()
         names = {t.name for t in listing.tools}
         assert names == _EXPECTED_TOOLS

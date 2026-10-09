@@ -66,9 +66,9 @@ from finsentry.events.trace_api import (
     TraceListResponse,
 )
 from finsentry.mcp._util import MAX_LIMIT, validate_limit
+from finsentry.mcp.state import dao as _dao
 from finsentry.mcp.tools.drift import get_drift_report
 from finsentry.risingwave.dao import (
-    RisingWavePool,
     RisingWaveQueryError,
     RisingWaveUnavailableError,
 )
@@ -102,7 +102,9 @@ def _to_jsonable(value: Any) -> Any:
 # Database connection pool
 # ---------------------------------------------------------------------------
 
-_dao = RisingWavePool()
+# One RisingWavePool per process. It is the MCP server's pool so the MCP trace tools can
+# reuse this module's trace queries in their own process. The dashboard process never
+# loads the MCP server, so in practice this is still the dashboard's own pool.
 
 
 @asynccontextmanager
