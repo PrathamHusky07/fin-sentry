@@ -24,6 +24,11 @@ scripts/
 !scripts/finqa_threshold_sweep.py
 !scripts/canary_live_smoke_d6p2.py
 !scripts/mcp_investigation_demo_d7.py
+!scripts/load_test.py
+!scripts/load_test_io.py
+!scripts/load_test_lib.py
+!scripts/load_test_report.py
+!scripts/load_test_stack.py
 # Unit tests for scripts are under tests/, not scripts/
 !tests/scripts/
 
@@ -95,6 +100,9 @@ experiments/output/
 experiments/*.png
 experiments/*.jpg
 !experiments/charts/
+
+# Load test per-request records, spans, samples and process logs; the summary JSON is tracked
+docs/measurements/load/raw/
 
 # Local Postgres data
 postgres_data/
