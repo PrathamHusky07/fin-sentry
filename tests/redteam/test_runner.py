@@ -220,6 +220,30 @@ async def test_a_run_past_its_deadline_fails_and_leaves_unfinished_executions_fa
     assert all(e.state == "finished" for e in executions)
 
 
+async def test_a_deadline_marks_a_running_gateway_execution_unknown_and_not_a_queued_one() -> None:
+    async def hang(*_: object, **__: object) -> Observation:
+        await asyncio.sleep(30)
+        return _CAUGHT
+
+    with (
+        patch.object(runner, "_execute", hang),
+        patch.object(runner, "RUN_DEADLINE_SECONDS", 0.15),
+    ):
+        run_id = await runner.start_run(
+            RunRequest(scenario_ids=["DI-001", "HZ-001", "OUT-001"]), make_deps()
+        )
+        await _wait_for_run(run_id)
+    run, (running, queued_gateway, queued_other) = _only_execution(run_id)
+    assert run.status == "failed" and "deadline" in (run.failure_reason or "")
+    # DI-001 was in flight when the outer deadline cancelled it, so it may have gone on.
+    assert running.started_at is not None
+    assert running.evidence == {runner.CONTINUATION_UNKNOWN: True}
+    # HZ-001 is a gateway scenario too, but it never started and sent no request.
+    assert queued_gateway.started_at is None and queued_gateway.evidence == {}
+    assert queued_other.started_at is None and queued_other.evidence == {}
+    assert {e.outcome for e in (running, queued_gateway, queued_other)} == {"execution_failed"}
+
+
 # --- the gateway cost bound ---------------------------------------------
 
 _PASSED_GATEWAY = Observation(

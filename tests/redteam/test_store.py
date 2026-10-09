@@ -182,3 +182,83 @@ def test_migration_006_keeps_the_newest_running_run_and_closes_the_rest() -> Non
     assert [e.outcome for e in old[1]] == ["execution_failed"]
     with pytest.raises(store.RunAlreadyActiveError):
         store.create_run(TEST_DATABASE_URL, _scenarios("DI-001"), False)
+
+
+def _age_run(run_id: str) -> None:
+    with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE red_team_runs SET created_at = now() - interval '1 hour' WHERE run_id = %s",
+            (run_id,),
+        )
+
+
+def test_stale_recovery_marks_only_a_running_gateway_execution_as_possibly_continued() -> None:
+    # DI-001 and HZ-001 are gateway_route, OUT-001 is output_rails.
+    run_id, ids = store.create_run(
+        TEST_DATABASE_URL, _scenarios("DI-001", "HZ-001", "OUT-001", "PII-001"), False
+    )
+    store.mark_running(TEST_DATABASE_URL, ids[0])  # gateway, in flight
+    store.mark_running(TEST_DATABASE_URL, ids[2])  # not a gateway scenario, in flight
+    # ids[1] is a queued gateway scenario and ids[3] is queued: neither sent anything.
+    _age_run(run_id)
+    assert store.reclaim_stale_runs(TEST_DATABASE_URL) == 1
+    detail = store.get_run(TEST_DATABASE_URL, run_id)
+    assert detail is not None
+    evidence = [e.evidence for e in detail[1]]
+    assert evidence == [{"continuation_unknown": True}, {}, {}, {}]
+    assert all(e.outcome == "execution_failed" for e in detail[1])
+
+
+def _stale_run_with_one_running_gateway_execution() -> str:
+    run_id, ids = store.create_run(TEST_DATABASE_URL, _scenarios("DI-001", "OUT-001"), False)
+    store.mark_running(TEST_DATABASE_URL, ids[0])
+    _age_run(run_id)
+    return run_id
+
+
+def _snapshot(run_id: str) -> tuple[str, list[str]]:
+    """The run status and execution states as an independent connection sees them."""
+    with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+        status = conn.execute(
+            "SELECT status FROM red_team_runs WHERE run_id = %s", (run_id,)
+        ).fetchone()
+        states = conn.execute(
+            "SELECT state FROM red_team_executions WHERE run_id = %s ORDER BY seq", (run_id,)
+        ).fetchall()
+    assert status is not None
+    return status[0], [r[0] for r in states]
+
+
+def test_stale_recovery_never_commits_the_failed_run_without_its_executions() -> None:
+    """The database refuses the execution update after the run was already marked failed.
+    Both writes must roll back together. With the run and its executions finalized on
+    separate connections, the run stays failed while its executions stay stranded, and the
+    stale query never revisits a failed run."""
+    run_id = _stale_run_with_one_running_gateway_execution()
+    with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+        conn.execute(
+            "CREATE OR REPLACE FUNCTION red_team_test_fail_update() RETURNS trigger"
+            " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected execution failure'; END $$"
+        )
+        conn.execute(
+            "CREATE TRIGGER red_team_test_fail_update BEFORE UPDATE ON red_team_executions"
+            " FOR EACH ROW EXECUTE FUNCTION red_team_test_fail_update()"
+        )
+        try:
+            with pytest.raises(psycopg.errors.RaiseException, match="injected execution failure"):
+                store.reclaim_stale_runs(TEST_DATABASE_URL)
+            # Neither write committed: the run is still running and still reclaimable.
+            assert _snapshot(run_id) == ("running", ["running", "queued"])
+        finally:
+            conn.execute("DROP TRIGGER red_team_test_fail_update ON red_team_executions")
+            conn.execute("DROP FUNCTION red_team_test_fail_update()")
+    # With the fault gone the next recovery finishes both together.
+    assert store.reclaim_stale_runs(TEST_DATABASE_URL) == 1
+    assert _snapshot(run_id) == ("failed", ["finished", "finished"])
+
+
+def test_stale_recovery_commits_the_run_and_its_executions_together() -> None:
+    run_id = _stale_run_with_one_running_gateway_execution()
+    assert store.reclaim_stale_runs(TEST_DATABASE_URL) == 1
+    assert _snapshot(run_id) == ("failed", ["finished", "finished"])
+    assert store.reclaim_stale_runs(TEST_DATABASE_URL) == 0  # nothing left to revisit

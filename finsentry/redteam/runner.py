@@ -43,7 +43,7 @@ MAX_CONTINUED_GATEWAY_REQUESTS = 1
 #   gone past the input rails and nothing recorded whether it did.
 # skipped_by_safety_bound: the scenario was deliberately not run because the bound above
 #   was already used up. It is not a harness failure.
-CONTINUATION_UNKNOWN = "continuation_unknown"
+CONTINUATION_UNKNOWN = store.CONTINUATION_UNKNOWN
 SKIPPED_BY_SAFETY_BOUND = "skipped_by_safety_bound"
 _GATEWAY_STOP_REASON = (
     "Not run. An earlier gateway scenario in this run was not stopped by an input rail, "

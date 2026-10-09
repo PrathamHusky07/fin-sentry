@@ -21,6 +21,7 @@ from psycopg.types.json import Jsonb
 from finsentry.redteam.classify import Classification, Observation
 from finsentry.redteam.models import Category, Outcome, Scenario
 from finsentry.redteam.records import ExecutionRecord, RunRecord
+from finsentry.redteam.registry import load_scenarios
 
 # A run is bounded by the runner's own deadline. A run still marked running long
 # after that belongs to a process that died, and is reclaimed instead of blocking
@@ -29,6 +30,10 @@ STALE_RUN_MINUTES = 15
 
 # Migration 006: the partial unique index that allows one running run at a time.
 _ONE_RUNNING_INDEX = "red_team_one_running_run"
+
+# Evidence key for a gateway execution that was cut off, so nothing recorded whether its
+# request went past the input rails. The runner re-exports it for its own except path.
+CONTINUATION_UNKNOWN = "continuation_unknown"
 
 _EXEC_COLUMNS = """
     e.execution_id::text, e.run_id::text, e.seq, e.scenario_id, e.scenario_version,
@@ -151,35 +156,60 @@ def finish_run(database_url: str, run_id: str, failure_reason: str | None) -> No
         )
 
 
+def _fail_unfinished(conn: psycopg.Connection[dict[str, Any]], run_id: str, reason: str) -> None:
+    """Finish every unfinished execution of a run as execution_failed on `conn`.
+
+    An execution still running when its run ended may have sent a gateway request that
+    went past the input rails, so a running gateway_route execution records
+    continuation_unknown. A queued execution never started and sent nothing, so it records
+    no claim. Only the run's own executions are touched."""
+    gateway_ids = [s.id for s in load_scenarios() if s.executor == "gateway_route"]
+    conn.execute(
+        "UPDATE red_team_executions SET state = 'finished', outcome = 'execution_failed',"
+        " expectation = 'not_assessable', finished_at = now(), reason = %s,"
+        " evidence = CASE WHEN state = 'running' AND scenario_id = ANY(%s)"
+        " THEN evidence || %s ELSE evidence END"
+        " WHERE run_id = %s::uuid AND state <> 'finished'",
+        (reason, gateway_ids, Jsonb({CONTINUATION_UNKNOWN: True}), run_id),
+    )
+
+
 def fail_unfinished(database_url: str, run_id: str, reason: str) -> None:
     """Mark every execution of a run that never finished as execution_failed, so a run
     that stopped early leaves visible failures instead of rows stuck in queued."""
     with _connect(database_url) as conn:
-        conn.execute(
-            "UPDATE red_team_executions SET state = 'finished', outcome = 'execution_failed',"
-            " expectation = 'not_assessable', finished_at = now(), reason = %s"
-            " WHERE run_id = %s::uuid AND state <> 'finished'",
-            (reason, run_id),
-        )
+        _fail_unfinished(conn, run_id, reason)
 
 
 def reclaim_stale_runs(database_url: str) -> int:
     """Fail runs a dead process left in running state, and their unfinished
-    executions, so they stay visible as failed instead of looking active forever."""
+    executions, so they stay visible as failed instead of looking active forever.
+
+    Each run is failed together with its executions in one transaction. A crash or a
+    database error between the two writes rolls both back, so the run stays running and
+    the next call reclaims it. Failing the run first on its own would strand its
+    executions, because the stale query never revisits a failed run."""
     reason = "The process that started this run stopped before it finished."
+    reclaimed = 0
     with _connect(database_url) as conn:
         stale = conn.execute(
-            "UPDATE red_team_runs SET status = 'failed', finished_at = now(),"
-            " failure_reason = %s"
-            " WHERE status = 'running' AND created_at < now() - make_interval(mins => %s)"
-            " RETURNING run_id::text AS run_id",
-            (reason, STALE_RUN_MINUTES),
+            "SELECT run_id::text AS run_id FROM red_team_runs"
+            " WHERE status = 'running' AND created_at < now() - make_interval(mins => %s)",
+            (STALE_RUN_MINUTES,),
         ).fetchall()
-    for row in stale:
-        fail_unfinished(
-            database_url, str(row["run_id"]), "The run ended before this execution completed."
-        )
-    return len(stale)
+        for row in stale:
+            run_id = str(row["run_id"])
+            with conn.transaction():
+                failed = conn.execute(
+                    "UPDATE red_team_runs SET status = 'failed', finished_at = now(),"
+                    " failure_reason = %s WHERE run_id = %s::uuid AND status = 'running'",
+                    (reason, run_id),
+                )
+                if failed.rowcount == 0:
+                    continue  # another replica reclaimed it first
+                _fail_unfinished(conn, run_id, "The run ended before this execution completed.")
+                reclaimed += 1
+    return reclaimed
 
 
 def active_run_id(database_url: str) -> str | None:
