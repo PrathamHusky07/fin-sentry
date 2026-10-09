@@ -80,6 +80,13 @@ def classify(scenario: Scenario, obs: Observation) -> Classification:
         return Classification(
             "inconclusive", "not_assessable", "No defense decision and no pass decision recorded."
         )
+    # An executor that reports both has contradicted itself. Never pick a side.
+    if obs.defense_acted and obs.attack_passed:
+        return Classification(
+            "inconclusive",
+            "not_assessable",
+            "Contradictory observation: a defense acted and the attack also passed.",
+        )
     # A catch must carry the scenario's required evidence. A miss has no blocking
     # layer to name, so it only needs some measured facts to stand on.
     missing = _missing_evidence(scenario, obs) if obs.defense_acted else []
