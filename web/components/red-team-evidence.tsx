@@ -158,8 +158,11 @@ function EvidenceBody({ e }: { e: ExecutionRecord }) {
         {e.mode === "deterministic" ? (
           <p className="text-text-secondary text-base leading-relaxed">
             This was a deterministic execution. It exercised the real defense
-            with a controlled input and made no billable model calls. It is not
-            a measurement of live model behavior.
+            with a controlled input. The runner made no model call of its own.
+            {e.evidence.continued_past_input_rails === true
+              ? " No input rail stopped this request, so it continued to the faithfulness rail and the flash judge. Either can call Gemini, and those calls are not recorded on this execution. The rails' cost limits cap them."
+              : ""}{" "}
+            It is not a measurement of live model behavior.
           </p>
         ) : (
           <p className="text-text-secondary text-base leading-relaxed">

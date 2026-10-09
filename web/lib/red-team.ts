@@ -194,7 +194,7 @@ export const MODE_LABEL: Record<Mode, string> = {
 
 export const MODE_MEANING: Record<Mode, string> = {
   deterministic:
-    "A real defense with a controlled input. No billable model calls.",
+    "A real defense with a controlled input. The runner makes no billable model calls. A gateway request that no input rail stops continues to the model path, where a bounded Gemini cost is possible.",
   judge_assisted:
     "Detection depends on the Gemini faithfulness judge, so this run spends model calls.",
 };

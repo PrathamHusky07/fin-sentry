@@ -80,8 +80,20 @@ def rail_for(reported: object) -> Rail | None:
     return reported if reported in _RAIL_NAMES else None  # type: ignore[return-value]
 
 
+def _input_rails_stopped(status: int, body: dict[str, object]) -> bool:
+    """True when the request ended at the input rails, before embedding, retrieval, the
+    model and the faithfulness judge. Any other status means it may have gone further,
+    and a gateway run can spend there (see the runner's MAX_CONTINUED_GATEWAY_REQUESTS)."""
+    return status == 403 or (
+        status == 503 and body.get("error") == "input rail service unavailable"
+    )
+
+
 def _observe_response(status: int, body: dict[str, object]) -> Observation:
-    evidence: dict[str, object] = {"gateway_status": status}
+    evidence: dict[str, object] = {
+        "gateway_status": status,
+        "continued_past_input_rails": not _input_rails_stopped(status, body),
+    }
     reported = body.get("rail")
     layer = rail_for(reported)
     if status in (403, 422) and layer is not None:

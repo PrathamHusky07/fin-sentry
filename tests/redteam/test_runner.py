@@ -213,3 +213,71 @@ async def test_a_run_past_its_deadline_fails_and_leaves_unfinished_executions_fa
     assert "caught" in outcomes
     assert outcomes[-1] == "execution_failed"
     assert all(e.state == "finished" for e in executions)
+
+
+# --- the gateway cost bound ---------------------------------------------
+
+_PASSED_GATEWAY = Observation(
+    summary="Passed.",
+    evidence={"gateway_status": 200, "continued_past_input_rails": True},
+    attack_passed=True,
+)
+
+
+async def test_after_one_gateway_request_goes_past_the_input_rails_no_more_are_sent() -> None:
+    sent: list[str] = []
+
+    async def fake(s: object, deps: object, execution_id: str) -> Observation:
+        sent.append(getattr(s, "id"))
+        return _PASSED_GATEWAY if getattr(s, "executor") == "gateway_route" else _CAUGHT
+
+    with patch.object(runner, "_execute", fake):
+        run_id = await runner.start_run(
+            RunRequest(scenario_ids=["DI-001", "HZ-001", "OUT-001", "MS-001"]), make_deps()
+        )
+        await _wait_for_run(run_id)
+    run, executions = _only_execution(run_id)
+    # DI-001 went on, so HZ-001 and MS-001 are never sent. The non-gateway scenario still runs.
+    assert sent == ["DI-001", "OUT-001"]
+    assert [e.outcome for e in executions][:2] == ["missed", "execution_failed"]
+    assert executions[3].outcome == "execution_failed"
+    assert "Not run" not in (executions[2].reason or "")
+    assert all(e.state == "finished" for e in executions)
+    assert "Not run" in (executions[1].reason or "")
+    assert executions[1].gemini_calls == 0 and executions[1].duration_ms == 0
+    assert run.status == "completed"
+
+
+async def test_gateway_requests_stopped_by_an_input_rail_do_not_use_up_the_bound() -> None:
+    sent: list[str] = []
+
+    async def fake(s: object, deps: object, execution_id: str) -> Observation:
+        sent.append(getattr(s, "id"))
+        return Observation(
+            summary="Blocked.",
+            evidence={
+                "gateway_status": 403,
+                "gateway_rail": "prompt-guard-2",
+                "continued_past_input_rails": False,
+            },
+            defense_acted=True,
+            acting_layer="prompt-guard-2",
+        )
+
+    with patch.object(runner, "_execute", fake):
+        run_id = await runner.start_run(
+            RunRequest(scenario_ids=["DI-001", "HZ-001", "MS-001"]), make_deps()
+        )
+        await _wait_for_run(run_id)
+    assert sent == ["DI-001", "HZ-001", "MS-001"]
+
+
+async def test_a_gateway_execution_that_raised_counts_as_having_gone_past_the_input_rails() -> None:
+    async def boom(*_: object, **__: object) -> Observation:
+        raise RuntimeError("connection reset")
+
+    with patch.object(runner, "_execute", boom):
+        run_id = await runner.start_run(RunRequest(scenario_ids=["DI-001", "HZ-001"]), make_deps())
+        await _wait_for_run(run_id)
+    _, executions = _only_execution(run_id)
+    assert "Not run" in (executions[1].reason or "")

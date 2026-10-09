@@ -28,6 +28,19 @@ log = logging.getLogger(__name__)
 PER_EXECUTION_SECONDS = 90.0
 RUN_DEADLINE_SECONDS = 600.0
 
+# A gateway_route scenario that no input rail stops goes on to the faithfulness rail and
+# emits an event the flash judge scores, and either can call Gemini. The runner itself
+# never calls a model, but it cannot keep a gateway request from continuing without
+# changing the event contract. So it bounds the exposure instead: once this many gateway
+# requests in one run have gone past the input rails, the run does not send another.
+# Each Gemini call is still capped by the rails' own CostBudget.
+MAX_CONTINUED_GATEWAY_REQUESTS = 1
+_GATEWAY_STOP_REASON = (
+    "Not run. An earlier gateway scenario in this run was not stopped by an input rail, "
+    "so the request went on to the model path, where Gemini calls are possible. The run "
+    "sends no further gateway requests. Start this scenario in a run of its own."
+)
+
 _start_lock = asyncio.Lock()
 _tasks: set[asyncio.Task[None]] = set()
 
@@ -91,7 +104,9 @@ def _failure_reason(exc: Exception) -> str:
     return f"The harness raised {type(exc).__name__}. See the gateway log."
 
 
-async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> None:
+async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> bool:
+    """Run one execution and persist it. Returns True when a gateway request may have gone
+    past the input rails, which includes a gateway execution that raised or timed out."""
     url = deps.database_url
     await asyncio.to_thread(store.mark_running, url, execution_id)
     started = time.monotonic()
@@ -110,6 +125,7 @@ async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> None:
             verdict.reason,
             ms,
         )
+        return obs.evidence.get("continued_past_input_rails") is True
     except Exception as exc:
         log.exception("red team execution %s of %s failed", execution_id, scenario.id)
         ms = int((time.monotonic() - started) * 1000)
@@ -123,16 +139,33 @@ async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> None:
             _failure_reason(exc),
             ms,
         )
+        return scenario.executor == "gateway_route"
 
 
 async def run_suite(
     scenarios: list[Scenario], deps: Deps, run_id: str, execution_ids: list[str]
 ) -> None:
     failure: str | None = None
+    continued = 0
     try:
         async with asyncio.timeout(RUN_DEADLINE_SECONDS):
             for scenario, execution_id in zip(scenarios, execution_ids, strict=True):
-                await run_one(scenario, deps, execution_id)
+                if scenario.executor == "gateway_route" and continued >= (
+                    MAX_CONTINUED_GATEWAY_REQUESTS
+                ):
+                    await asyncio.to_thread(
+                        store.finish_execution,
+                        deps.database_url,
+                        execution_id,
+                        "execution_failed",
+                        None,
+                        None,
+                        _GATEWAY_STOP_REASON,
+                        0,
+                    )
+                    continue
+                if await run_one(scenario, deps, execution_id):
+                    continued += 1
     except TimeoutError:
         failure = f"The run exceeded its {RUN_DEADLINE_SECONDS:g} second deadline."
     except Exception:

@@ -145,3 +145,30 @@ def test_every_colang_flow_maps_to_a_known_rail() -> None:
     flows = re.findall(r"^define flow (.+)$", colang.read_text(), flags=re.MULTILINE)
     assert flows, "no flows found in config.co"
     assert set(flows) == set(exec_gateway.FLOW_TO_RAIL)
+
+
+# --- what a gateway execution may cost ----------------------------------
+# The runner never calls a model. A request that no input rail stops can still reach
+# the faithfulness rail and the flash judge, so the executor records that it did.
+# The judge path is not exercised here: _post is stubbed and no faithfulness rail is set.
+
+
+async def test_a_missed_gateway_scenario_is_recorded_as_having_gone_past_the_input_rails() -> None:
+    _, obs, result = await _run("DI-001", 200, {"answer": {}})
+    assert result.outcome == "missed"
+    assert obs.evidence["continued_past_input_rails"] is True
+    # The harness made no model call of its own, so it records none.
+    assert (obs.gemini_calls, obs.cost_usd) == (0, 0.0)
+
+
+async def test_an_input_rail_block_never_reaches_the_model_path() -> None:
+    _, obs, _ = await _run("DI-001", 403, {"rail": "check prompt injection"})
+    assert obs.evidence["continued_past_input_rails"] is False
+    _, down, _ = await _run("DI-001", 503, {"error": "input rail service unavailable"})
+    assert down.evidence["continued_past_input_rails"] is False
+
+
+async def test_an_output_rail_block_or_a_downstream_failure_did_go_past_the_input_rails() -> None:
+    for status, body in ((422, {"error": "output_rail_block", "rail": "faithfulness"}), (504, {})):
+        _, obs, _ = await _run("DI-001", status, body)
+        assert obs.evidence["continued_past_input_rails"] is True, status
