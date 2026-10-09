@@ -8,15 +8,17 @@ reconciliation of request, event, verdict and persisted-row counts.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import os
 import re
 import socket
 import subprocess
+import time
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 # --- arrival schedule and statistics ----------------------------------------
 
@@ -171,6 +173,19 @@ def resource_breach(
     return None
 
 
+def check_resources(
+    read: Callable[[], dict[str, float]], baseline: Mapping[str, float], limits: ResourceLimits
+) -> tuple[dict[str, float] | None, str | None]:
+    """One monitored reading and the reason to abort, if any. A reading that cannot be
+    taken is an abort reason, because load must not continue unmonitored."""
+    try:
+        reading = read()
+    except Exception as exc:
+        return None, f"resource monitoring failed: {exc!r}"
+    breach = resource_breach(reading, baseline, limits)
+    return reading, f"resource limit: {breach}" if breach else None
+
+
 # --- egress tripwire --------------------------------------------------------
 
 _BLOCKED_SUFFIXES = ("googleapis.com", "google.internal", "aiplatform.googleapis.com")
@@ -268,47 +283,170 @@ def parse_group_describe(text: str) -> dict[str, Any]:
     }
 
 
+# --- backlog drain ----------------------------------------------------------
+
+DrainState = Literal["drained", "backlog", "unknown"]
+
+
+def drain_state(lag: int | None, verdict_mark: int | None, event_mark: int | None) -> DrainState:
+    """Drained needs a readable zero lag and a verdict for every event. A reading that
+    could not be taken is unknown, never zero."""
+    if lag is None or verdict_mark is None or event_mark is None:
+        return "unknown"
+    return "drained" if lag == 0 and verdict_mark >= event_mark else "backlog"
+
+
+async def wait_for_drain(
+    read: Callable[[], tuple[int | None, int | None, int | None]],
+    timeout_s: float,
+    poll_s: float = 1.0,
+) -> dict[str, Any]:
+    """Poll `read` (lag, verdict topic mark, event topic mark) until the backlog is drained.
+
+    `drained` is True or False only when the last reading was readable. If the last
+    reading could not be taken, the answer is None and the status is unknown."""
+    started = time.monotonic()
+    peak: int | None = None
+    unreadable = 0
+    while True:
+        lag, verdict_mark, event_mark = read()
+        state = drain_state(lag, verdict_mark, event_mark)
+        unreadable += state == "unknown"
+        if lag is not None:
+            peak = lag if peak is None else max(peak, lag)
+        elapsed = time.monotonic() - started
+        if state == "drained":
+            return _drain_result("drained", elapsed, peak, unreadable)
+        if elapsed >= timeout_s:
+            status = "unknown" if state == "unknown" else "not_drained"
+            return _drain_result(status, timeout_s, peak, unreadable)
+        await asyncio.sleep(poll_s)
+
+
+def _drain_result(status: str, seconds: float, peak: int | None, unreadable: int) -> dict[str, Any]:
+    return {
+        "status": status,
+        "drained": {"drained": True, "not_drained": False}.get(status),
+        "seconds": round(seconds, 1),
+        "peak_seen": peak,
+        "unreadable_polls": unreadable,
+    }
+
+
 # --- reconciliation ---------------------------------------------------------
+
+
+Status = Literal["pass", "fail", "unknown"]
+
+
+def _table(ids: Mapping[str, int]) -> dict[str, Any]:
+    duplicated = sorted(i for i, n in ids.items() if n > 1)
+    return {
+        "rows": sum(ids.values()),
+        "unique_ids": len(ids),
+        "duplicate_rows": sum(n - 1 for n in ids.values() if n > 1),
+        "duplicate_id_examples": duplicated[:5],
+    }
 
 
 def reconcile(
     responses: Sequence[tuple[str | None, int | None]],
     event_ids: Mapping[str, int],
-    verdict_ids: Iterable[str],
+    verdict_ids: Mapping[str, int],
     persisted_event_ids: Mapping[str, int],
-    persisted_verdict_ids: Iterable[str],
+    persisted_verdict_ids: Mapping[str, int],
 ) -> dict[str, Any]:
-    """Count what each leg saw and name the gaps between adjacent legs.
+    """Reconcile what each leg saw, with an explicit status per population.
 
-    `responses` is one (app_trace_id, HTTP status) pair per request sent. The gateway
-    returns the trace id only on a 200 or a 504, so a blocked request, a 5xx or a timeout
-    cannot be matched to its event by id. Those are reconciled by count instead:
-    `unmatched_events_minus_requests_without_id` is zero when every event without a
-    matching response id is explained by a request that returned no id."""
-    response_ids = {i for i, _ in responses if i is not None}
-    events = set(event_ids)
-    verdicts = set(verdict_ids)
-    persisted = set(persisted_event_ids)
-    persisted_verdicts = set(persisted_verdict_ids)
-    requests_without_id = len(responses) - len(response_ids)
-    unmatched = len(events - response_ids)
+    `responses` is one (app_trace_id, HTTP status) pair per request sent. Each leg is a
+    Counter of ids, so a duplicated row stays visible. The gateway returns the trace id
+    only on a 200 or a 504, so a blocked request, a 5xx or a timeout cannot be matched to
+    its event by id. Three populations are therefore kept apart:
+
+    1. successful responses with a trace id: each must have an event, a verdict and a
+       persisted row of each kind. This is the claim that is proven by id.
+    2. HTTP responses without a trace id, and 3. requests with no HTTP response: neither
+       can be matched by id, and neither is assumed to have produced an event. They are
+       compared against the events that match no response id. No unmatched event is a pass.
+       An unmatched event leaves them unknown, because the source cannot be told apart.
+       More unmatched events than requests without an id could explain is a fail, reported
+       under `unmatched_events`.
+    """
+    ok_ids = {i for i, s in responses if i is not None and s == 200}
+    other_ids = {i for i, s in responses if i is not None and s != 200}
+    answered_no_id = [s for i, s in responses if i is None and s is not None]
+    no_response = sum(1 for i, s in responses if i is None and s is None)
+    events, verdicts = set(event_ids), set(verdict_ids)
+    persisted, persisted_verdicts = set(persisted_event_ids), set(persisted_verdict_ids)
+
+    unmatched = events - ok_ids - other_ids
+    explainable = len(answered_no_id) + no_response
+
+    def id_less_status(count: int) -> Status:
+        return "pass" if count == 0 or not unmatched else "unknown"
+
+    legs_ok = (events, verdicts, persisted, persisted_verdicts)
+    matched = [len(ok_ids & leg) for leg in legs_ok]
+    if not ok_ids:
+        ok_status: Status = "unknown"
+    else:
+        ok_status = "pass" if all(m == len(ok_ids) for m in matched) else "fail"
+    tables = {
+        "events_topic": _table(event_ids),
+        "verdicts_topic": _table(verdict_ids),
+        "events_persisted": _table(persisted_event_ids),
+        "verdicts_persisted": _table(persisted_verdict_ids),
+    }
+    with_duplicates = [name for name, t in tables.items() if t["duplicate_rows"]]
+    row_counts = {
+        "events_topic": tables["events_topic"]["rows"],
+        "events_persisted": tables["events_persisted"]["rows"],
+        "verdicts_topic": tables["verdicts_topic"]["rows"],
+        "verdicts_persisted": tables["verdicts_persisted"]["rows"],
+    }
+    counts_agree = (
+        row_counts["events_topic"] == row_counts["events_persisted"]
+        and row_counts["verdicts_topic"] == row_counts["verdicts_persisted"]
+    )
     return {
         "sent_requests": len(responses),
         "http_responses": sum(1 for _, s in responses if s is not None),
-        "responses_with_trace_id": len(response_ids),
-        "requests_without_trace_id": requests_without_id,
-        "events_in_topic_total": sum(event_ids.values()),
-        "events_in_topic_unique": len(events),
-        "duplicate_events": sum(n - 1 for n in event_ids.values() if n > 1),
-        "response_id_without_event": len(response_ids - events),
-        "response_id_without_event_examples": sorted(response_ids - events)[:5],
-        "events_unmatched_to_a_response_id": unmatched,
-        "unmatched_events_minus_requests_without_id": unmatched - requests_without_id,
-        "verdicts_unique": len(verdicts),
+        "populations": {
+            "successful_with_trace_id": {
+                "count": len(ok_ids),
+                "with_event": matched[0],
+                "with_verdict": matched[1],
+                "with_persisted_event": matched[2],
+                "with_persisted_verdict": matched[3],
+                "missing_event_examples": sorted(ok_ids - events)[:5],
+                "status": ok_status,
+            },
+            "http_response_without_trace_id": {
+                "count": len(answered_no_id),
+                "status_counts": dict(Counter(str(s) for s in answered_no_id)),
+                "status": id_less_status(len(answered_no_id)),
+            },
+            "no_http_response": {"count": no_response, "status": id_less_status(no_response)},
+            "other_responses_with_trace_id": {
+                "count": len(other_ids),
+                "with_event": len(other_ids & events),
+                "status": "pass" if other_ids <= events else "unknown",
+            },
+        },
+        "unmatched_events": {
+            "count": len(unmatched),
+            "examples": sorted(unmatched)[:5],
+            "attributable_requests_without_id": explainable,
+            "status": "pass" if len(unmatched) <= explainable else "fail",
+        },
+        "duplicates": {
+            "status": "fail" if with_duplicates else "pass",
+            "tables_with_duplicates": with_duplicates,
+        },
+        "tables": tables,
+        "row_counts": {**row_counts, "status": "pass" if counts_agree else "fail"},
         "event_without_verdict": len(events - verdicts),
         "verdict_without_event": len(verdicts - events),
-        "persisted_events_unique": len(persisted),
         "topic_event_not_persisted": len(events - persisted),
-        "persisted_verdicts_unique": len(persisted_verdicts),
         "verdict_not_persisted": len(verdicts - persisted_verdicts),
     }

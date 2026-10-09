@@ -44,7 +44,7 @@ async def collect_legs(responses: list[tuple[str | None, int | None]]) -> dict[s
     events = await read_topic(EVENTS_TOPIC)
     verdicts = await read_topic(VERDICTS_TOPIC)
     event_ids = Counter(e["app_trace_id"] for e in events)
-    verdict_ids = [v["app_trace_id"] for v in verdicts]
+    verdict_ids = Counter(v["app_trace_id"] for v in verdicts)
     server_ms = {e["app_trace_id"]: e["total_latency_ms"] for e in events}
     event_status = Counter(e["status"] for e in events)
     faithfulness = [e.get("output_rail_trace_snapshot", {}).get("faithfulness", {}) for e in events]
@@ -58,9 +58,9 @@ async def collect_legs(responses: list[tuple[str | None, int | None]]) -> dict[s
     persisted_events = Counter(
         r[0] for r in risingwave_rows(f"SELECT app_trace_id FROM {EVENTS_TABLE}")
     )
-    persisted_verdicts = [
+    persisted_verdicts = Counter(
         r[0] for r in risingwave_rows(f"SELECT app_trace_id FROM {VERDICTS_TABLE}")
-    ]
+    )
     return {
         "reconciliation": reconcile(
             responses, event_ids, verdict_ids, persisted_events, persisted_verdicts

@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,6 +57,7 @@ from load_test_lib import (  # noqa: E402
     ResourceLimits,
     Slo,
     arrival_offsets,
+    check_resources,
     consumer_attestation_problems,
     gateway_attestation_problems,
     has_headroom,
@@ -63,6 +65,7 @@ from load_test_lib import (  # noqa: E402
     resource_breach,
     slo_violations,
     stage_stats,
+    wait_for_drain,
 )
 from load_test_report import collect_legs, finish_summary  # noqa: E402
 from reliability_experiment import QUESTIONS  # noqa: E402
@@ -101,28 +104,41 @@ class Run:
         return seq, ticker, question
 
 
+def _reading(read: Callable[[], int | None]) -> int | None:
+    """A backlog reading, or None when it cannot be taken. None is unknown, never zero."""
+    try:
+        return read()
+    except Exception:
+        return None
+
+
 def sampler(run: Run) -> None:
     while not run.stop_sampler.wait(SAMPLE_EVERY_S):
-        try:
-            res = read_resources()
-            usage = process_usage(run.gateway_pid) or {}
-            run.samples.append(
-                {
-                    "t": time.time(),
-                    "stage": run.stage,
-                    **res,
-                    "consumer_lag": group_state()["total_lag"],
-                    "gateway_cpu_pct": usage.get("cpu_pct"),
-                    "gateway_rss_mb": usage.get("rss_mb"),
-                }
-            )
-            if run.gateway is not None and not run.gateway.alive() and run.abort is None:
-                run.abort = f"gateway process exited with code {run.gateway.popen.returncode}"
-            breach = resource_breach(res, run.baseline, LIMITS)
-            if breach and run.abort is None:
-                run.abort = f"resource limit: {breach}"
-        except Exception as exc:  # a failed reading must not end the load test
-            run.samples.append({"t": time.time(), "stage": run.stage, "error": repr(exc)})
+        if run.gateway is not None and not run.gateway.alive() and run.abort is None:
+            run.abort = f"gateway process exited with code {run.gateway.popen.returncode}"
+        res, abort = check_resources(read_resources, run.baseline, LIMITS)
+        usage: dict[str, float] = {}
+        if res is not None:
+            try:
+                usage = process_usage(run.gateway_pid) or {}
+            except Exception as exc:
+                res, abort = None, f"resource monitoring failed: {exc!r}"
+        if abort and run.abort is None:
+            run.abort = abort
+        if res is None:
+            # Monitoring has stopped. The abort ends the stage, so the sampler ends too.
+            run.samples.append({"t": time.time(), "stage": run.stage, "error": abort})
+            return
+        run.samples.append(
+            {
+                "t": time.time(),
+                "stage": run.stage,
+                **res,
+                "consumer_lag": _reading(lambda: group_state()["total_lag"]),
+                "gateway_cpu_pct": usage.get("cpu_pct"),
+                "gateway_rss_mb": usage.get("rss_mb"),
+            }
+        )
 
 
 def verify_isolation(gateway_att: dict[str, Any], consumer_att: dict[str, Any]) -> dict[str, Any]:
@@ -210,21 +226,19 @@ async def run_stage(
     }
 
 
+def read_drain() -> tuple[int | None, int | None, int | None]:
+    """Consumer lag and the verdict and event topic marks. Each is None if it cannot be read."""
+    return (
+        _reading(lambda: group_state()["total_lag"]),
+        _reading(lambda: high_watermark(VERDICTS_TOPIC)),
+        _reading(lambda: high_watermark(EVENTS_TOPIC)),
+    )
+
+
 async def drain_lag(timeout_s: float) -> dict[str, Any]:
-    """Seconds until the flash consumer has no backlog and every event has a verdict."""
-    started = time.monotonic()
-    peak = 0
-    while time.monotonic() - started < timeout_s:
-        lag = group_state()["total_lag"] or 0
-        peak = max(peak, lag)
-        if lag == 0 and high_watermark(VERDICTS_TOPIC) >= high_watermark(EVENTS_TOPIC):
-            return {
-                "drained": True,
-                "seconds": round(time.monotonic() - started, 1),
-                "peak_seen": peak,
-            }
-        await asyncio.sleep(1.0)
-    return {"drained": False, "seconds": round(timeout_s, 1), "peak_seen": peak}
+    """Seconds until the flash consumer has no backlog and every event has a verdict.
+    An unreadable lag is reported as unknown, never as drained."""
+    return await wait_for_drain(read_drain, timeout_s)
 
 
 async def run_all(run: Run, plan: list[tuple[float, float]], summary: dict[str, Any]) -> None:

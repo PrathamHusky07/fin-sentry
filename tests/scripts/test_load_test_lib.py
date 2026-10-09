@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import socket
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -18,9 +19,11 @@ from load_test_lib import (  # noqa: E402, I001
     ResourceLimits,
     Slo,
     arrival_offsets,
+    check_resources,
     consumer_attestation_problems,
     gateway_attestation_problems,
     has_headroom,
+    drain_state,
     is_blocked_host,
     parse_group_describe,
     parse_resources,
@@ -29,6 +32,7 @@ from load_test_lib import (  # noqa: E402, I001
     resource_breach,
     slo_violations,
     stage_stats,
+    wait_for_drain,
 )
 from load_test_report import span_stats  # noqa: E402
 
@@ -214,27 +218,196 @@ def test_group_describe_parses_lag_members_and_topics() -> None:
     assert parse_group_describe("")["total_lag"] is None
 
 
-def test_reconcile_names_every_gap_between_adjacent_legs() -> None:
-    # a, b, c answered 200 with ids. d was blocked and e timed out, so neither has an id.
-    responses: list[tuple[str | None, int | None]] = [
-        ("a", 200),
-        ("b", 200),
-        ("c", 200),
-        (None, 403),
-        (None, None),
-    ]
-    events = {"a": 1, "b": 2, "x": 1, "y": 1}  # c has no event, b is duplicated, x and y have no id
-    result = reconcile(responses, events, ["a", "b"], {"a": 1}, ["a"])
-    assert result["sent_requests"] == 5 and result["http_responses"] == 4
-    assert result["responses_with_trace_id"] == 3 and result["requests_without_trace_id"] == 2
-    assert result["response_id_without_event"] == 1  # c
-    assert result["response_id_without_event_examples"] == ["c"]
-    assert result["events_unmatched_to_a_response_id"] == 2  # x, y
-    assert result["unmatched_events_minus_requests_without_id"] == 0  # the two id-less requests
-    assert result["duplicate_events"] == 1
-    assert result["event_without_verdict"] == 2  # x, y
-    assert result["topic_event_not_persisted"] == 3  # b, x, y
-    assert result["verdict_not_persisted"] == 1  # b
+# --- backlog drain: an unreadable lag is unknown, never zero ----------------
+
+
+def test_drain_state_separates_drained_backlog_and_unreadable() -> None:
+    assert drain_state(0, 10, 10) == "drained"
+    assert drain_state(0, 12, 10) == "drained"
+    assert drain_state(3, 10, 10) == "backlog"
+    assert drain_state(0, 9, 10) == "backlog"  # no lag, but a verdict is still owed
+    assert drain_state(None, 10, 10) == "unknown"
+    assert drain_state(0, None, 10) == "unknown"
+    assert drain_state(0, 10, None) == "unknown"
+
+
+async def test_a_readable_lag_that_reaches_zero_is_reported_drained() -> None:
+    readings = iter([(5, 8, 10), (2, 9, 10), (0, 10, 10)])
+    result = await wait_for_drain(lambda: next(readings), timeout_s=5.0, poll_s=0.0)
+    assert result["status"] == "drained" and result["drained"] is True
+    assert result["peak_seen"] == 5 and result["unreadable_polls"] == 0
+
+
+async def test_an_unreadable_lag_is_never_reported_as_drained() -> None:
+    result = await wait_for_drain(lambda: (None, 10, 10), timeout_s=0.05, poll_s=0.01)
+    assert result["status"] == "unknown" and result["drained"] is None
+    assert result["peak_seen"] is None and result["unreadable_polls"] > 0
+
+
+async def test_a_stuck_backlog_is_not_drained_and_a_late_blind_spot_is_unknown() -> None:
+    stuck = await wait_for_drain(lambda: (4, 10, 10), timeout_s=0.05, poll_s=0.01)
+    assert stuck["status"] == "not_drained" and stuck["drained"] is False
+    readings = iter([(4, 10, 10)])
+    blind = await wait_for_drain(
+        lambda: next(readings, (None, None, None)), timeout_s=0.05, poll_s=0.01
+    )
+    assert blind["status"] == "unknown"  # the last reading could not be taken
+
+
+# --- resource monitoring: a failed reading aborts the stage -----------------
+
+_FRESH = {"mem_free_pct": 40.0, "swap_used_mb": 100.0, "swap_free_mb": 900.0, "load_1m": 1.0}
+
+
+def test_a_normal_resource_reading_does_not_abort() -> None:
+    reading, abort = check_resources(lambda: _FRESH, _FRESH, ResourceLimits())
+    assert reading == _FRESH and abort is None
+
+
+def test_a_resource_limit_breach_aborts_with_its_reason() -> None:
+    low = {**_FRESH, "mem_free_pct": 5.0}
+    reading, abort = check_resources(lambda: low, _FRESH, ResourceLimits())
+    assert reading == low and abort is not None and "free memory" in abort
+
+
+def test_a_failed_resource_reading_aborts_instead_of_being_skipped() -> None:
+    def unreadable() -> dict[str, float]:
+        raise OSError("memory_pressure unavailable")
+
+    reading, abort = check_resources(unreadable, _FRESH, ResourceLimits())
+    assert reading is None
+    assert abort is not None and "monitoring failed" in abort and "unavailable" in abort
+
+
+# --- reconciliation: three populations, each with its own status ------------
+
+
+def _legs(*ids: str) -> Counter[str]:
+    return Counter(ids)
+
+
+def _ok(i: str) -> tuple[str | None, int | None]:
+    return (i, 200)
+
+
+NO_RESPONSE: tuple[str | None, int | None] = (None, None)
+BLOCKED: tuple[str | None, int | None] = (None, 403)
+
+
+def test_an_all_matched_run_passes_with_crash_victims_reported_apart() -> None:
+    # The recorded run shape: every answered request has an id, an event, a verdict and a
+    # persisted row. The unanswered requests (crash victims) left no event at all.
+    responses = [_ok("a"), _ok("b"), _ok("c"), NO_RESPONSE, NO_RESPONSE]
+    legs = _legs("a", "b", "c")
+    result = reconcile(responses, legs, legs, legs, legs)
+    ok = result["populations"]["successful_with_trace_id"]
+    assert ok["status"] == "pass" and ok["count"] == 3
+    assert (ok["with_event"], ok["with_verdict"]) == (3, 3)
+    assert (ok["with_persisted_event"], ok["with_persisted_verdict"]) == (3, 3)
+    assert result["populations"]["http_response_without_trace_id"]["status"] == "pass"
+    victims = result["populations"]["no_http_response"]
+    assert victims["count"] == 2 and victims["status"] == "pass"  # no event exists to explain
+    assert result["unmatched_events"]["status"] == "pass"
+    assert result["duplicates"]["status"] == "pass" and result["row_counts"]["status"] == "pass"
+    assert "unmatched_events_minus_requests_without_id" not in result
+
+
+def test_an_unmatched_event_and_a_no_response_request_are_not_netted_into_one_number() -> None:
+    # x has no response id. The one request without a response could be its source, but
+    # nothing proves it, so that population is unknown rather than pass or fail.
+    responses = [_ok("a"), _ok("b"), NO_RESPONSE]
+    legs = _legs("a", "b", "x")
+    result = reconcile(responses, legs, legs, legs, legs)
+    pops = result["populations"]
+    assert pops["successful_with_trace_id"]["status"] == "pass"
+    assert pops["http_response_without_trace_id"]["status"] == "pass"  # empty population
+    assert pops["no_http_response"]["status"] == "unknown"
+    assert result["unmatched_events"] == {
+        "count": 1,
+        "examples": ["x"],
+        "attributable_requests_without_id": 1,
+        "status": "pass",
+    }
+
+
+def test_an_event_no_request_could_have_produced_fails() -> None:
+    responses = [_ok("a"), NO_RESPONSE]
+    legs = _legs("a", "x", "y")  # two unmatched events, one request without an id
+    result = reconcile(responses, legs, legs, legs, legs)
+    assert result["unmatched_events"]["status"] == "fail"
+    assert result["unmatched_events"]["count"] == 2
+
+
+def test_a_blocked_response_without_an_id_is_its_own_population() -> None:
+    responses = [_ok("a"), BLOCKED, BLOCKED, NO_RESPONSE]
+    legs = _legs("a")
+    result = reconcile(responses, legs, legs, legs, legs)
+    blocked = result["populations"]["http_response_without_trace_id"]
+    assert blocked["count"] == 2 and blocked["status_counts"] == {"403": 2}
+    assert blocked["status"] == "pass"  # no unmatched event, none is assumed
+    assert result["populations"]["no_http_response"]["count"] == 1
+
+
+def test_a_successful_response_missing_a_leg_fails_and_names_it() -> None:
+    responses = [_ok("a"), _ok("b"), _ok("c")]
+    events = _legs("a", "b")  # c answered but has no event
+    verdicts = _legs("a")  # b has an event but no verdict
+    persisted_events = _legs("a")
+    result = reconcile(responses, events, verdicts, persisted_events, verdicts)
+    ok = result["populations"]["successful_with_trace_id"]
+    assert ok["status"] == "fail"
+    assert (ok["with_event"], ok["with_verdict"], ok["with_persisted_event"]) == (2, 1, 1)
+    assert ok["missing_event_examples"] == ["c"]
+
+
+def test_a_non_200_response_that_carries_an_id_is_reported_not_dropped() -> None:
+    responses = [_ok("a"), ("t", 504)]
+    result = reconcile(responses, _legs("a", "t"), _legs("a", "t"), _legs("a", "t"), _legs("a"))
+    other = result["populations"]["other_responses_with_trace_id"]
+    assert other["count"] == 1 and other["with_event"] == 1 and other["status"] == "pass"
+    assert result["unmatched_events"]["count"] == 0  # t matches its own response id
+
+
+def test_no_duplicate_rows_passes() -> None:
+    legs = _legs("a", "b")
+    result = reconcile([_ok("a"), _ok("b")], legs, legs, legs, legs)
+    assert result["duplicates"]["status"] == "pass"
+    assert result["tables"]["events_persisted"] == {
+        "rows": 2,
+        "unique_ids": 2,
+        "duplicate_rows": 0,
+        "duplicate_id_examples": [],
+    }
+
+
+def test_a_duplicate_persisted_row_is_found_even_when_the_id_sets_match() -> None:
+    legs = _legs("a", "b")
+    persisted_events = _legs("a", "a", "b")  # same two ids, but id a is stored twice
+    result = reconcile([_ok("a"), _ok("b")], legs, legs, persisted_events, legs)
+    assert result["topic_event_not_persisted"] == 0  # the id sets are identical
+    assert result["duplicates"]["status"] == "fail"
+    assert result["duplicates"]["tables_with_duplicates"] == ["events_persisted"]
+    table = result["tables"]["events_persisted"]
+    assert (table["rows"], table["unique_ids"], table["duplicate_rows"]) == (3, 2, 1)
+    assert table["duplicate_id_examples"] == ["a"]
+    # The narrow by-id claim still holds, because it is about ids, not row counts.
+    assert result["populations"]["successful_with_trace_id"]["status"] == "pass"
+
+
+def test_a_duplicate_persisted_verdict_is_found_too() -> None:
+    legs = _legs("a")
+    result = reconcile([_ok("a")], legs, legs, legs, _legs("a", "a"))
+    assert result["duplicates"]["tables_with_duplicates"] == ["verdicts_persisted"]
+
+
+def test_a_row_count_mismatch_between_topic_and_table_fails() -> None:
+    topic = _legs("a", "b", "b")  # b is delivered twice to the topic
+    persisted = _legs("a", "b")  # the table kept one copy
+    result = reconcile([_ok("a"), _ok("b")], topic, _legs("a", "b"), persisted, _legs("a", "b"))
+    assert result["row_counts"]["status"] == "fail"
+    assert result["row_counts"]["events_topic"] == 3
+    assert result["row_counts"]["events_persisted"] == 2
+    assert result["duplicates"]["tables_with_duplicates"] == ["events_topic"]
 
 
 def test_span_stats_groups_by_name_and_respects_the_stage_window(tmp_path: Path) -> None:
