@@ -36,6 +36,14 @@ _WITHHELD_NOTE = (
 )
 
 
+def _cap_query(query: str) -> str:
+    return query[:MAX_QUERY_CHARS] + "..." if len(query) > MAX_QUERY_CHARS else query
+
+
+def _cap_list_query(item: TraceListItem) -> TraceListItem:
+    return item.model_copy(update={"query": _cap_query(item.query)})
+
+
 async def search_traces(
     limit: int = 20,
     offset: int = 0,
@@ -55,8 +63,9 @@ async def search_traces(
     every other trace. That set includes traces the two tiers never both scored (blocked,
     never evaluated, not frontier-sampled), so False does not mean the tiers agreed.
     Omit disagreement to apply no filter; frontier_sampled works the same way.
-    query_contains matches the stored (already redacted) query or the trace id. Results
-    are capped at 100 per page. Use next_offset to continue. Each row's app_trace_id is
+    query_contains matches the stored (already redacted) query or the trace id. Each row's
+    query is cut to 500 characters, as in get_trace_detail. Results are capped at 100 per
+    page. Use next_offset to continue. Each row's app_trace_id is
     the id to pass to get_trace_detail, explain_guardrail_decision or get_judge_scores.
     """
     validate_limit(limit, MAX_TRACE_PAGE)
@@ -73,7 +82,7 @@ async def search_traces(
         disagreement,
     )
     return TraceListResponse(
-        traces=[TraceListItem(**r) for r in rows],
+        traces=[_cap_list_query(TraceListItem(**r)) for r in rows],
         next_offset=offset + limit if len(rows) == limit else None,
         risingwave_connected=dao.connected,
     )
@@ -104,9 +113,7 @@ async def get_trace_detail(app_trace_id: str) -> TraceDetailResponse:
     detail = await _fetch_trace_detail(app_trace_id)
     if not detail.found:
         return detail
-    query = detail.query
-    if query is not None and len(query) > MAX_QUERY_CHARS:
-        query = query[:MAX_QUERY_CHARS] + "..."
+    query = _cap_query(detail.query) if detail.query is not None else None
     evidence = detail.frontier.evidence
     frontier = detail.frontier.model_copy(
         update={

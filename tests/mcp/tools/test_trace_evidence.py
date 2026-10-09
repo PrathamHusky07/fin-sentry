@@ -76,6 +76,34 @@ async def test_search_traces_returns_the_persisted_investigations_rows(monkeypat
     _assert_only_reads(recorder.statements)
 
 
+async def test_search_traces_cuts_a_long_stored_query_like_get_trace_detail(
+    monkeypatch: Any,
+) -> None:
+    dao._pool = object()
+    long_query = "x" * (MAX_QUERY_CHARS + 200)
+    row = {
+        "app_trace_id": "t1",
+        "timestamp_utc": _TS,
+        "endpoint": "/v1/rag/query",
+        "ticker": "AAPL",
+        "query": long_query,
+        "rag_status": "success",
+        "block_reason": None,
+        "judge_status": None,
+    }
+    recorder = _Recorder(one=[], many=[[row], []])
+    monkeypatch.setattr(dao, "query_all", recorder.query_all)
+    listed = await search_traces(limit=1)
+
+    rag_row, judge_row = _detail_rows(query=long_query)
+    detail_recorder = _Recorder(one=[rag_row, judge_row, None], many=[])
+    monkeypatch.setattr(dao, "query_one", detail_recorder.query_one)
+    detail = await get_trace_detail("t1")
+
+    assert len(listed.traces[0].query) == MAX_QUERY_CHARS + 3
+    assert listed.traces[0].query == detail.query
+
+
 async def test_search_traces_has_no_next_offset_on_a_short_page(monkeypatch: Any) -> None:
     dao._pool = object()
     recorder = _Recorder(one=[], many=[[]])
