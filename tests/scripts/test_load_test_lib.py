@@ -360,12 +360,45 @@ def test_a_successful_response_missing_a_leg_fails_and_names_it() -> None:
     assert ok["missing_event_examples"] == ["c"]
 
 
-def test_a_non_200_response_that_carries_an_id_is_reported_not_dropped() -> None:
+def test_a_non_200_response_with_an_id_is_reconciled_across_all_four_legs() -> None:
     responses = [_ok("a"), ("t", 504)]
-    result = reconcile(responses, _legs("a", "t"), _legs("a", "t"), _legs("a", "t"), _legs("a"))
+    legs = _legs("a", "t")
+    result = reconcile(responses, legs, legs, legs, legs)
     other = result["populations"]["other_responses_with_trace_id"]
-    assert other["count"] == 1 and other["with_event"] == 1 and other["status"] == "pass"
+    assert other["count"] == 1 and other["status"] == "pass"
+    assert (other["with_event"], other["with_verdict"]) == (1, 1)
+    assert (other["with_persisted_event"], other["with_persisted_verdict"]) == (1, 1)
     assert result["unmatched_events"]["count"] == 0  # t matches its own response id
+
+
+def test_a_504_with_a_missing_persisted_verdict_fails_its_own_population() -> None:
+    # t was answered 504 with an id and produced an event and a verdict on the topics, but
+    # its verdict never reached the table. The successful population is untouched, and the
+    # 504 population names the gap instead of passing on event presence alone.
+    responses = [_ok("a"), ("t", 504)]
+    legs = _legs("a", "t")
+    result = reconcile(responses, legs, legs, legs, _legs("a"))
+    other = result["populations"]["other_responses_with_trace_id"]
+    assert other["status"] == "fail"
+    assert (other["with_event"], other["with_verdict"], other["with_persisted_event"]) == (1, 1, 1)
+    assert other["with_persisted_verdict"] == 0
+    assert other["missing_persisted_verdict_examples"] == ["t"]
+    assert result["populations"]["successful_with_trace_id"]["status"] == "pass"
+    assert result["row_counts"]["status"] == "fail"  # the global count disagrees too
+
+
+def test_a_504_with_no_event_fails_instead_of_being_unknown() -> None:
+    result = reconcile([("t", 504)], _legs(), _legs(), _legs(), _legs())
+    other = result["populations"]["other_responses_with_trace_id"]
+    assert other["status"] == "fail" and other["missing_event_examples"] == ["t"]
+
+
+def test_no_non_200_responses_with_an_id_is_an_empty_pass() -> None:
+    legs = _legs("a")
+    other = reconcile([_ok("a")], legs, legs, legs, legs)["populations"][
+        "other_responses_with_trace_id"
+    ]
+    assert other["count"] == 0 and other["status"] == "pass"
 
 
 def test_no_duplicate_rows_passes() -> None:

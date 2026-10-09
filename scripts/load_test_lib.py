@@ -349,6 +349,28 @@ def _table(ids: Mapping[str, int]) -> dict[str, Any]:
     }
 
 
+def _by_id_population(
+    ids: set[str], legs: tuple[set[str], set[str], set[str], set[str]], empty: Status
+) -> dict[str, Any]:
+    """Reconcile responses that carry a trace id across all four legs: event topic,
+    verdict topic, persisted events and persisted verdicts. Every one of them must be on
+    every leg, so a missing leg fails the population and is named by id."""
+    events, verdicts, persisted, persisted_verdicts = legs
+    status: Status = empty
+    if ids:
+        status = "pass" if all(ids <= leg for leg in legs) else "fail"
+    return {
+        "count": len(ids),
+        "with_event": len(ids & events),
+        "with_verdict": len(ids & verdicts),
+        "with_persisted_event": len(ids & persisted),
+        "with_persisted_verdict": len(ids & persisted_verdicts),
+        "missing_event_examples": sorted(ids - events)[:5],
+        "missing_persisted_verdict_examples": sorted(ids - persisted_verdicts)[:5],
+        "status": status,
+    }
+
+
 def reconcile(
     responses: Sequence[tuple[str | None, int | None]],
     event_ids: Mapping[str, int],
@@ -361,10 +383,13 @@ def reconcile(
     `responses` is one (app_trace_id, HTTP status) pair per request sent. Each leg is a
     Counter of ids, so a duplicated row stays visible. The gateway returns the trace id
     only on a 200 or a 504, so a blocked request, a 5xx or a timeout cannot be matched to
-    its event by id. Three populations are therefore kept apart:
+    its event by id. Four populations are therefore kept apart:
 
     1. successful responses with a trace id: each must have an event, a verdict and a
        persisted row of each kind. This is the claim that is proven by id.
+    1b. other responses with a trace id (the 504): the gateway emits an error event for
+       them and the flash judge writes a skipped verdict for every non-success event, so
+       each is owed the same four legs and is reconciled the same way, apart from the 200s.
     2. HTTP responses without a trace id, and 3. requests with no HTTP response: neither
        can be matched by id, and neither is assumed to have produced an event. They are
        compared against the events that match no response id. No unmatched event is a pass.
@@ -385,12 +410,7 @@ def reconcile(
     def id_less_status(count: int) -> Status:
         return "pass" if count == 0 or not unmatched else "unknown"
 
-    legs_ok = (events, verdicts, persisted, persisted_verdicts)
-    matched = [len(ok_ids & leg) for leg in legs_ok]
-    if not ok_ids:
-        ok_status: Status = "unknown"
-    else:
-        ok_status = "pass" if all(m == len(ok_ids) for m in matched) else "fail"
+    legs = (events, verdicts, persisted, persisted_verdicts)
     tables = {
         "events_topic": _table(event_ids),
         "verdicts_topic": _table(verdict_ids),
@@ -412,26 +432,14 @@ def reconcile(
         "sent_requests": len(responses),
         "http_responses": sum(1 for _, s in responses if s is not None),
         "populations": {
-            "successful_with_trace_id": {
-                "count": len(ok_ids),
-                "with_event": matched[0],
-                "with_verdict": matched[1],
-                "with_persisted_event": matched[2],
-                "with_persisted_verdict": matched[3],
-                "missing_event_examples": sorted(ok_ids - events)[:5],
-                "status": ok_status,
-            },
+            "successful_with_trace_id": _by_id_population(ok_ids, legs, "unknown"),
             "http_response_without_trace_id": {
                 "count": len(answered_no_id),
                 "status_counts": dict(Counter(str(s) for s in answered_no_id)),
                 "status": id_less_status(len(answered_no_id)),
             },
             "no_http_response": {"count": no_response, "status": id_less_status(no_response)},
-            "other_responses_with_trace_id": {
-                "count": len(other_ids),
-                "with_event": len(other_ids & events),
-                "status": "pass" if other_ids <= events else "unknown",
-            },
+            "other_responses_with_trace_id": _by_id_population(other_ids, legs, "pass"),
         },
         "unmatched_events": {
             "count": len(unmatched),
