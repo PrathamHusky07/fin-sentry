@@ -7,7 +7,7 @@ import pytest
 
 from finsentry.events.trace_api import TraceDetailResponse, TraceListResponse
 from finsentry.mcp.state import dao
-from finsentry.mcp.tools.trace_evidence import get_trace_detail, search_traces
+from finsentry.mcp.tools.trace_evidence import MAX_QUERY_CHARS, get_trace_detail, search_traces
 from finsentry.risingwave.dao import RisingWaveUnavailableError
 
 _TS = datetime.datetime(2026, 10, 7, 9, 30, 0, tzinfo=datetime.UTC)
@@ -159,3 +159,106 @@ async def test_get_trace_detail_reports_found_false_for_an_unknown_trace(monkeyp
     assert result.found is False and result.answer is None
     assert result.note == "no matching rag_events row"
     _assert_only_reads(recorder.statements)
+
+
+@pytest.mark.parametrize("value", [True, False, None])
+async def test_search_traces_passes_the_disagreement_filter_through_unchanged(
+    monkeypatch: Any, value: bool | None
+) -> None:
+    seen: list[Any] = []
+
+    async def spy(*args: Any) -> list[dict[str, Any]]:
+        seen.append(args[7])
+        return []
+
+    dao._pool = object()
+    monkeypatch.setattr("finsentry.mcp.tools.trace_evidence._fetch_trace_list", spy)
+
+    await search_traces(disagreement=value)
+
+    assert seen == [value]
+
+
+_SECRET = "postgresql://svc:hunter2@db.internal:5432/finsentry"
+
+
+def _detail_rows(**over: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    rag_row = {
+        "app_trace_id": "t1",
+        "status": "error",
+        "endpoint": "/v1/rag/query",
+        "ticker": "AAPL",
+        "query": "q",
+        "answer": "The model said something unredacted, call 555-12-3456.",
+        "confidence": "high",
+        "model_used": "llama3.1:8b",
+        "citations": [{"chunk_id": "c1", "quote": "a model-written quote"}],
+        "retrieved_chunk_ids": ["c1"],
+        "block_reason": None,
+        "block_rail": None,
+        "error_kind": "OperationalError",
+        "error_detail": f"could not connect to {_SECRET}",
+        "timestamp_utc": _TS,
+        **over,
+    }
+    return rag_row, None
+
+
+async def test_get_trace_detail_never_surfaces_error_detail_answer_or_citation_quotes(
+    monkeypatch: Any,
+) -> None:
+    dao._pool = object()
+    rag_row, judge_row = _detail_rows()
+    recorder = _Recorder(one=[rag_row, judge_row, None], many=[])
+    monkeypatch.setattr(dao, "query_one", recorder.query_one)
+
+    result = await get_trace_detail("t1")
+
+    assert result.error_detail is None and result.answer is None
+    assert result.error_kind == "OperationalError"
+    assert result.citations == [{"chunk_id": "c1"}]
+    assert result.retrieved_chunk_ids == ["c1"]
+    dumped = result.model_dump_json()
+    for leaked in ("hunter2", "db.internal", "555-12-3456", "a model-written quote"):
+        assert leaked not in dumped
+    assert "withheld by this tool" in result.note
+
+
+async def test_get_trace_detail_cuts_a_long_stored_query(monkeypatch: Any) -> None:
+    dao._pool = object()
+    rag_row, judge_row = _detail_rows(query="x" * (MAX_QUERY_CHARS + 200))
+    recorder = _Recorder(one=[rag_row, judge_row, None], many=[])
+    monkeypatch.setattr(dao, "query_one", recorder.query_one)
+
+    result = await get_trace_detail("t1")
+
+    assert result.query is not None and len(result.query) == MAX_QUERY_CHARS + 3
+
+
+async def test_get_trace_detail_withholds_the_frontier_rubric_reasoning(monkeypatch: Any) -> None:
+    dao._pool = object()
+    rag_row, _ = _detail_rows(status="success", error_kind=None, error_detail=None)
+    frontier_row = {
+        "per_judge_results": [
+            {
+                "judge_id": "gemini-rubric",
+                "faithfulness_score": 0.2,
+                "evidence": {
+                    "rubric_reasoning": "The answer claims 555-12-3456 which is unsupported.",
+                    "cited_chunks_supporting": ["c1"],
+                    "cited_chunks_contradicting": [],
+                },
+            }
+        ],
+        "verdict": "unfaithful",
+        "evaluation_ts": _TS,
+    }
+    recorder = _Recorder(one=[rag_row, None, frontier_row], many=[])
+    monkeypatch.setattr(dao, "query_one", recorder.query_one)
+
+    result = await get_trace_detail("t1")
+
+    evidence = result.frontier.evidence
+    assert evidence is not None and evidence.rubric_reasoning is None
+    assert evidence.faithfulness_score == 0.2 and evidence.cited_chunks_supporting == ["c1"]
+    assert "555-12-3456" not in result.model_dump_json()

@@ -7,6 +7,9 @@ same rows, judge states and frontier evidence as the Investigations page. Nothin
 re-derived here. The dashboard module takes its pool from finsentry/mcp/state.py, so
 these functions run on the MCP server's RisingWave pool.
 
+get_trace_detail withholds the fields whose redaction the producer does not guarantee.
+Its docstring states the decision for each field and why.
+
 A failed or unavailable RisingWave raises instead of returning an empty result, because
 an empty list would read as "nothing happened". The MCP SDK surfaces the raise as an
 error result with the fixed message from the DAO, never a stack trace.
@@ -25,6 +28,12 @@ from finsentry.mcp._util import validate_limit
 from finsentry.mcp.state import dao
 
 MAX_TRACE_PAGE = 100
+MAX_QUERY_CHARS = 500
+_WITHHELD_NOTE = (
+    "answer, error_detail, citation quotes and the frontier judge's rubric_reasoning "
+    "are withheld by this tool. The stored query is cut to "
+    f"{MAX_QUERY_CHARS} characters."
+)
 
 
 async def search_traces(
@@ -41,11 +50,14 @@ async def search_traces(
 
     rag_status is the request status (success, blocked or error). judge_state is one of
     evaluated, partially_evaluated, blocked_before_evaluation, judge_failed or
-    never_evaluated. disagreement=True keeps traces where the flash judge and the real
-    frontier judge differ by 0.5 or more on faithfulness. query_contains matches the
-    stored (already redacted) query or the trace id. Results are capped at 100 per
-    page. Use next_offset to continue. Each row's app_trace_id is the id to pass to
-    get_trace_detail, explain_guardrail_decision or get_judge_scores.
+    never_evaluated. disagreement=True keeps only traces where the flash judge and the
+    real frontier judge differ by 0.5 or more on faithfulness. disagreement=False keeps
+    every other trace. That set includes traces the two tiers never both scored (blocked,
+    never evaluated, not frontier-sampled), so False does not mean the tiers agreed.
+    Omit disagreement to apply no filter; frontier_sampled works the same way.
+    query_contains matches the stored (already redacted) query or the trace id. Results
+    are capped at 100 per page. Use next_offset to continue. Each row's app_trace_id is
+    the id to pass to get_trace_detail, explain_guardrail_decision or get_judge_scores.
     """
     validate_limit(limit, MAX_TRACE_PAGE)
     if offset < 0:
@@ -68,9 +80,48 @@ async def search_traces(
 
 
 async def get_trace_detail(app_trace_id: str) -> TraceDetailResponse:
-    """Return everything persisted for one request: the stored query and answer, the
-    citations and retrieved chunk ids, the block or error cause, the flash judge's three
-    scores each with its own status, and the frontier judge's evidence when the trace was
-    sampled. found is False when no rag_events row matches. A blocked answer is never
-    persisted, so answer is empty for a blocked trace."""
-    return await _fetch_trace_detail(app_trace_id)
+    """Return what is persisted for one request, minus the fields whose redaction is not
+    guaranteed: the request status, ticker, block or error cause, retrieved chunk ids, the
+    flash judge's three scores each with its own status, and the frontier judge's scores,
+    verdict and cited chunk ids when the trace was sampled. found is False when no
+    rag_events row matches.
+
+    Per field, and why:
+    - query: kept, cut to 500 characters. The gateway persists the query after Presidio
+      redaction and withholds it when redaction cannot run (_redact_for_persistence).
+    - answer: withheld (null). It is the model's reply as generated. No output rail
+      redacts personal data, so nothing proves it is safe. A blocked answer is never
+      persisted either way.
+    - citations: reduced to chunk_id. The quote is model-written text with the same
+      gap as the answer. A chunk id is a corpus identifier.
+    - error_detail: withheld (null). The gateway stores str(exception)[:500] for any
+      unhandled error, which can hold connection strings or other secrets. error_kind,
+      the exception class name, is kept.
+    - rubric_reasoning (frontier): withheld (null). It is Gemini free text written
+      about the answer and is not redacted.
+    The note field says which fields this tool withheld. The dashboard route is unchanged.
+    """
+    detail = await _fetch_trace_detail(app_trace_id)
+    if not detail.found:
+        return detail
+    query = detail.query
+    if query is not None and len(query) > MAX_QUERY_CHARS:
+        query = query[:MAX_QUERY_CHARS] + "..."
+    evidence = detail.frontier.evidence
+    frontier = detail.frontier.model_copy(
+        update={
+            "evidence": evidence.model_copy(update={"rubric_reasoning": None})
+            if evidence is not None
+            else None
+        }
+    )
+    return detail.model_copy(
+        update={
+            "query": query,
+            "answer": None,
+            "error_detail": None,
+            "citations": [{"chunk_id": c["chunk_id"]} for c in detail.citations if "chunk_id" in c],
+            "frontier": frontier,
+            "note": f"{detail.note}. {_WITHHELD_NOTE}",
+        }
+    )
