@@ -77,7 +77,7 @@ function provenanceCopy(e: ExecutionRecord, executor: string | null): string {
     return "This scenario was intentionally not run, to bound cost. No request was sent to the gateway and no defense ran, so no trace exists for it.";
   }
   if (continuationState(e) === "unknown") {
-    return "This execution tried to send a gateway request and failed before a result was recorded. No stored trace was linked to it.";
+    return "This execution was interrupted before a result was recorded. Whether a gateway request was sent is unknown. No stored trace was linked to it.";
   }
   if (gatewayProvenanceUnrecorded(e, executor)) {
     return "Gateway execution provenance not recorded.";

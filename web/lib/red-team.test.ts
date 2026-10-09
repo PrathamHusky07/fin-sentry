@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CATEGORY_LABEL,
   CATEGORY_ORDER,
+  CONTINUATION_LABEL,
+  CONTINUATION_MEANING,
   OUTCOMES,
   OUTCOME_LABEL,
   SAFETY_BOUND_LABEL,
@@ -311,6 +313,16 @@ describe("gateway continuation", () => {
     });
     expect(continuationState(e)).not.toBe("stopped");
     expect(continuationState(e)).not.toBe("not_recorded");
+  });
+});
+
+describe("unknown continuation copy", () => {
+  it("says the execution was interrupted and never asserts that a request was sent", () => {
+    const meaning = CONTINUATION_MEANING.unknown;
+    expect(meaning).toContain("interrupted");
+    expect(meaning).toContain("unknown");
+    expect(meaning).not.toMatch(/tried to send|failed before/i);
+    expect(CONTINUATION_LABEL.unknown).toContain("unknown");
   });
 });
 

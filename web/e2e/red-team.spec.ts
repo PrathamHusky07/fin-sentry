@@ -382,7 +382,7 @@ test("RENDERING: an unreachable store is shown as unknown, not as zero", async (
   ).toBeVisible();
 });
 
-test("RENDERING: a failed gateway execution says the request may have continued, never that it did not", async ({
+test("RENDERING: an interrupted gateway execution says it was interrupted and that a send is unknown, never that it did not continue", async ({
   page,
 }) => {
   await mockStore(page, [
@@ -396,15 +396,30 @@ test("RENDERING: a failed gateway execution says the request may have continued,
   const dialog = page.getByRole("dialog", { name: "Execution evidence" });
   const continuation = dialog.getByTestId("continuation");
   await expect(continuation).toHaveAttribute("data-state", "unknown");
-  await expect(continuation).toContainText("May have continued");
+  await expect(continuation).toContainText("Interrupted, continuation unknown");
   await expect(continuation).toContainText(
-    "failed before it could record whether the request went past the input rails",
+    "interrupted before it recorded whether a request was sent or went past the input rails",
   );
   await expect(dialog).not.toContainText("Did not continue");
   await expect(dialog).not.toContainText("No input rail stopped this request");
-  await expect(dialog).toContainText("tried to send a gateway request");
+  await expect(dialog).toContainText(
+    "interrupted before a result was recorded. Whether a gateway request was sent is unknown",
+  );
+  await expect(dialog).not.toContainText("tried to send a gateway request");
   await expect(dialog).not.toContainText("called the defense directly");
   await expect(dialog.getByText("Execution failed").first()).toBeVisible();
+  for (const width of [375, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(continuation).toBeVisible();
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(
+      0,
+    );
+  }
 });
 
 test("RENDERING: a legacy gateway execution with no evidence does not claim a direct call, and one with evidence keeps its provenance", async ({
@@ -450,7 +465,7 @@ test("RENDERING: a confirmed block reads did not continue and a confirmed pass r
     "stopped",
   );
   await expect(dialog).toContainText("Did not continue");
-  await expect(dialog).not.toContainText("May have continued");
+  await expect(dialog).not.toContainText("continuation unknown");
   await page.keyboard.press("Escape");
 
   await rows.filter({ hasText: "Missed" }).first().getByRole("button").click();

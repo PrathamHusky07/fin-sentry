@@ -299,7 +299,7 @@ export const CONTINUATION_LABEL: Record<
 > = {
   continued: "Continued past the input rails (Gemini calls possible)",
   stopped: "Did not continue",
-  unknown: "May have continued",
+  unknown: "Interrupted, continuation unknown",
 };
 
 export const CONTINUATION_MEANING: Record<
@@ -311,7 +311,7 @@ export const CONTINUATION_MEANING: Record<
   stopped:
     "An input rail stopped this request, or could not run, so it ended before retrieval, the model and the faithfulness judge.",
   unknown:
-    "The execution failed before it could record whether the request went past the input rails. It may have reached the model path, where Gemini calls are possible. The run counted it against its one-continuation limit.",
+    "The execution was interrupted before it recorded whether a request was sent or went past the input rails. That is unknown. If a request did go further, it may have reached the model path, where Gemini calls are possible. The run counted it against its one-continuation limit.",
 };
 
 /** DERIVED: a scenario the runner intentionally did not run to bound cost. Its
