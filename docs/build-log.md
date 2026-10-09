@@ -1,5 +1,129 @@
 # Build Log
 
+## 2026-10-09 (later): Day 10B.2 release-gate fixes and Day 10C staged load test
+
+Model: Sonnet 5.5, no escalation. Zero Gemini calls. No persisted outcome value changed, no frozen
+contract touched, no persistence redesign, no new library, no 10D work.
+
+### Release-gate fixes (all reproduced against current code first)
+
+- Interrupted gateway runs (`71c9f1b`). `fail_unfinished` marked every unfinished execution
+  `execution_failed` with empty evidence. It now writes `continuation_unknown` only on an execution
+  that was running and whose scenario uses the gateway route. A queued execution never sent a request
+  and gets no marker. The executor comes from the scenario registry, so a retired scenario id gets no
+  marker. Stale recovery fails the run and its executions in one transaction per run. The test injects
+  a database error on the execution update after the run update: before the fix the run stayed
+  committed as failed with stranded executions, after it both roll back and the next call finishes them.
+- `search_traces` cuts each stored query to `MAX_QUERY_CHARS`, shared with `get_trace_detail` (`0d6b1e8`).
+- Invariant test that an outcome exists only on a finished execution, which is what makes the
+  assignment in `_runs_with_counts` correct (`6b244cf`). The aggregation is unchanged.
+- A gateway execution with no marker and no gateway response shows "Gateway execution provenance not
+  recorded." (`b12c83f`). Decision: an execution whose executor cannot be resolved from the scenario list
+  gets the same neutral copy, because "no gateway request" cannot be asserted for it either.
+
+Phase 2 gate, passed before any load was generated: gateway healthy on :8000, migration 006 and
+`red_team_one_running_run` present, disagreement filter returned a real row, 10 scenarios loaded.
+pytest 884 passed, ruff and mypy clean, vitest 80 passed, tsc and lint clean, production build, and the
+full Playwright suite 111 of 111 on the production build with one worker, including the real-stack
+gateway tests, the cross-origin guard and the 375, 768 and 1440 width checks.
+
+### Day 10C load test: question
+
+How many requests per minute does the gateway sustain with every rail enabled, at a stated latency and
+error target, and what happens when it is pushed past that point?
+
+### Setup
+
+Harness: `scripts/load_test.py` with `load_test_lib.py`, `load_test_io.py`, `load_test_report.py` and
+`load_test_stack.py`. Commits `eec1572` and `b715d89`. Run 1 used `eec1572`. Run 2 used the `b715d89`
+code before it was committed, so its recorded `git_head` is `eec1572`.
+
+- Isolated pipeline. The flash and frontier consumers on the live topics run in vertex mode and
+  `rag_events` is a RisingWave source over `rag-responses`, so load sent there would flood the dashboards
+  and reach Gemini. The harness runs its own gateway on :8010, flash consumer, downstream stub, two
+  topics and two RisingWave tables, and removes them at the end. The live topics were unchanged
+  afterwards (`rag-responses` 480).
+- Fail-closed isolation. Each process writes an attestation of its live objects and the harness refuses
+  to send load unless every check holds: faithfulness rail disabled with no client, no Gemini
+  credentials in the environment, downstream is the local stub, producer targets the load topic,
+  consumer reads only the load topic and no existing consumer group reads it. A tripwire also fails any
+  attempt to resolve a Google API host. Both processes ended with zero tripwire hits.
+- Load: open loop, constant arrival rate, the ten demo questions cycled, 60 s per stage, stub latency
+  200 ms, 20 sequential requests as the unloaded baseline. Latency is measured from the scheduled
+  arrival time. Limits: p95 3000 ms, p99 5000 ms, error rate 1 percent. Abort at free memory below 20
+  percent or swap growth above 1500 MB. Stop at the first stage that fails. The 1,000 rpm stage was
+  conditional on headroom (p99 under 2500 ms) at the previous stage.
+- Machine: Apple M5 Pro, 24 GB, swap already at 23 GB before the run. Docker stack and the live
+  consumers stayed up.
+- A correlation suffix on the query text was tried and dropped. Llama Guard 3 blocked 4 of 10 benign
+  questions with a random-looking suffix and 0 of 10 without it. Requests are correlated on the
+  `app_trace_id` the gateway returns.
+
+### Numbers
+
+| Run | Stage (rps) | Offered | HTTP 200 | No response | p50 ms | p95 ms | p99 ms | Achieved rps | SLO |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0.5 | 30 | 30 | 0 | 1723 | 2946 | 2950 | 0.505 | met |
+| 1 | 1 | 60 | 60 | 0 | 2150 | 2677 | 2837 | 0.988 | met |
+| 1 | 2 | 120 | 53 | 67 | 6015 | 11730 | 12479 | 1.494 | failed |
+| 2 | 1 | 35 sent | 30 | 5 | 2118 | 2722 | 2787 | 0.974 | failed |
+
+Latency is over the responses received. Achieved rps is 200 responses over the busy span. Unloaded
+baseline, 20 sequential: p50 1592 ms, p95 1993 ms (run 1); p50 1629 ms, p95 1901 ms (run 2).
+Stages at 3, 4, 6, 8, 12 and 16.67 rps were not reached. 1,000 rpm was never attempted.
+
+In both runs the gateway process aborted with SIGABRT (exit code -6): run 1 about 26 s into the 2 rps
+stage, run 2 about 30 s into the 1 rps stage. The log shows an Apple Metal assertion each time
+(`_status < MTLCommandBufferStatusCommitted`, then `A command encoder is already encoding to this
+command buffer`). Every later request failed with ConnectError (48 in run 1), the requests in flight at
+the crash with RemoteProtocolError (19 in run 1), and all 10 post-load probes in both runs got no
+response. Resources never reached an abort limit: minimum free memory 26 percent, swap growth under
+0.8 GB, gateway CPU up to 1202 percent at 2 rps.
+
+Per-stage span medians at 1 rps (run 2): retrieval rail 1710 ms of 2115 ms total, input rails 142 ms
+(Llama Guard 3 83 ms, Prompt Guard 2 45 ms), downstream stub 206 ms (fixed), embedding 9 ms, vector
+search 16 ms, output rails under 1 ms. At 2 rps (run 1) the retrieval rail median rose to 5453 ms.
+
+Reconciliation, run 1: 245 sent, 168 answered, 168 events in the topic, 168 verdicts, 168 rows in each
+RisingWave table, 0 duplicates, 0 answered requests without an event. The 77 unanswered requests have
+no event. Run 2: 70 sent, 55 answered, 55 events, verdicts and rows. Consumer backlog peaked at 0 and
+drained in 0.2 s. Model calls: 0 in the events, 0 in the verdicts, every faithfulness status
+`skipped_no_key`.
+
+### Finding
+
+Capacity: the gateway met the latency and error limits only at 0.5 rps (30 rpm), in one stage of 30
+requests. It did not hold 1 rps (crashed in run 2) or 2 rps (crashed in run 1). The limit is a crash,
+not a latency curve. Llama Guard 3 loads with `device_map="auto"` (the Apple GPU here) as one shared
+model, and `generate` runs from several worker threads with no lock. Prompt Guard 2 is pinned to CPU.
+Concurrent requests are the likely trigger. I did not isolate it in a standalone reproduction.
+
+Bottleneck: the retrieval rail, which runs Prompt Guard 2 over each retrieved chunk in turn on CPU, is
+about 80 percent of unloaded latency and grows about four times at 2 rps.
+
+Reliability: no silent loss. Every answered request has an event, a verdict and a persisted row. Requests
+in flight at the crash were lost with the process and the client saw the failure. Event delivery is
+at-most-once by design.
+
+Recovery: the consumer drained instantly because the judge was stubbed, so this does not measure a
+judge-bound backlog. The gateway did not recover. A local single process has no supervisor, and the
+three-replica nginx topology was not tested.
+
+### Consequence
+
+Nothing in the product changed. Decisions for you before Day 11: serialize or bound concurrent Llama
+Guard inference, or pin it to CPU (touches a rail, needs the guardrails-integration checklist and your
+approval); and speed up the per-chunk retrieval check. The deployed Cloud Run gateway has no GPU, which
+should avoid the Metal abort, but that is untested. The 1,000 rpm target is not met and is reported as
+not reached.
+
+### Housekeeping
+
+I stopped `next dev` on :3000 for the production build and did not restart it. I restarted the :8000
+gateway to load the new code. A gateway on :8000 that I did not start was running at the end. Deferred:
+MCP allowlist projection (Day 11), disagreement query scaling and tie note (0.5 cutoff unchanged),
+GAP-001, 422 to 503. Next: Day 10D cost versus accuracy, then the Day 11 Reliability Investigator.
+
 ## 2026-10-09: Day 10B.1 closeout, display and contract gaps, then activation in dev
 
 Model: Sonnet 5.5, no escalation. Zero Gemini calls: no request was sent to any gateway, and

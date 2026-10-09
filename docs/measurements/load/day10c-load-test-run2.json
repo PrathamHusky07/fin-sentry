@@ -1,0 +1,435 @@
+{
+  "run_id": "98736a",
+  "started_utc": "2026-10-09T18:02:03.974869+00:00",
+  "git_head": "eec1572",
+  "command": "scripts/load_test.py --stages 1:60,1.5:60,2:60 --out docs/measurements/load/day10c-load-test-run2.json",
+  "config": {
+    "stages_rps_seconds": [
+      [
+        1.0,
+        60.0
+      ],
+      [
+        1.5,
+        60.0
+      ],
+      [
+        2.0,
+        60.0
+      ]
+    ],
+    "slo": {
+      "p95_ms": 3000.0,
+      "p99_ms": 5000.0,
+      "max_error_rate": 0.01
+    },
+    "resource_limits": {
+      "min_mem_free_pct": 20.0,
+      "max_swap_growth_mb": 1500.0
+    },
+    "arrival": "open loop, constant rate",
+    "max_in_flight": 256,
+    "stub_latency_ms": 200.0,
+    "query_pool": 10,
+    "kafka_bootstrap": "localhost:19092"
+  },
+  "resources_at_start": {
+    "mem_free_pct": 62.0,
+    "swap_used_mb": 21791.94,
+    "swap_free_mb": 1760.06,
+    "load_1m": 4.708984375
+  },
+  "isolation_attestation": {
+    "gateway": {
+      "pid": 49774,
+      "port": 8010,
+      "faithfulness_mode": "disabled",
+      "faithfulness_enabled": false,
+      "faithfulness_client_present": false,
+      "gemini_env_present": [],
+      "downstream_url": "http://127.0.0.1:8011",
+      "producer_mode": "kafka",
+      "producer_topic": "lt-rag-responses",
+      "tripwire_installed": true,
+      "tripwire_hits": [],
+      "hf_offline": true
+    },
+    "consumer": {
+      "pid": 49769,
+      "judge_mode": "disabled",
+      "judge_client_present": false,
+      "gemini_env_present": [],
+      "topic": "lt-rag-responses",
+      "group": "lt-flash",
+      "verdict_topic": "lt-judge-verdicts",
+      "bootstrap": "localhost:19092",
+      "tripwire_installed": true,
+      "tripwire_hits": []
+    }
+  },
+  "isolation_check": {
+    "passed": true,
+    "other_active_groups_and_their_topics": {
+      "finsentry-rag-flash-judge": [
+        "rag-responses"
+      ],
+      "frontier-tier": [
+        "rag-responses"
+      ]
+    }
+  },
+  "unloaded_baseline_20_sequential": {
+    "offered_requests": 20,
+    "offered_rps": 1.0,
+    "sent": 20,
+    "shed_by_client": 0,
+    "http_responses": 20,
+    "no_response": 0,
+    "status_counts": {
+      "200": 20
+    },
+    "blocked_by_rail": {},
+    "ok_200": 20,
+    "error_rate": 0.0,
+    "achieved_rps_busy_span": 0.627,
+    "achieved_rps_in_window": 0.6,
+    "latency_ms_all_responses": {
+      "p50": 1628.8,
+      "p95": 1900.7,
+      "p99": 1910.7,
+      "max": 1910.7
+    },
+    "latency_ms_200_only": {
+      "p50": 1628.8,
+      "p95": 1900.7,
+      "p99": 1910.7,
+      "max": 1910.7
+    }
+  },
+  "resources_before_load": {
+    "mem_free_pct": 34.0,
+    "swap_used_mb": 23350.19,
+    "swap_free_mb": 1225.81,
+    "load_1m": 4.26416015625
+  },
+  "docker_before_load": {
+    "finsentry-gateway-2": {
+      "cpu": "0.15%",
+      "mem": "768.6MiB / 7.749GiB"
+    },
+    "finsentry-gateway-3": {
+      "cpu": "0.25%",
+      "mem": "766.8MiB / 7.749GiB"
+    },
+    "finsentry-gateway-1": {
+      "cpu": "0.13%",
+      "mem": "761MiB / 7.749GiB"
+    },
+    "finsentry-dashboard": {
+      "cpu": "0.14%",
+      "mem": "65.5MiB / 7.749GiB"
+    },
+    "finsentry-risingwave": {
+      "cpu": "32.67%",
+      "mem": "435.4MiB / 7.749GiB"
+    },
+    "finsentry-nginx": {
+      "cpu": "0.00%",
+      "mem": "4.145MiB / 7.749GiB"
+    },
+    "finsentry-postgres": {
+      "cpu": "0.00%",
+      "mem": "55.39MiB / 7.749GiB"
+    },
+    "finsentry-redpanda": {
+      "cpu": "0.73%",
+      "mem": "312.2MiB / 7.749GiB"
+    }
+  },
+  "stages": [
+    {
+      "offered_rps_target": 1.0,
+      "offered_rpm_target": 60,
+      "duration_s": 60.0,
+      "stats": {
+        "offered_requests": 35,
+        "offered_rps": 0.583,
+        "sent": 35,
+        "shed_by_client": 0,
+        "http_responses": 30,
+        "no_response": 5,
+        "status_counts": {
+          "200": 30
+        },
+        "blocked_by_rail": {},
+        "ok_200": 30,
+        "error_rate": 0.1429,
+        "achieved_rps_busy_span": 0.974,
+        "achieved_rps_in_window": 0.5,
+        "latency_ms_all_responses": {
+          "p50": 2117.8,
+          "p95": 2722.2,
+          "p99": 2787.3,
+          "max": 2787.3
+        },
+        "latency_ms_200_only": {
+          "p50": 2117.8,
+          "p95": 2722.2,
+          "p99": 2787.3,
+          "max": 2787.3
+        }
+      },
+      "timing": {
+        "wall_start": 1791568977.511432,
+        "wall_end": 1791569012.512706,
+        "last_send_s": 35.0,
+        "all_done_s": 35.0
+      },
+      "slo_violations": [
+        "error rate 0.1429 exceeds 0.01"
+      ],
+      "slo_met": false,
+      "headroom_p99_within_half_budget": false,
+      "consumer_drain_after_stage": {
+        "drained": true,
+        "seconds": 0.2,
+        "peak_seen": 0
+      },
+      "aborted": "gateway process exited with code -6",
+      "docker_after_stage": {
+        "finsentry-gateway-2": {
+          "cpu": "0.14%",
+          "mem": "768.6MiB / 7.749GiB"
+        },
+        "finsentry-gateway-3": {
+          "cpu": "0.16%",
+          "mem": "766.8MiB / 7.749GiB"
+        },
+        "finsentry-gateway-1": {
+          "cpu": "0.16%",
+          "mem": "761MiB / 7.749GiB"
+        },
+        "finsentry-dashboard": {
+          "cpu": "0.80%",
+          "mem": "65.54MiB / 7.749GiB"
+        },
+        "finsentry-risingwave": {
+          "cpu": "70.98%",
+          "mem": "424.3MiB / 7.749GiB"
+        },
+        "finsentry-nginx": {
+          "cpu": "0.00%",
+          "mem": "4.145MiB / 7.749GiB"
+        },
+        "finsentry-postgres": {
+          "cpu": "0.02%",
+          "mem": "55.39MiB / 7.749GiB"
+        },
+        "finsentry-redpanda": {
+          "cpu": "6.60%",
+          "mem": "312.9MiB / 7.749GiB"
+        }
+      },
+      "server_latency_ms_from_events": {
+        "events_matched_by_trace_id": 30,
+        "p50": 2114,
+        "p95": 2716,
+        "p99": 2777
+      },
+      "span_latency": {
+        "rag.assemble_prompt": {
+          "count": 31,
+          "p50_ms": 0.02,
+          "p95_ms": 0.04,
+          "mean_ms": 0.0
+        },
+        "rag.build_response": {
+          "count": 30,
+          "p50_ms": 0.03,
+          "p95_ms": 0.11,
+          "mean_ms": 0.0
+        },
+        "rag.downstream_llm": {
+          "count": 30,
+          "p50_ms": 205.92,
+          "p95_ms": 210.57,
+          "mean_ms": 206.6
+        },
+        "rag.embed_query": {
+          "count": 31,
+          "p50_ms": 8.91,
+          "p95_ms": 15.51,
+          "mean_ms": 12.4
+        },
+        "rag.faithfulness_rail": {
+          "count": 30,
+          "p50_ms": 0.01,
+          "p95_ms": 0.04,
+          "mean_ms": 0.0
+        },
+        "rag.input_rails": {
+          "count": 31,
+          "p50_ms": 142.42,
+          "p95_ms": 228.52,
+          "mean_ms": 149.1
+        },
+        "rag.phrase_rail": {
+          "count": 30,
+          "p50_ms": 0.01,
+          "p95_ms": 0.03,
+          "mean_ms": 0.0
+        },
+        "rag.query.total": {
+          "count": 30,
+          "p50_ms": 2114.89,
+          "p95_ms": 2716.21,
+          "mean_ms": 2090.2
+        },
+        "rag.retrieval_rail": {
+          "count": 31,
+          "p50_ms": 1709.76,
+          "p95_ms": 2303.7,
+          "mean_ms": 1713.7
+        },
+        "rag.schema_rail": {
+          "count": 30,
+          "p50_ms": 0.03,
+          "p95_ms": 0.07,
+          "mean_ms": 0.0
+        },
+        "rag.vector_search": {
+          "count": 31,
+          "p50_ms": 15.58,
+          "p95_ms": 32.75,
+          "mean_ms": 18.0
+        },
+        "rail.llama-guard-3.check": {
+          "count": 31,
+          "p50_ms": 82.74,
+          "p95_ms": 126.01,
+          "mean_ms": 86.7
+        },
+        "rail.pii-redaction.check": {
+          "count": 33,
+          "p50_ms": 4.67,
+          "p95_ms": 22.16,
+          "mean_ms": 6.5
+        },
+        "rail.prompt-guard-2.check": {
+          "count": 33,
+          "p50_ms": 44.85,
+          "p95_ms": 89.62,
+          "mean_ms": 52.3
+        }
+      },
+      "sampled": {
+        "samples": 11,
+        "peak_consumer_lag": 0,
+        "min_mem_free_pct": 30.0,
+        "max_swap_used_mb": 23350.19,
+        "max_load_1m": 7.9697265625,
+        "max_gateway_cpu_pct": 318.8,
+        "max_gateway_rss_mb": 1737.3
+      }
+    }
+  ],
+  "stopped_after": {
+    "stage": "1rps",
+    "reason": "gateway process exited with code -6"
+  },
+  "gateway_alive_at_recovery_start": false,
+  "recovery": {
+    "consumer": {
+      "drained": true,
+      "seconds": 0.2,
+      "peak_seen": 0
+    },
+    "post_load_10_sequential": {
+      "offered_requests": 10,
+      "offered_rps": 1.0,
+      "sent": 10,
+      "shed_by_client": 0,
+      "http_responses": 0,
+      "no_response": 10,
+      "status_counts": {},
+      "blocked_by_rail": {},
+      "ok_200": 0,
+      "error_rate": 1.0,
+      "achieved_rps_busy_span": null,
+      "achieved_rps_in_window": 0.0,
+      "latency_ms_all_responses": {
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "latency_ms_200_only": {
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      }
+    },
+    "latency_back_to_baseline_p95_within_1_5x": false
+  },
+  "resources_after_load": {
+    "mem_free_pct": 54.0,
+    "swap_used_mb": 23306.44,
+    "swap_free_mb": 1269.56,
+    "load_1m": 7.3310546875
+  },
+  "legs": {
+    "reconciliation": {
+      "sent_requests": 70,
+      "http_responses": 55,
+      "responses_with_trace_id": 55,
+      "requests_without_trace_id": 15,
+      "events_in_topic_total": 55,
+      "events_in_topic_unique": 55,
+      "duplicate_events": 0,
+      "response_id_without_event": 0,
+      "response_id_without_event_examples": [],
+      "events_unmatched_to_a_response_id": 0,
+      "unmatched_events_minus_requests_without_id": -15,
+      "verdicts_unique": 55,
+      "event_without_verdict": 0,
+      "verdict_without_event": 0,
+      "persisted_events_unique": 55,
+      "topic_event_not_persisted": 0,
+      "persisted_verdicts_unique": 55,
+      "verdict_not_persisted": 0
+    },
+    "event_status_counts": {
+      "success": 55
+    },
+    "persistence_wait_s": 0.0,
+    "model_calls_seen": {
+      "faithfulness_gemini_calls_in_events": 0,
+      "judge_total_gemini_calls_in_verdicts": 0,
+      "faithfulness_status_in_events": {
+        "skipped_no_key": 55
+      },
+      "judge_faithfulness_status_in_verdicts": {
+        "skipped_no_key": 55
+      }
+    }
+  },
+  "tripwire_hits_at_shutdown": {
+    "gateway": {
+      "tripwire_hits": []
+    },
+    "consumer": {
+      "tripwire_hits": []
+    }
+  },
+  "gateway_exit_code": -6,
+  "gateway_alive_at_end": false,
+  "teardown": {
+    "risingwave_tables": "dropped",
+    "consumer_group": "GROUP     STATUS\nlt-flash  OK",
+    "lt-rag-responses": "TOPIC             STATUS\nlt-rag-responses  OK",
+    "lt-judge-verdicts": "TOPIC              STATUS\nlt-judge-verdicts  OK"
+  },
+  "outcome": "completed",
+  "finished_utc": "2026-10-09T18:03:35.682860+00:00"
+}
