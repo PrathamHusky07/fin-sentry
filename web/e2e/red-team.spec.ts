@@ -184,7 +184,10 @@ const ALL_FIVE: Outcome[] = [
 ];
 const FIXTURE_ROWS = ALL_FIVE.map((o, i) => execution(String(i), o));
 
-async function mockStore(page: Page) {
+async function mockStore(
+  page: Page,
+  rows: ReturnType<typeof execution>[] = FIXTURE_ROWS,
+) {
   const json = (route: Route, body: unknown) =>
     route.fulfill({
       contentType: "application/json",
@@ -195,7 +198,7 @@ async function mockStore(page: Page) {
     if (url.pathname.endsWith("/scenarios")) {
       return json(route, {
         persistence_available: true,
-        scenarios: ALL_FIVE.map((o, i) => ({
+        scenarios: rows.map((row, i) => ({
           id: `DI-00${i + 1}`,
           version: 1,
           title: `Fixture scenario ${i + 1}`,
@@ -204,24 +207,24 @@ async function mockStore(page: Page) {
           description: "A fixture.",
           executor: "gateway_route",
           mode: "deterministic",
-          expected: FIXTURE_ROWS[i].expected,
+          expected: row.expected,
           required_evidence: ["gateway_status"],
           severity: "high",
           severity_rationale: "Fixture.",
           input: { query: "fixture" },
-          last_execution: FIXTURE_ROWS[i],
+          last_execution: row,
         })),
       });
     }
     if (url.pathname.endsWith("/runs")) return json(route, []);
     const detail = url.pathname.match(/\/executions\/([^/]+)$/);
     if (detail) {
-      const row = FIXTURE_ROWS.find((r) => r.execution_id === detail[1]);
+      const row = rows.find((r) => r.execution_id === detail[1]);
       return row
         ? json(route, row)
         : route.fulfill({ status: 404, body: "{}" });
     }
-    return json(route, { executions: FIXTURE_ROWS, next_offset: null });
+    return json(route, { executions: rows, next_offset: null });
   });
 }
 
@@ -375,4 +378,101 @@ test("RENDERING: an unreachable store is shown as unknown, not as zero", async (
   await expect(
     page.getByRole("alert").filter({ hasText: "red team store unavailable" }),
   ).toBeVisible();
+});
+
+test("RENDERING: a failed gateway execution says the request may have continued, never that it did not", async ({
+  page,
+}) => {
+  await mockStore(page, [
+    execution("1", "execution_failed", {
+      reason: "The execution exceeded its 90 second limit.",
+      evidence: { continuation_unknown: true },
+    }),
+  ]);
+  await page.goto("/red-team");
+  await page.getByRole("table").locator("tbody tr").getByRole("button").click();
+  const dialog = page.getByRole("dialog", { name: "Execution evidence" });
+  const continuation = dialog.getByTestId("continuation");
+  await expect(continuation).toHaveAttribute("data-state", "unknown");
+  await expect(continuation).toContainText("May have continued");
+  await expect(continuation).toContainText(
+    "failed before it could record whether the request went past the input rails",
+  );
+  await expect(dialog).not.toContainText("Did not continue");
+  await expect(dialog).not.toContainText("No input rail stopped this request");
+  await expect(dialog).toContainText("tried to send a gateway request");
+  await expect(dialog).not.toContainText("called the defense directly");
+  await expect(dialog.getByText("Execution failed").first()).toBeVisible();
+});
+
+test("RENDERING: a confirmed block reads did not continue and a confirmed pass reads continued", async ({
+  page,
+}) => {
+  await mockStore(page, [execution("1", "caught"), execution("2", "missed")]);
+  await page.goto("/red-team");
+  const rows = page.getByRole("table").locator("tbody tr");
+  const dialog = page.getByRole("dialog", { name: "Execution evidence" });
+
+  await rows.filter({ hasText: "Caught" }).first().getByRole("button").click();
+  await expect(dialog.getByTestId("continuation")).toHaveAttribute(
+    "data-state",
+    "stopped",
+  );
+  await expect(dialog).toContainText("Did not continue");
+  await expect(dialog).not.toContainText("May have continued");
+  await page.keyboard.press("Escape");
+
+  await rows.filter({ hasText: "Missed" }).first().getByRole("button").click();
+  await expect(dialog.getByTestId("continuation")).toHaveAttribute(
+    "data-state",
+    "continued",
+  );
+  await expect(dialog).toContainText(
+    "Continued past the input rails (Gemini calls possible)",
+  );
+});
+
+test("RENDERING: a safety-bound skip reads Not run (safety bound), and a real harness failure still reads as one", async ({
+  page,
+}) => {
+  await mockStore(page, [
+    execution("1", "execution_failed", {
+      reason: "Not run. An earlier gateway scenario in this run went on.",
+      evidence: { skipped_by_safety_bound: true },
+      duration_ms: 0,
+    }),
+    execution("2", "execution_failed", {
+      reason: "The harness raised RuntimeError. See the gateway log.",
+      evidence: {},
+    }),
+  ]);
+  await page.goto("/red-team");
+  await expect(
+    page.getByText("1 scenario was not run (safety bound)."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("1 of these was not run (safety bound)."),
+  ).toBeVisible();
+
+  const rows = page.getByRole("table").locator("tbody tr");
+  const dialog = page.getByRole("dialog", { name: "Execution evidence" });
+
+  await expect(rows.nth(0).locator("td").nth(3)).toHaveText(
+    "Not run (safety bound)",
+  );
+  await expect(rows.nth(1).locator("td").nth(3)).toHaveText("Execution failed");
+
+  await rows.nth(0).getByRole("button").click();
+  await expect(dialog).toContainText("intentionally skipped to bound cost");
+  await expect(dialog).toContainText("intentionally not run, to bound cost");
+  await expect(dialog).not.toContainText("harness itself failed");
+  await expect(dialog).not.toContainText("called the defense directly");
+  await expect(dialog).not.toContainText("exercised the real defense");
+  await expect(dialog.getByTestId("continuation")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await rows.nth(1).getByRole("button").click();
+  await expect(dialog).toContainText("Either the test harness failed");
+  await expect(dialog).not.toContainText("intentionally skipped");
+  await expect(dialog).toContainText("called the defense directly");
 });

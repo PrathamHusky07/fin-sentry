@@ -4,11 +4,15 @@ import {
   CATEGORY_ORDER,
   OUTCOMES,
   OUTCOME_LABEL,
+  SAFETY_BOUND_LABEL,
+  SAFETY_BOUND_MEANING,
+  continuationState,
   evaluatorStatus,
   expectationLabel,
   expectedLabel,
   groupByCategory,
   isDetection,
+  isSafetyBoundSkip,
   runProgress,
   sentGatewayRequest,
   summarizeLatest,
@@ -285,5 +289,81 @@ describe("groupByCategory", () => {
 
   it("labels every category it can order", () => {
     for (const c of CATEGORY_ORDER) expect(CATEGORY_LABEL[c]).toBeTruthy();
+  });
+});
+
+describe("gateway continuation", () => {
+  it("reads three honest states and treats unknown as its own, never as stopped", () => {
+    const state = (evidence: Record<string, unknown>) =>
+      continuationState(execution({ evidence }));
+    expect(state({ continued_past_input_rails: true })).toBe("continued");
+    expect(state({ continued_past_input_rails: false })).toBe("stopped");
+    expect(state({ continuation_unknown: true })).toBe("unknown");
+    expect(state({})).toBe("not_recorded");
+    expect(state({ rail_status: "x" })).toBe("not_recorded");
+  });
+
+  it("never reports stopped when the continuation is unknown", () => {
+    const e = execution({
+      outcome: "execution_failed",
+      evidence: { continuation_unknown: true },
+    });
+    expect(continuationState(e)).not.toBe("stopped");
+    expect(continuationState(e)).not.toBe("not_recorded");
+  });
+});
+
+describe("safety-bound skip", () => {
+  const skipped = execution({
+    outcome: "execution_failed",
+    expectation: "not_assessable",
+    evidence: { skipped_by_safety_bound: true },
+  });
+  const harnessFailure = execution({
+    outcome: "execution_failed",
+    expectation: "not_assessable",
+    evidence: {},
+  });
+
+  it("is told apart from a harness failure by the structured marker", () => {
+    expect(isSafetyBoundSkip(skipped)).toBe(true);
+    expect(isSafetyBoundSkip(harnessFailure)).toBe(false);
+    expect(
+      isSafetyBoundSkip(
+        execution({
+          outcome: "execution_failed",
+          evidence: { continuation_unknown: true },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("applies only to execution_failed, so no other outcome can be relabelled", () => {
+    for (const o of OUTCOMES.filter((o) => o !== "execution_failed")) {
+      expect(
+        isSafetyBoundSkip(
+          execution({
+            outcome: o,
+            evidence: { skipped_by_safety_bound: true },
+          }),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("keeps the persisted outcome in the counts and reports the skips beside them", () => {
+    const summary = summarizeLatest([
+      scenario("A-001", "direct_injection", skipped),
+      scenario("A-002", "direct_injection", harnessFailure),
+    ]);
+    expect(summary.counts.execution_failed).toBe(2);
+    expect(summary.safetyBoundSkips).toBe(1);
+  });
+
+  it("describes a deliberate skip, not a harness failure or a direct defense call", () => {
+    expect(SAFETY_BOUND_LABEL).toBe("Not run (safety bound)");
+    expect(SAFETY_BOUND_MEANING).toMatch(/intentionally skipped to bound cost/);
+    expect(SAFETY_BOUND_MEANING).not.toMatch(/harness itself failed/);
+    expect(SAFETY_BOUND_MEANING).not.toMatch(/called the defense directly/);
   });
 });

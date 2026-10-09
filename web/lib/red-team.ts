@@ -6,8 +6,9 @@
  *
  * Provenance (see ../CLAUDE.md):
  * - PERSISTED: every field of ExecutionRecord and RunRecord.
- * - DERIVED: summarizeLatest, evaluatorStatus, expectationLabel, runProgress.
- *   Each is computed from persisted rows and documented where it is defined.
+ * - DERIVED: summarizeLatest, evaluatorStatus, expectationLabel, runProgress,
+ *   continuationState, isSafetyBoundSkip. Each is computed from persisted rows
+ *   and documented where it is defined.
  */
 
 export type Outcome =
@@ -136,7 +137,7 @@ export const OUTCOME_MEANING: Record<Outcome, string> = {
   evaluator_unavailable:
     "A rail or judge could not run. No defense is credited, because none ran.",
   execution_failed:
-    "The test harness itself failed. Nothing was learned about any defense.",
+    "The execution produced no result, so nothing was learned about any defense. Either the test harness failed, or the scenario was intentionally not run to bound cost.",
   inconclusive:
     "The execution finished, but the evidence cannot support caught or missed.",
 };
@@ -254,6 +255,60 @@ export function sentGatewayRequest(e: ExecutionRecord): boolean {
   return "gateway_status" in e.evidence;
 }
 
+/** The runner writes this evidence key when a gateway execution failed or timed
+ * out. It means a request was attempted but nothing recorded how far it got. */
+const CONTINUATION_UNKNOWN_KEY = "continuation_unknown";
+/** The runner writes this evidence key on a scenario it deliberately did not
+ * run because an earlier gateway request in the run had already continued past
+ * the input rails. Read from a structured key, never from the reason prose. */
+const SAFETY_BOUND_KEY = "skipped_by_safety_bound";
+
+export type Continuation = "continued" | "stopped" | "unknown" | "not_recorded";
+
+/** DERIVED from the evidence the runner stored: did a gateway request go past
+ * the input rails? "unknown" is its own state and is never read as "stopped".
+ * "not_recorded" is every execution that makes no claim either way. */
+export function continuationState(e: ExecutionRecord): Continuation {
+  if (e.evidence[CONTINUATION_UNKNOWN_KEY] === true) return "unknown";
+  if (e.evidence.continued_past_input_rails === true) return "continued";
+  if (e.evidence.continued_past_input_rails === false) return "stopped";
+  return "not_recorded";
+}
+
+export const CONTINUATION_LABEL: Record<
+  Exclude<Continuation, "not_recorded">,
+  string
+> = {
+  continued: "Continued past the input rails (Gemini calls possible)",
+  stopped: "Did not continue",
+  unknown: "May have continued",
+};
+
+export const CONTINUATION_MEANING: Record<
+  Exclude<Continuation, "not_recorded">,
+  string
+> = {
+  continued:
+    "No input rail stopped this request, so it continued to the faithfulness rail and the flash judge. Either can call Gemini, and those calls are not recorded on this execution. The rails' cost limits cap them.",
+  stopped:
+    "An input rail stopped this request, or could not run, so it ended before retrieval, the model and the faithfulness judge.",
+  unknown:
+    "The execution failed before it could record whether the request went past the input rails. It may have reached the model path, where Gemini calls are possible. The run counted it against its one-continuation limit.",
+};
+
+/** DERIVED: a scenario the runner intentionally did not run to bound cost. Its
+ * persisted outcome is still execution_failed, which the five-state taxonomy
+ * requires, so this is the only place the two cases are told apart. */
+export function isSafetyBoundSkip(e: ExecutionRecord): boolean {
+  return (
+    e.outcome === "execution_failed" && e.evidence[SAFETY_BOUND_KEY] === true
+  );
+}
+
+export const SAFETY_BOUND_LABEL = "Not run (safety bound)";
+export const SAFETY_BOUND_MEANING =
+  "This scenario was intentionally skipped to bound cost, because an earlier gateway scenario in the run had already continued past the input rails. The harness did not fail, and no defense was exercised.";
+
 export interface LatestSummary {
   scenarioCount: number;
   notRun: number;
@@ -262,6 +317,8 @@ export interface LatestSummary {
   differs: number;
   /** Known gaps whose miss was confirmed. */
   gapsConfirmed: number;
+  /** Of the execution_failed results, those that were intentionally not run. */
+  safetyBoundSkips: number;
 }
 
 /** DERIVED from the latest finished execution of each scenario, as returned
@@ -278,6 +335,7 @@ export function summarizeLatest(scenarios: ScenarioView[]): LatestSummary {
   let notRun = 0;
   let differs = 0;
   let gapsConfirmed = 0;
+  let safetyBoundSkips = 0;
   for (const s of scenarios) {
     const last = s.last_execution;
     if (last === null || last.outcome === null) {
@@ -285,6 +343,7 @@ export function summarizeLatest(scenarios: ScenarioView[]): LatestSummary {
       continue;
     }
     counts[last.outcome] += 1;
+    if (isSafetyBoundSkip(last)) safetyBoundSkips += 1;
     if (last.expectation === "not_met") differs += 1;
     if (last.expectation === "met" && last.expected.known_gap) {
       gapsConfirmed += 1;
@@ -296,6 +355,7 @@ export function summarizeLatest(scenarios: ScenarioView[]): LatestSummary {
     counts,
     differs,
     gapsConfirmed,
+    safetyBoundSkips,
   };
 }
 

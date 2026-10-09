@@ -3,6 +3,8 @@ import {
   MODE_MEANING,
   OUTCOME_LABEL,
   OUTCOME_MEANING,
+  SAFETY_BOUND_LABEL,
+  SAFETY_BOUND_MEANING,
   type ExecutionState,
   type Mode,
   type Outcome,
@@ -32,10 +34,14 @@ export function RedTeamOutcomeBadge({
   outcome,
   state = "finished",
   withMeaning = false,
+  safetyBound = false,
 }: {
   outcome: Outcome | null;
   state?: ExecutionState;
   withMeaning?: boolean;
+  /** An execution_failed result the runner skipped on purpose (isSafetyBoundSkip).
+   * The persisted outcome is unchanged, only the label and meaning are. */
+  safetyBound?: boolean;
 }) {
   if (outcome === null) {
     return (
@@ -46,13 +52,18 @@ export function RedTeamOutcomeBadge({
       </span>
     );
   }
+  const skipped = safetyBound && outcome === "execution_failed";
+  const label = skipped ? SAFETY_BOUND_LABEL : OUTCOME_LABEL[outcome];
+  const meaning = skipped ? SAFETY_BOUND_MEANING : OUTCOME_MEANING[outcome];
   const badge = (
-    <span className={`${BADGE} ${OUTCOME_STYLE[outcome]}`}>
-      {OUTCOME_LABEL[outcome]}
+    <span
+      className={`${BADGE} ${skipped ? "text-text-secondary border-border-strong border-dashed" : OUTCOME_STYLE[outcome]}`}
+    >
+      {label}
     </span>
   );
   return withMeaning ? (
-    <Tip label={OUTCOME_LABEL[outcome]} definition={OUTCOME_MEANING[outcome]}>
+    <Tip label={label} definition={meaning}>
       {badge}
     </Tip>
   ) : (

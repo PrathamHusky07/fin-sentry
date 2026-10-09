@@ -12,6 +12,7 @@ import {
   expectationLabel,
   expectedLabel,
   groupByCategory,
+  isSafetyBoundSkip,
   layerLabel,
   type ScenarioView,
 } from "@/lib/red-team";
@@ -31,7 +32,11 @@ function LatestResult({ scenario }: { scenario: ScenarioView }) {
   return (
     <span className="flex flex-col gap-1 lg:items-end">
       <span className="flex flex-wrap items-center gap-2">
-        <RedTeamOutcomeBadge outcome={last.outcome} state={last.state} />
+        <RedTeamOutcomeBadge
+          outcome={last.outcome}
+          state={last.state}
+          safetyBound={isSafetyBoundSkip(last)}
+        />
         {last.outcome === "caught" ? (
           <span className="text-text-secondary text-sm">
             by {layerLabel(last.acting_layer)}

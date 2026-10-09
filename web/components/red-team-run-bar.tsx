@@ -1,7 +1,7 @@
 import { Panel } from "@/components/panel";
 import { RedTeamOutcomeBadge } from "@/components/red-team-badges";
 import { shortId } from "@/lib/format";
-import { runProgress, type RunDetail } from "@/lib/red-team";
+import { isSafetyBoundSkip, runProgress, type RunDetail } from "@/lib/red-team";
 
 const BUTTON =
   "min-h-11 rounded-lg border px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
@@ -54,7 +54,11 @@ function RunProgress({ detail }: { detail: RunDetail }) {
             <span className="text-text-primary font-mono text-sm">
               {e.scenario_id}
             </span>
-            <RedTeamOutcomeBadge outcome={e.outcome} state={e.state} />
+            <RedTeamOutcomeBadge
+              outcome={e.outcome}
+              state={e.state}
+              safetyBound={isSafetyBoundSkip(e)}
+            />
           </li>
         ))}
       </ul>

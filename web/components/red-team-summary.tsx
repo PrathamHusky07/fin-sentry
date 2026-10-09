@@ -29,6 +29,11 @@ function headline(summary: LatestSummary): string {
       `${summary.differs} ${summary.differs === 1 ? "result differs" : "results differ"} from what the scenario expected.`,
     );
   }
+  if (summary.safetyBoundSkips > 0) {
+    parts.push(
+      `${summary.safetyBoundSkips} ${summary.safetyBoundSkips === 1 ? "scenario was" : "scenarios were"} not run (safety bound).`,
+    );
+  }
   if (summary.gapsConfirmed > 0) {
     parts.push(
       `${summary.gapsConfirmed} known ${summary.gapsConfirmed === 1 ? "gap was" : "gaps were"} confirmed as missed.`,
@@ -82,6 +87,13 @@ export function RedTeamSummary({
             <dd className="text-text-tertiary mt-1 text-xs leading-snug">
               {OUTCOME_MEANING[outcome]}
             </dd>
+            {outcome === "execution_failed" && summary.safetyBoundSkips > 0 ? (
+              <dd className="text-text-secondary mt-1 text-xs leading-snug">
+                {summary.safetyBoundSkips} of these{" "}
+                {summary.safetyBoundSkips === 1 ? "was" : "were"} not run
+                (safety bound). They are not harness failures.
+              </dd>
+            ) : null}
           </Panel>
         ))}
       </dl>

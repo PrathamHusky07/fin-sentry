@@ -9,13 +9,18 @@ import { ModeBadge, RedTeamOutcomeBadge } from "@/components/red-team-badges";
 import { useDialogBehavior, useIsClient } from "@/components/trace-drilldown";
 import { formatUtcSeconds, shortId } from "@/lib/format";
 import {
+  CONTINUATION_LABEL,
+  CONTINUATION_MEANING,
   EVALUATOR_LABEL,
   OUTCOME_MEANING,
+  SAFETY_BOUND_MEANING,
+  continuationState,
   evaluatorStatus,
   expectationLabel,
   expectedLabel,
   formatCost,
   formatDuration,
+  isSafetyBoundSkip,
   layerLabel,
   sentGatewayRequest,
   traceHref,
@@ -66,6 +71,18 @@ function EvidenceValue({ value }: { value: unknown }) {
   );
 }
 
+function provenanceCopy(e: ExecutionRecord): string {
+  if (isSafetyBoundSkip(e)) {
+    return "This scenario was intentionally not run, to bound cost. No request was sent to the gateway and no defense ran, so no trace exists for it.";
+  }
+  if (continuationState(e) === "unknown") {
+    return "This execution tried to send a gateway request and failed before a result was recorded. No stored trace was linked to it.";
+  }
+  return sentGatewayRequest(e)
+    ? "This execution sent a gateway request, but no stored trace was found within the lookup window. The result rests on the gateway response alone."
+    : "This execution called the defense directly with a controlled input. It sent no gateway request, so no trace exists for it.";
+}
+
 function TraceProvenance({ e }: { e: ExecutionRecord }) {
   if (e.trace_ref) {
     return (
@@ -92,9 +109,7 @@ function TraceProvenance({ e }: { e: ExecutionRecord }) {
   }
   return (
     <p className="text-text-secondary text-base leading-relaxed">
-      {sentGatewayRequest(e)
-        ? "This execution sent a gateway request, but no stored trace was found within the lookup window. The result rests on the gateway response alone."
-        : "This execution called the defense directly with a controlled input. It sent no gateway request, so no trace exists for it."}
+      {provenanceCopy(e)}
     </p>
   );
 }
@@ -102,6 +117,8 @@ function TraceProvenance({ e }: { e: ExecutionRecord }) {
 function EvidenceBody({ e }: { e: ExecutionRecord }) {
   const entries = Object.entries(e.evidence);
   const evaluator = evaluatorStatus(e);
+  const safetyBound = isSafetyBoundSkip(e);
+  const continuation = continuationState(e);
   return (
     <div className="space-y-8">
       <Section title="Expected against observed">
@@ -122,10 +139,18 @@ function EvidenceBody({ e }: { e: ExecutionRecord }) {
               Observed, from this execution
             </p>
             <p className="mt-1">
-              <RedTeamOutcomeBadge outcome={e.outcome} state={e.state} />
+              <RedTeamOutcomeBadge
+                outcome={e.outcome}
+                state={e.state}
+                safetyBound={safetyBound}
+              />
             </p>
             <p className="text-text-secondary mt-2 text-sm leading-relaxed">
-              {e.outcome ? OUTCOME_MEANING[e.outcome] : "Not finished yet."}
+              {e.outcome
+                ? safetyBound
+                  ? SAFETY_BOUND_MEANING
+                  : OUTCOME_MEANING[e.outcome]
+                : "Not finished yet."}
             </p>
           </div>
         </div>
@@ -155,13 +180,15 @@ function EvidenceBody({ e }: { e: ExecutionRecord }) {
         <div className="flex flex-wrap items-center gap-2">
           <ModeBadge mode={e.mode} />
         </div>
-        {e.mode === "deterministic" ? (
+        {safetyBound ? (
+          <p className="text-text-secondary text-base leading-relaxed">
+            This scenario was not run, so no defense was exercised and no model
+            call was made.
+          </p>
+        ) : e.mode === "deterministic" ? (
           <p className="text-text-secondary text-base leading-relaxed">
             This was a deterministic execution. It exercised the real defense
             with a controlled input. The runner made no model call of its own.
-            {e.evidence.continued_past_input_rails === true
-              ? " No input rail stopped this request, so it continued to the faithfulness rail and the flash judge. Either can call Gemini, and those calls are not recorded on this execution. The rails' cost limits cap them."
-              : ""}{" "}
             It is not a measurement of live model behavior.
           </p>
         ) : (
@@ -172,6 +199,20 @@ function EvidenceBody({ e }: { e: ExecutionRecord }) {
             {formatCost(e.cost_usd)}.
           </p>
         )}
+        {continuation !== "not_recorded" ? (
+          <div
+            data-testid="continuation"
+            data-state={continuation}
+            className="border-border rounded-lg border p-4"
+          >
+            <p className="text-text-primary text-base font-medium">
+              {CONTINUATION_LABEL[continuation]}
+            </p>
+            <p className="text-text-secondary mt-1 text-sm leading-relaxed">
+              {CONTINUATION_MEANING[continuation]}
+            </p>
+          </div>
+        ) : null}
       </Section>
 
       <Section title="Trace">
@@ -297,6 +338,7 @@ export function RedTeamEvidence({
               <RedTeamOutcomeBadge
                 outcome={record.outcome}
                 state={record.state}
+                safetyBound={isSafetyBoundSkip(record)}
                 withMeaning
               />
               <ModeBadge mode={record.mode} />

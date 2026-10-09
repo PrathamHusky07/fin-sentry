@@ -11,6 +11,7 @@ import {
   OUTCOME_LABEL,
   expectationLabel,
   expectedLabel,
+  isSafetyBoundSkip,
   layerLabel,
   type Category,
   type ExecutionRecord,
@@ -30,7 +31,11 @@ function rowTone(e: ExecutionRecord): string {
 function Observed({ e }: { e: ExecutionRecord }) {
   return (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <RedTeamOutcomeBadge outcome={e.outcome} state={e.state} />
+      <RedTeamOutcomeBadge
+        outcome={e.outcome}
+        state={e.state}
+        safetyBound={isSafetyBoundSkip(e)}
+      />
       {e.outcome === "caught" ? (
         <span className="text-text-secondary text-sm">
           {layerLabel(e.acting_layer)}
