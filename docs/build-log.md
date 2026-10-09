@@ -1,5 +1,115 @@
 # Build Log
 
+## 2026-10-09 (night): Day 11.0 foundation for the Reliability Incident Investigator
+
+Model: Sonnet 5.5, no escalation. Contracts, policy and harness are zero inference. The one paid step was
+the flash pilot: 12 Gemini calls, $0.0101 estimated, against its $0.06 sub-cap and the $0.50 session
+cap. No frozen contract, guardrail rail or persisted value changed. No new or mutating MCP tool. No
+investigator reasoning loop, no investigator LLM call, no UI, no agent framework, no subagent.
+The working-tree skill install, its lockfile and a stray zip were inspected and left untouched.
+
+### Working tree (inspected, nothing deleted)
+
+- `.agents/` and the `.claude/skills/eval-engineering` symlink are the installed eval-engineering skill.
+  `skills-lock.json` is its lockfile. Used as a design reference only: the verifier is independent of
+  the agent, ground truth stays out of what the agent sees, and failures are classified. Its scripts
+  were not run. Proposed `.gitignore` lines, not applied (a config change needs your approval):
+  `.agents/`, `.claude/skills/eval-engineering`, `skills-lock.json`, `finsentry/redteam/redteam.zip`.
+- `finsentry/redteam/redteam.zip` holds `deps.py`, `runner.py` and `__MACOSX` entries. Nothing references
+  it. A stray packaging artifact.
+
+### Three defect fixes, each reproduced against current code first
+
+- Deterministic Mode copy by outcome (`cc1fbfc`). `red-team-evidence.tsx` chose the text by mode alone.
+  Three rendering cases failed before the fix: evaluator unavailable, execution failed, not finished.
+  `deterministicModeMeaning` in `lib/red-team.ts` now reads the existing `evaluatorStatus`. A completed
+  execution keeps "exercised the real defense". No persisted field was added.
+- Reconciliation of non-200 responses with a trace id (`70f0182`). It checked the event topic only, so a
+  504 with no persisted verdict read as pass. It is now reconciled across all four legs like a 200,
+  through one shared helper. Chosen over a rename because the gateway emits an error event for a 504
+  and the flash judge writes a skipped verdict for every non-success event, so all four legs are owed.
+  A 504 missing a leg now fails its own population and names the gap by id.
+- Consumer readiness (`f2314e8`). `load_test.py` fell through after 60 s. `group_state()` runs
+  `rpk group describe` with `check=False`, so a missing group parses to state `None` with no members,
+  and the consumer starts at the latest offset, so load sent before it joined is never judged. The run
+  now stops before the isolation check and before any load, with the observed state in the reason.
+- The `load_test.py` docstring now states the measured path: faithfulness rail and flash judge disabled,
+  local stub downstream.
+
+### Investigator contracts (`93dd4f0`, `133115a`)
+
+`finsentry/investigator/`: `contracts.py` (investigation state with trigger, window, scope, known data
+gaps, hypothesis ledger, executed queries, three budgets, status and stopping reason; incident report
+with observation, correlation and causation as separate lists, missing evidence apart from evidence
+against, unavailable tools apart from empty results, queries run apart from the one proposed
+verification), `tool_contract.py`, `adapter.py`, `policy.py`, `citations.py`, `reports.py`, `stub.py`.
+
+- The tool interface is interface-only. It mirrors the nine registered functions, and a test compares
+  each method with the real function by resolved type hints and defaults (a changed default fails it).
+  It is not connected to a running MCP server, and the harness runs it against a fixture world.
+- Found while reading the tools: four RisingWave tools return an empty result with
+  `risingwave_connected` false when the source is offline, so the adapter reads that flag. A failed SQL
+  query on a connected pool also returns an empty result and no tool exposes `last_query_failed`. That
+  cannot be told from "no rows". Not fixed here. Declared as a known gap in every investigation.
+  The Red Team tools raise `ValueError` for an unset `DATABASE_URL`, which the adapter treats as
+  unavailable and not as a rejected call.
+- Policy, starting values and not tuned: 8 tool calls, 2 inference calls, 3 hypothesis rounds, 120 s.
+  A repeated identical query is refused unless the prior result was unavailable and a retry is
+  justified. A citation is valid only if a query in this investigation returned that record.
+  Abstention is a successful outcome.
+
+### Known-answer harness (`69983c8`)
+
+Nine synthetic cases built from the platform's own result types: judge outage, stale chunk, injection
+surge, schema rail regression, retrieval plus judge, a misleading case (symptom in retrieval, cause in
+the frontier judge), and three abstention cases (unavailable source, sparse signal, ambiguous signal).
+Scorer dimensions: subsystem, evidence coverage, citation validity, supporting and contradicting
+evidence, causal discipline, verification step, tool-call efficiency, and correct abstention.
+
+Ordering guaranteed by construction and tested, including by removing the penalty to see the tests fail:
+a wrong top subsystem earns no credit for coverage, support, causal discipline or efficiency, so it caps
+at 0.20 before a penalty of at least 0.35. On the misleading case a confident wrong answer scores -0.80 (a 1.00
+penalty against 0.20 of citation and verification credit), a hedged wrong one -0.15, and an abstention 0.10. A causal claim on observational evidence scores 0.15 below the hedged
+"consistent with" report.
+
+Stub baseline (`docs/measurements/investigator/day11-0-stub-baseline.json`, agent
+`always-abstain-0`, 0 tool calls, 0 inference calls): 3 of 3 abstention cases pass at 1.00, and 0 of 6
+diagnosis cases pass (scores 0.00 to 0.10). This validates the scorer and says nothing about a future
+agent. An ideal scripted investigator scores 1.00 on all nine, which only shows the cases are solvable.
+
+### Flash pilot (`88798b5`)
+
+Rows: the 12 held-out rows the platform's 10 percent rule selects, by id alone, no label read.
+Stage 0 priced 12 extraction calls at $0.014. Stage 1 made them. Result: 0 claims on 12 of 12 rows,
+12 Gemini calls in total, 877 input and 2,512 thought tokens, $0.0101 (about $0.00084 per row), mean
+latency 4.1 s with one 26.7 s call. The 12 answers are bare values such as `13.51%` and
+`288068.67` (2 to 18 characters). With no claim to verify, flash faithfulness takes its "no verifiable
+claims" branch and returns 1.0 for each of them, so stage 2 priced at zero calls.
+
+What this supports: on short numeric answers the flash faithfulness metric makes one call and returns
+1.0. What it does not: any claim about flash accuracy, or the flash versus frontier comparison, which was
+not made. Twelve rows is a small sample, and answers with more than a bare value could extract claims.
+The 10D comparison can now be priced: about 150 calls and roughly $0.13 for flash on the 150 held-out
+rows if the zero-claim pattern holds, against a scorer that cannot discriminate on this data. Whether
+to spend that is your decision (option 2 in the 10D consequences). Option 1, the pilot, is done.
+
+### Gate
+
+pytest 1047 passed at `88798b5` with `python -m pytest -x -q`. The earlier 929 is the Day 10 gate
+figure, before 6 Day 10D replay tests were added (935 at `5016c77`). This session added 112.
+ruff, ruff format and mypy clean on the changed files. Vitest 88, tsc, eslint and prettier clean.
+Production build passed with the dev server stopped, restarted afterwards (200 on :3000).
+The full real-stack Playwright suite was not run because only copy changed. The 9 red-team RENDERING
+specs ran against the dev server, one worker, and passed, including the 375, 768 and 1440 px check.
+
+### Day 11.1 handoff
+
+Next: the investigation loop, as an `Investigator` (see `loop.py`) that uses the adapter and the
+policy, scored by `run_suite`. Start by wiring a real MCP client behind the tool interface, then run
+the always-abstain baseline against it. Open decisions for you: the `.gitignore` lines above, and
+whether to fix the silent-empty gap in the four RisingWave tools (it changes tool behavior, so it needs
+your call). Deferred: the 10D flash comparison and the resolution variant.
+
 ## 2026-10-09 (close-out): Day 10 evidence corrections and Day 10D cost versus accuracy
 
 Model: Sonnet 5.5, no escalation. Zero Gemini calls, so $0.00 of the $0.50 cap. No frozen contract,
