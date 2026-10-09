@@ -336,6 +336,55 @@ async def test_a_timed_out_gateway_execution_records_that_continuation_is_unknow
     assert row.evidence == {runner.CONTINUATION_UNKNOWN: True}
 
 
+async def test_a_gateway_setup_error_sent_nothing_so_it_claims_no_continuation() -> None:
+    s = scenario("DI-001")
+    _, ids = store.create_run(TEST_DATABASE_URL, [s], False)
+
+    async def cannot_build(*_: object, **__: object) -> Observation:
+        raise ScenarioSetupError("no scenario input could be built")
+
+    with patch.object(runner, "_execute", cannot_build):
+        may_have_continued = await runner.run_one(s, make_deps(), ids[0])
+    row = store.get_execution(TEST_DATABASE_URL, ids[0])
+    assert row is not None and row.outcome == "execution_failed"
+    assert "no scenario input could be built" in (row.reason or "")
+    assert runner.CONTINUATION_UNKNOWN not in row.evidence and row.evidence == {}
+    assert may_have_continued is False
+
+
+async def test_a_gateway_setup_error_does_not_use_up_the_continuation_bound() -> None:
+    sent: list[str] = []
+
+    async def fake(s: object, deps: object, execution_id: str) -> Observation:
+        sent.append(getattr(s, "id"))
+        if getattr(s, "id") == "DI-001":
+            raise ScenarioSetupError("no scenario input could be built")
+        return _PASSED_GATEWAY
+
+    with patch.object(runner, "_execute", fake):
+        run_id = await runner.start_run(RunRequest(scenario_ids=["DI-001", "HZ-001"]), make_deps())
+        await _wait_for_run(run_id)
+    _, executions = _only_execution(run_id)
+    assert sent == ["DI-001", "HZ-001"]  # the second request is still allowed
+    assert executions[1].outcome == "missed"
+
+
+async def test_a_gateway_execution_interrupted_after_a_send_keeps_the_marker_and_the_bound() -> None:
+    sent: list[str] = []
+
+    async def fake(s: object, deps: object, execution_id: str) -> Observation:
+        sent.append(getattr(s, "id"))
+        raise ConnectionResetError("reset while the response was in flight")
+
+    with patch.object(runner, "_execute", fake):
+        run_id = await runner.start_run(RunRequest(scenario_ids=["DI-001", "HZ-001"]), make_deps())
+        await _wait_for_run(run_id)
+    _, executions = _only_execution(run_id)
+    assert executions[0].evidence == {runner.CONTINUATION_UNKNOWN: True}
+    assert sent == ["DI-001"]  # HZ-001 was not sent: the interrupted request used the bound
+    assert executions[1].evidence == {runner.SKIPPED_BY_SAFETY_BOUND: True}
+
+
 async def test_a_failed_non_gateway_execution_makes_no_claim_about_continuation() -> None:
     _, row = await _run_single("OUT-001", RuntimeError("boom"))
     assert row.outcome == "execution_failed" and row.evidence == {}  # type: ignore[attr-defined]

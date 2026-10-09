@@ -21,7 +21,8 @@ from finsentry.rails.retrieval.rail import RetrievalRail
 
 class ScenarioSetupError(RuntimeError):
     """The harness could not build the scenario's input. Recorded as execution_failed,
-    because nothing was learned about any defense."""
+    because nothing was learned about any defense. Raise it only before anything is sent:
+    the runner treats it as proof that no gateway request went out."""
 
 
 @dataclass

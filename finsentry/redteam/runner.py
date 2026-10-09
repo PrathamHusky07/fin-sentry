@@ -39,8 +39,10 @@ MAX_CONTINUED_GATEWAY_REQUESTS = 1
 # reads these keys, not the reason prose, to tell the cases apart. Neither changes the
 # persisted outcome, which stays execution_failed.
 #
-# continuation_unknown: a gateway execution failed or timed out, so the request may have
-#   gone past the input rails and nothing recorded whether it did.
+# continuation_unknown: a gateway execution was interrupted (it raised or timed out) at a
+#   point where a request may have been sent, so nothing recorded whether it went past the
+#   input rails. A ScenarioSetupError is not an interruption of that kind: the input was
+#   never built, so no request was sent and the execution gets no marker.
 # skipped_by_safety_bound: the scenario was deliberately not run because the bound above
 #   was already used up. It is not a harness failure.
 CONTINUATION_UNKNOWN = store.CONTINUATION_UNKNOWN
@@ -118,7 +120,8 @@ def _failure_reason(exc: Exception) -> str:
 
 async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> bool:
     """Run one execution and persist it. Returns True when a gateway request may have gone
-    past the input rails, which includes a gateway execution that raised or timed out."""
+    past the input rails, which includes a gateway execution interrupted after a send was
+    possible. A scenario setup error sent nothing and returns False."""
     url = deps.database_url
     await asyncio.to_thread(store.mark_running, url, execution_id)
     started = time.monotonic()
@@ -140,7 +143,9 @@ async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> bool:
         return obs.evidence.get("continued_past_input_rails") is True
     except Exception as exc:
         log.exception("red team execution %s of %s failed", execution_id, scenario.id)
-        may_have_continued = scenario.executor == "gateway_route"
+        may_have_continued = scenario.executor == "gateway_route" and not isinstance(
+            exc, ScenarioSetupError
+        )
         ms = int((time.monotonic() - started) * 1000)
         await asyncio.to_thread(
             store.finish_execution,
