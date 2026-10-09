@@ -202,6 +202,10 @@ export function RedTeamConsole() {
 
   const scenarios = useMemo(() => overview?.scenarios ?? [], [overview]);
   const summary = useMemo(() => summarizeLatest(scenarios), [scenarios]);
+  const executors = useMemo(
+    () => Object.fromEntries(scenarios.map((s) => [s.id, s.executor])),
+    [scenarios],
+  );
   const busy = starting || activeRunId !== null;
   const persistence = overview?.persistence_available ?? false;
 
@@ -286,6 +290,7 @@ export function RedTeamConsole() {
       {openExecution ? (
         <RedTeamEvidence
           executionId={openExecution}
+          executors={executors}
           onClose={() => setOpenExecution(null)}
         />
       ) : null}

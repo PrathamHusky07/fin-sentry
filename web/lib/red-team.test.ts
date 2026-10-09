@@ -12,6 +12,7 @@ import {
   expectedLabel,
   groupByCategory,
   isDetection,
+  gatewayProvenanceUnrecorded,
   isSafetyBoundSkip,
   runProgress,
   sentGatewayRequest,
@@ -310,6 +311,45 @@ describe("gateway continuation", () => {
     });
     expect(continuationState(e)).not.toBe("stopped");
     expect(continuationState(e)).not.toBe("not_recorded");
+  });
+});
+
+describe("gateway provenance not recorded", () => {
+  const unrecorded = (
+    evidence: Record<string, unknown>,
+    executor: string | null,
+    over: Partial<ExecutionRecord> = {},
+  ) => gatewayProvenanceUnrecorded(execution({ evidence, ...over }), executor);
+
+  it("is true for a legacy gateway execution with no marker and no gateway response", () => {
+    expect(unrecorded({}, "gateway_route")).toBe(true);
+  });
+
+  it("is also true when the scenario's executor cannot be resolved", () => {
+    expect(unrecorded({}, null)).toBe(true);
+  });
+
+  it("is false for an execution that does not use the gateway", () => {
+    expect(unrecorded({}, "output_rails")).toBe(false);
+    expect(unrecorded({}, "input_rails")).toBe(false);
+  });
+
+  it("is false whenever the record carries gateway evidence", () => {
+    expect(unrecorded({ gateway_status: 200 }, "gateway_route")).toBe(false);
+    expect(unrecorded({ continuation_unknown: true }, "gateway_route")).toBe(
+      false,
+    );
+    expect(
+      unrecorded({ continued_past_input_rails: false }, "gateway_route"),
+    ).toBe(false);
+  });
+
+  it("is false for a safety-bound skip, which has its own copy", () => {
+    expect(
+      unrecorded({ skipped_by_safety_bound: true }, "gateway_route", {
+        outcome: "execution_failed",
+      }),
+    ).toBe(false);
   });
 });
 

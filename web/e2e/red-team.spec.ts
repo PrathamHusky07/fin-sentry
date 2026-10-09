@@ -199,13 +199,15 @@ async function mockStore(
       return json(route, {
         persistence_available: true,
         scenarios: rows.map((row, i) => ({
-          id: `DI-00${i + 1}`,
+          id: row.scenario_id === "DI-001" ? `DI-00${i + 1}` : row.scenario_id,
           version: 1,
           title: `Fixture scenario ${i + 1}`,
           category: "direct_injection",
           target_layer: "prompt-guard-2",
           description: "A fixture.",
-          executor: "gateway_route",
+          executor: String(row.scenario_id).startsWith("OUT")
+            ? "output_rails"
+            : "gateway_route",
           mode: "deterministic",
           expected: row.expected,
           required_evidence: ["gateway_status"],
@@ -405,6 +407,35 @@ test("RENDERING: a failed gateway execution says the request may have continued,
   await expect(dialog.getByText("Execution failed").first()).toBeVisible();
 });
 
+test("RENDERING: a legacy gateway execution with no evidence does not claim a direct call, and one with evidence keeps its provenance", async ({
+  page,
+}) => {
+  await mockStore(page, [
+    execution("1", "execution_failed", {
+      reason: "The harness raised RuntimeError. See the gateway log.",
+      evidence: {},
+    }),
+    execution("2", "missed"),
+  ]);
+  await page.goto("/red-team");
+  const rows = page.getByRole("table").locator("tbody tr");
+  const dialog = page.getByRole("dialog", { name: "Execution evidence" });
+
+  await rows.nth(0).getByRole("button").click();
+  await expect(dialog).toContainText(
+    "Gateway execution provenance not recorded.",
+  );
+  await expect(dialog).not.toContainText("called the defense directly");
+  await expect(dialog).not.toContainText("sent no gateway request");
+  await page.keyboard.press("Escape");
+
+  await rows.nth(1).getByRole("button").click();
+  await expect(dialog).toContainText(
+    "sent a gateway request, but no stored trace",
+  );
+  await expect(dialog).not.toContainText("provenance not recorded");
+});
+
 test("RENDERING: a confirmed block reads did not continue and a confirmed pass reads continued", async ({
   page,
 }) => {
@@ -442,6 +473,7 @@ test("RENDERING: a safety-bound skip reads Not run (safety bound), and a real ha
       duration_ms: 0,
     }),
     execution("2", "execution_failed", {
+      scenario_id: "OUT-001",
       reason: "The harness raised RuntimeError. See the gateway log.",
       evidence: {},
     }),

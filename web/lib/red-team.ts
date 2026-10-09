@@ -255,6 +255,24 @@ export function sentGatewayRequest(e: ExecutionRecord): boolean {
   return "gateway_status" in e.evidence;
 }
 
+/** DERIVED: a gateway_route execution that carries neither continuation evidence
+ * nor a gateway response, as legacy rows do. The record cannot say whether a
+ * request was sent, so the console must not claim either. `executor` comes from
+ * the scenario registry, since executions do not store it. An unresolved
+ * executor (null) is treated the same way, because "no gateway request" cannot
+ * be asserted for it either. */
+export function gatewayProvenanceUnrecorded(
+  e: ExecutionRecord,
+  executor: string | null,
+): boolean {
+  return (
+    (executor === null || executor === "gateway_route") &&
+    !isSafetyBoundSkip(e) &&
+    continuationState(e) === "not_recorded" &&
+    !sentGatewayRequest(e)
+  );
+}
+
 /** The runner writes this evidence key when a gateway execution failed or timed
  * out. It means a request was attempted but nothing recorded how far it got. */
 const CONTINUATION_UNKNOWN_KEY = "continuation_unknown";

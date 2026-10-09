@@ -20,6 +20,7 @@ import {
   expectedLabel,
   formatCost,
   formatDuration,
+  gatewayProvenanceUnrecorded,
   isSafetyBoundSkip,
   layerLabel,
   sentGatewayRequest,
@@ -71,19 +72,28 @@ function EvidenceValue({ value }: { value: unknown }) {
   );
 }
 
-function provenanceCopy(e: ExecutionRecord): string {
+function provenanceCopy(e: ExecutionRecord, executor: string | null): string {
   if (isSafetyBoundSkip(e)) {
     return "This scenario was intentionally not run, to bound cost. No request was sent to the gateway and no defense ran, so no trace exists for it.";
   }
   if (continuationState(e) === "unknown") {
     return "This execution tried to send a gateway request and failed before a result was recorded. No stored trace was linked to it.";
   }
+  if (gatewayProvenanceUnrecorded(e, executor)) {
+    return "Gateway execution provenance not recorded.";
+  }
   return sentGatewayRequest(e)
     ? "This execution sent a gateway request, but no stored trace was found within the lookup window. The result rests on the gateway response alone."
     : "This execution called the defense directly with a controlled input. It sent no gateway request, so no trace exists for it.";
 }
 
-function TraceProvenance({ e }: { e: ExecutionRecord }) {
+function TraceProvenance({
+  e,
+  executor,
+}: {
+  e: ExecutionRecord;
+  executor: string | null;
+}) {
   if (e.trace_ref) {
     return (
       <>
@@ -109,12 +119,18 @@ function TraceProvenance({ e }: { e: ExecutionRecord }) {
   }
   return (
     <p className="text-text-secondary text-base leading-relaxed">
-      {provenanceCopy(e)}
+      {provenanceCopy(e, executor)}
     </p>
   );
 }
 
-function EvidenceBody({ e }: { e: ExecutionRecord }) {
+function EvidenceBody({
+  e,
+  executor,
+}: {
+  e: ExecutionRecord;
+  executor: string | null;
+}) {
   const entries = Object.entries(e.evidence);
   const evaluator = evaluatorStatus(e);
   const safetyBound = isSafetyBoundSkip(e);
@@ -216,7 +232,7 @@ function EvidenceBody({ e }: { e: ExecutionRecord }) {
       </Section>
 
       <Section title="Trace">
-        <TraceProvenance e={e} />
+        <TraceProvenance e={e} executor={executor} />
       </Section>
 
       <Section title="Evidence recorded">
@@ -262,9 +278,11 @@ function EvidenceBody({ e }: { e: ExecutionRecord }) {
  * link opens the same record. Focus is trapped and Escape closes it. */
 export function RedTeamEvidence({
   executionId,
+  executors,
   onClose,
 }: {
   executionId: string;
+  executors: Record<string, string>;
   onClose: () => void;
 }) {
   const [record, setRecord] = useState<ExecutionRecord | null>(null);
@@ -355,7 +373,12 @@ export function RedTeamEvidence({
             }}
             loadingLabel="Loading execution evidence…"
           >
-            {record ? <EvidenceBody e={record} /> : null}
+            {record ? (
+              <EvidenceBody
+                e={record}
+                executor={executors[record.scenario_id] ?? null}
+              />
+            ) : null}
           </AsyncState>
         </div>
       </div>
