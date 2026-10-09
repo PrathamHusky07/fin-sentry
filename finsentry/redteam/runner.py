@@ -41,6 +41,8 @@ _GATEWAY_STOP_REASON = (
     "sends no further gateway requests. Start this scenario in a run of its own."
 )
 
+# Serializes starts within this process. Across processes the unique index from
+# migration 006 is the guard: create_run raises RunAlreadyActiveError for the loser.
 _start_lock = asyncio.Lock()
 _tasks: set[asyncio.Task[None]] = set()
 
@@ -186,9 +188,14 @@ async def start_run(request: RunRequest, deps: Deps) -> str:
         active = await asyncio.to_thread(store.active_run_id, deps.database_url)
         if active is not None:
             raise RunRejectedError(409, "A run is already in progress.", run_id=active)
-        run_id, execution_ids = await asyncio.to_thread(
-            store.create_run, deps.database_url, scenarios, request.allow_judge_assisted
-        )
+        try:
+            run_id, execution_ids = await asyncio.to_thread(
+                store.create_run, deps.database_url, scenarios, request.allow_judge_assisted
+            )
+        except store.RunAlreadyActiveError:
+            # Another process won the race after the check above. The index decides.
+            winner = await asyncio.to_thread(store.active_run_id, deps.database_url)
+            raise RunRejectedError(409, "A run is already in progress.", run_id=winner) from None
     task = asyncio.create_task(run_suite(scenarios, deps, run_id, execution_ids))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)

@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import subprocess
+import sys
+import time
 from unittest.mock import patch
 
 import pytest
@@ -281,3 +286,57 @@ async def test_a_gateway_execution_that_raised_counts_as_having_gone_past_the_in
         await _wait_for_run(run_id)
     _, executions = _only_execution(run_id)
     assert "Not run" in (executions[1].reason or "")
+
+
+# --- one active run across processes ------------------------------------
+# These start two separate Python processes against the real test database. Each has its
+# own asyncio.Lock, so only the partial unique index from migration 006 can keep them
+# from both creating a running run.
+
+
+def _race_two_processes(force_race: bool) -> list[dict[str, object]]:
+    start_at = time.time() + 4.0  # interpreter and import time for both children
+    children = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "tests.redteam.concurrent_start",
+                str(start_at),
+                str(int(force_race)),
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
+            env={**os.environ, "TEST_DATABASE_URL": TEST_DATABASE_URL},
+        )
+        for _ in range(2)
+    ]
+    results: list[dict[str, object]] = []
+    for child in children:
+        out, _ = child.communicate(timeout=60)
+        assert child.returncode == 0, out
+        results.append(json.loads(out.strip().splitlines()[0]))
+    return results
+
+
+@pytest.mark.parametrize("force_race", [False, True], ids=["natural_timing", "both_pass_the_check"])
+def test_two_processes_starting_at_once_leave_exactly_one_active_run(force_race: bool) -> None:
+    results = _race_two_processes(force_race)
+    winners = [r for r in results if "started" in r]
+    losers = [r for r in results if "rejected" in r]
+    assert len(winners) == 1 and len(losers) == 1, results
+    assert losers[0]["rejected"] == 409
+    assert losers[0]["run_id"] == winners[0]["started"]
+    runs = store.list_runs(TEST_DATABASE_URL, 10)
+    assert [r.run_id for r in runs] == [winners[0]["started"]]
+    assert runs[0].total == 1
+
+
+def test_the_database_refuses_a_second_running_run_but_not_a_second_finished_one() -> None:
+    first, _ = store.create_run(TEST_DATABASE_URL, [scenario("DI-001")], False)
+    with pytest.raises(store.RunAlreadyActiveError):
+        store.create_run(TEST_DATABASE_URL, [scenario("HZ-001")], False)
+    store.finish_run(TEST_DATABASE_URL, first, None)
+    second, _ = store.create_run(TEST_DATABASE_URL, [scenario("DI-001")], False)
+    store.finish_run(TEST_DATABASE_URL, second, None)
+    assert len(store.list_runs(TEST_DATABASE_URL, 10)) == 2

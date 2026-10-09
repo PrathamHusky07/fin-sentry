@@ -40,6 +40,7 @@ def test_create_run_inserts_queued_executions_with_the_expectation_copied() -> N
 
 def test_a_rerun_of_the_same_scenario_is_a_new_execution_record() -> None:
     first_run, first_ids = store.create_run(TEST_DATABASE_URL, _scenarios("DI-001"), False)
+    store.finish_run(TEST_DATABASE_URL, first_run, None)  # only one run may be running
     second_run, second_ids = store.create_run(TEST_DATABASE_URL, _scenarios("DI-001"), False)
     _finish(first_ids[0])
     _finish(second_ids[0], outcome="missed", layer=None)
@@ -133,7 +134,6 @@ def test_only_a_stale_running_run_is_reclaimed_and_its_unfinished_executions_fai
     stale_run, stale_ids = store.create_run(
         TEST_DATABASE_URL, _scenarios("DI-001", "OUT-001"), False
     )
-    fresh_run, _ = store.create_run(TEST_DATABASE_URL, _scenarios("DI-001"), False)
     _finish(stale_ids[0])
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
         conn.execute(
@@ -146,9 +146,39 @@ def test_only_a_stale_running_run_is_reclaimed_and_its_unfinished_executions_fai
     run, executions = detail
     assert run.status == "failed" and run.failure_reason is not None
     assert [e.outcome for e in executions] == ["caught", "execution_failed"]
+    # The reclaim freed the one running slot, and it leaves a valid active run alone.
+    assert store.active_run_id(TEST_DATABASE_URL) is None
+    fresh_run, _ = store.create_run(TEST_DATABASE_URL, _scenarios("DI-001"), False)
+    assert store.reclaim_stale_runs(TEST_DATABASE_URL) == 0
     assert store.active_run_id(TEST_DATABASE_URL) == fresh_run
 
 
 def test_get_unknown_ids_return_none() -> None:
     assert store.get_run(TEST_DATABASE_URL, "00000000-0000-0000-0000-000000000000") is None
     assert store.get_execution(TEST_DATABASE_URL, "00000000-0000-0000-0000-000000000000") is None
+
+
+def test_migration_006_keeps_the_newest_running_run_and_closes_the_rest() -> None:
+    from finsentry.db.migrate import MIGRATIONS_DIR
+
+    sql = (MIGRATIONS_DIR / "006_red_team_single_active_run.sql").read_text()
+    with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+        conn.execute("DROP INDEX red_team_one_running_run")
+        try:
+            old_run, old_ids = store.create_run(TEST_DATABASE_URL, _scenarios("DI-001"), False)
+            conn.execute(
+                "UPDATE red_team_runs SET created_at = now() - interval '5 minutes'"
+                " WHERE run_id = %s",
+                (old_run,),
+            )
+            newest_run, _ = store.create_run(TEST_DATABASE_URL, _scenarios("HZ-001"), False)
+            conn.execute(sql)
+        finally:
+            conn.execute(sql)  # the index must exist again whatever happened above
+    assert store.active_run_id(TEST_DATABASE_URL) == newest_run
+    old = store.get_run(TEST_DATABASE_URL, old_run)
+    assert old is not None
+    assert old[0].status == "failed" and "migration 006" in (old[0].failure_reason or "")
+    assert [e.outcome for e in old[1]] == ["execution_failed"]
+    with pytest.raises(store.RunAlreadyActiveError):
+        store.create_run(TEST_DATABASE_URL, _scenarios("DI-001"), False)

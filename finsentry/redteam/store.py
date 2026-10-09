@@ -27,12 +27,20 @@ from finsentry.redteam.records import ExecutionRecord, RunRecord
 # every later run.
 STALE_RUN_MINUTES = 15
 
+# Migration 006: the partial unique index that allows one running run at a time.
+_ONE_RUNNING_INDEX = "red_team_one_running_run"
+
 _EXEC_COLUMNS = """
     e.execution_id::text, e.run_id::text, e.seq, e.scenario_id, e.scenario_version,
     e.category, e.target_layer, e.mode, e.expected, e.state, e.outcome, e.acting_layer,
     e.acting_check, e.expectation, e.reason, e.evidence, e.trace_ref, e.gemini_calls,
     e.cost_usd::float AS cost_usd, e.started_at, e.finished_at, e.duration_ms
 """
+
+
+class RunAlreadyActiveError(Exception):
+    """Another run is already in the running state. Raised by create_run when the
+    database, not just this process, refuses a second running run."""
 
 
 def _connect(database_url: str) -> psycopg.Connection[dict[str, Any]]:
@@ -46,15 +54,21 @@ def create_run(
     allow_judge_assisted: bool,
 ) -> tuple[str, list[str]]:
     """Insert a running run and one queued execution per scenario, atomically.
-    Returns (run_id, execution_ids in scenario order)."""
+    Returns (run_id, execution_ids in scenario order). Raises RunAlreadyActiveError when
+    another process holds the one running slot."""
     run_id = str(uuid.uuid4())
     execution_ids = [str(uuid.uuid4()) for _ in scenarios]
     with _connect(database_url) as conn, conn.transaction():
-        conn.execute(
-            "INSERT INTO red_team_runs (run_id, status, scenario_ids, allow_judge_assisted)"
-            " VALUES (%s, 'running', %s, %s)",
-            (run_id, [s.id for s in scenarios], allow_judge_assisted),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO red_team_runs (run_id, status, scenario_ids, allow_judge_assisted)"
+                " VALUES (%s, 'running', %s, %s)",
+                (run_id, [s.id for s in scenarios], allow_judge_assisted),
+            )
+        except psycopg.errors.UniqueViolation as exc:
+            if exc.diag.constraint_name != _ONE_RUNNING_INDEX:
+                raise
+            raise RunAlreadyActiveError from exc
         for seq, (scenario, execution_id) in enumerate(zip(scenarios, execution_ids, strict=True)):
             conn.execute(
                 "INSERT INTO red_team_executions (execution_id, run_id, seq, scenario_id,"
