@@ -114,3 +114,11 @@ risingwave_data/
 # Trace and telemetry dumps
 otel_dumps/
 traces/
+
+# Locally installed eval-engineering skill and its lockfile; design guidance only, not project code
+.claude/skills/eval-engineering
+.agents/skills/eval-engineering
+skills-lock.json
+
+# Red Team archive kept locally
+finsentry/redteam/redteam.zip
