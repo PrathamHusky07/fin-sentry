@@ -7,7 +7,12 @@ import pytest
 
 from finsentry.events.trace_api import TraceDetailResponse, TraceListResponse
 from finsentry.mcp.state import dao
-from finsentry.mcp.tools.trace_evidence import MAX_QUERY_CHARS, get_trace_detail, search_traces
+from finsentry.mcp.tools.trace_evidence import (
+    MAX_QUERY_CHARS,
+    _cap_query,
+    get_trace_detail,
+    search_traces,
+)
 from finsentry.risingwave.dao import RisingWaveUnavailableError
 
 _TS = datetime.datetime(2026, 10, 7, 9, 30, 0, tzinfo=datetime.UTC)
@@ -76,7 +81,7 @@ async def test_search_traces_returns_the_persisted_investigations_rows(monkeypat
     _assert_only_reads(recorder.statements)
 
 
-async def test_search_traces_cuts_a_long_stored_query_like_get_trace_detail(
+async def test_search_traces_keeps_500_characters_then_an_ellipsis_like_get_trace_detail(
     monkeypatch: Any,
 ) -> None:
     dao._pool = object()
@@ -100,8 +105,18 @@ async def test_search_traces_cuts_a_long_stored_query_like_get_trace_detail(
     monkeypatch.setattr(dao, "query_one", detail_recorder.query_one)
     detail = await get_trace_detail("t1")
 
-    assert len(listed.traces[0].query) == MAX_QUERY_CHARS + 3
+    assert listed.traces[0].query == "x" * MAX_QUERY_CHARS + "..."  # 503 characters
     assert listed.traces[0].query == detail.query
+
+
+def test_the_query_cap_contract_is_500_source_characters_plus_an_ellipsis_when_cut() -> None:
+    assert MAX_QUERY_CHARS == 500
+    exactly = "q" * MAX_QUERY_CHARS
+    assert _cap_query(exactly) == exactly  # at the limit: unchanged, no ellipsis
+    assert _cap_query("") == ""
+    over = _cap_query(exactly + "r")
+    assert over == exactly + "..." and len(over) == MAX_QUERY_CHARS + 3  # max output: 503
+    assert len(_cap_query("q" * 10_000)) == MAX_QUERY_CHARS + 3
 
 
 async def test_search_traces_has_no_next_offset_on_a_short_page(monkeypatch: Any) -> None:
@@ -252,7 +267,9 @@ async def test_get_trace_detail_never_surfaces_error_detail_answer_or_citation_q
     assert "withheld by this tool" in result.note
 
 
-async def test_get_trace_detail_cuts_a_long_stored_query(monkeypatch: Any) -> None:
+async def test_get_trace_detail_keeps_500_characters_then_an_ellipsis(
+    monkeypatch: Any,
+) -> None:
     dao._pool = object()
     rag_row, judge_row = _detail_rows(query="x" * (MAX_QUERY_CHARS + 200))
     recorder = _Recorder(one=[rag_row, judge_row, None], many=[])
@@ -260,7 +277,8 @@ async def test_get_trace_detail_cuts_a_long_stored_query(monkeypatch: Any) -> No
 
     result = await get_trace_detail("t1")
 
-    assert result.query is not None and len(result.query) == MAX_QUERY_CHARS + 3
+    assert result.query == "x" * MAX_QUERY_CHARS + "..."  # 503 characters
+    assert "first 500 characters" in result.note
 
 
 async def test_get_trace_detail_withholds_the_frontier_rubric_reasoning(monkeypatch: Any) -> None:

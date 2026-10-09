@@ -28,15 +28,19 @@ from finsentry.mcp._util import validate_limit
 from finsentry.mcp.state import dao
 
 MAX_TRACE_PAGE = 100
+# The query contract: keep the first MAX_QUERY_CHARS source characters and append "..." only
+# when something was cut. A capped query is therefore at most MAX_QUERY_CHARS + 3 characters.
 MAX_QUERY_CHARS = 500
 _WITHHELD_NOTE = (
     "answer, error_detail, citation quotes and the frontier judge's rubric_reasoning "
-    "are withheld by this tool. The stored query is cut to "
-    f"{MAX_QUERY_CHARS} characters."
+    "are withheld by this tool. A stored query longer than "
+    f"{MAX_QUERY_CHARS} characters keeps its first {MAX_QUERY_CHARS} characters, then '...'."
 )
 
 
 def _cap_query(query: str) -> str:
+    """The first MAX_QUERY_CHARS characters plus "..." when the query was longer, else it
+    unchanged. Output length is at most MAX_QUERY_CHARS + 3."""
     return query[:MAX_QUERY_CHARS] + "..." if len(query) > MAX_QUERY_CHARS else query
 
 
@@ -63,10 +67,11 @@ async def search_traces(
     every other trace. That set includes traces the two tiers never both scored (blocked,
     never evaluated, not frontier-sampled), so False does not mean the tiers agreed.
     Omit disagreement to apply no filter; frontier_sampled works the same way.
-    query_contains matches the stored (already redacted) query or the trace id. Each row's
-    query is cut to 500 characters, as in get_trace_detail. Results are capped at 100 per
-    page. Use next_offset to continue. Each row's app_trace_id is
-    the id to pass to get_trace_detail, explain_guardrail_decision or get_judge_scores.
+    query_contains matches the stored (already redacted) query or the trace id. A row's
+    query longer than 500 characters keeps its first 500 characters and then "...", as in
+    get_trace_detail. Results are capped at 100 per page. Use next_offset to continue. Each
+    row's app_trace_id is the id to pass to get_trace_detail, explain_guardrail_decision or
+    get_judge_scores.
     """
     validate_limit(limit, MAX_TRACE_PAGE)
     if offset < 0:
@@ -96,7 +101,8 @@ async def get_trace_detail(app_trace_id: str) -> TraceDetailResponse:
     rag_events row matches.
 
     Per field, and why:
-    - query: kept, cut to 500 characters. The gateway persists the query after Presidio
+    - query: kept. A query longer than 500 characters keeps its first 500 characters and
+      then "...", so it is at most 503 characters. The gateway persists the query after Presidio
       redaction and withholds it when redaction cannot run (_redact_for_persistence).
     - answer: withheld (null). It is the model's reply as generated. No output rail
       redacts personal data, so nothing proves it is safe. A blocked answer is never
