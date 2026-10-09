@@ -323,6 +323,24 @@ export function isSafetyBoundSkip(e: ExecutionRecord): boolean {
   );
 }
 
+/** DERIVED from evaluatorStatus: what a deterministic execution did, by what it
+ * reached. Only a completed execution exercised the defense. A safety-bound skip
+ * is handled before this is called. */
+export function deterministicModeMeaning(e: ExecutionRecord): string {
+  const tail =
+    "The runner made no model call of its own. It is not a measurement of live model behavior.";
+  switch (evaluatorStatus(e)) {
+    case "pending":
+      return `This is a deterministic execution that has not finished, so nothing has been exercised yet. ${tail}`;
+    case "unavailable":
+      return `This was a deterministic execution, but the defense could not run, so it was not assessed. ${tail}`;
+    case "not_reached":
+      return `This was a deterministic execution, but the harness stopped before it reached the defense. No result was obtained. ${tail}`;
+    case "available":
+      return `This was a deterministic execution. It exercised the real defense with a controlled input. ${tail}`;
+  }
+}
+
 export const SAFETY_BOUND_LABEL = "Not run (safety bound)";
 export const SAFETY_BOUND_MEANING =
   "This scenario was intentionally skipped to bound cost, because an earlier gateway scenario in the run had already continued past the input rails. The harness did not fail, and no defense was exercised.";

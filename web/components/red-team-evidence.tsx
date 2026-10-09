@@ -15,6 +15,7 @@ import {
   OUTCOME_MEANING,
   SAFETY_BOUND_MEANING,
   continuationState,
+  deterministicModeMeaning,
   evaluatorStatus,
   expectationLabel,
   expectedLabel,
@@ -124,7 +125,7 @@ function TraceProvenance({
   );
 }
 
-function EvidenceBody({
+export function EvidenceBody({
   e,
   executor,
 }: {
@@ -203,9 +204,7 @@ function EvidenceBody({
           </p>
         ) : e.mode === "deterministic" ? (
           <p className="text-text-secondary text-base leading-relaxed">
-            This was a deterministic execution. It exercised the real defense
-            with a controlled input. The runner made no model call of its own.
-            It is not a measurement of live model behavior.
+            {deterministicModeMeaning(e)}
           </p>
         ) : (
           <p className="text-text-secondary text-base leading-relaxed">
