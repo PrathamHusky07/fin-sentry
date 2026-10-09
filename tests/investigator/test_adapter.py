@@ -103,9 +103,10 @@ async def test_every_tool_family_tells_offline_from_empty_from_data() -> None:
         ),
     }
     for tool, (offline, empty, data) in cases.items():
-        assert (await _call(tool, offline, app_trace_id="t")).status == "unavailable", tool
-        assert (await _call(tool, empty, app_trace_id="t")).status == "empty", tool
-        assert (await _call(tool, data, app_trace_id="t")).status == "ok", tool
+        args = {} if tool == "search_prompt_injections" else {"app_trace_id": "t"}
+        assert (await _call(tool, offline, **args)).status == "unavailable", tool
+        assert (await _call(tool, empty, **args)).status == "empty", tool
+        assert (await _call(tool, data, **args)).status == "ok", tool
 
 
 async def test_trace_list_and_drift_and_red_team_results() -> None:

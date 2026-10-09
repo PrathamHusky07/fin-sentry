@@ -33,6 +33,7 @@ a behavior change to a published tool and has not been authorized.
 
 from __future__ import annotations
 
+import inspect
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -202,8 +203,12 @@ class ReadOnlyAdapter:
         if tool not in TOOL_NAMES:
             raise ValueError(f"{tool!r} is not one of the nine read-only investigation tools")
         name: ToolName = tool
-        self.calls_made += 1
         started = time.monotonic()
+        try:
+            inspect.signature(getattr(McpReadTools, name)).bind(None, **args)
+        except TypeError as exc:  # an unknown or missing argument is the caller's mistake
+            return self._failure(query_id, name, args, "rejected", exc, started)
+        self.calls_made += 1
         failures_before = self._probe() if self._probe else 0
         try:
             payload = await getattr(self._tools, name)(**args)
