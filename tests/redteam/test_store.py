@@ -262,3 +262,32 @@ def test_stale_recovery_commits_the_run_and_its_executions_together() -> None:
     assert store.reclaim_stale_runs(TEST_DATABASE_URL) == 1
     assert _snapshot(run_id) == ("failed", ["finished", "finished"])
     assert store.reclaim_stale_runs(TEST_DATABASE_URL) == 0  # nothing left to revisit
+
+
+def test_an_outcome_exists_only_on_a_finished_execution() -> None:
+    """_runs_with_counts assigns one count per outcome instead of adding. That is correct
+    only while GROUP BY (run_id, state, outcome) cannot yield two rows with the same
+    non-null outcome for one run. The migration CHECK makes that so: an outcome is stored
+    only when state is finished. If a schema change relaxes the CHECK, this fails first."""
+    run_id, ids = store.create_run(
+        TEST_DATABASE_URL, _scenarios("DI-001", "HZ-001", "OUT-001", "PII-001"), False
+    )
+    store.mark_running(TEST_DATABASE_URL, ids[1])
+    _finish(ids[0])
+    store.finish_execution(TEST_DATABASE_URL, ids[2], "caught", None, None, "r", 1)
+    with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+        for state in ("queued", "running"):
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute(
+                    "UPDATE red_team_executions SET state = %s, outcome = 'caught'"
+                    " WHERE execution_id = %s",
+                    (state, ids[3]),
+                )
+        grouped = conn.execute(
+            "SELECT outcome, count(*) FROM red_team_executions WHERE run_id = %s"
+            " GROUP BY run_id, state, outcome",
+            (run_id,),
+        ).fetchall()
+    with_outcome = [row[0] for row in grouped if row[0] is not None]
+    assert len(with_outcome) == len(set(with_outcome))
+    assert store.list_runs(TEST_DATABASE_URL, 1)[0].outcome_counts == {"caught": 2}
