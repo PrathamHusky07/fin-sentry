@@ -48,6 +48,15 @@ code before it was committed, so its recorded `git_head` is `eec1572`.
   credentials in the environment, downstream is the local stub, producer targets the load topic,
   consumer reads only the load topic and no existing consumer group reads it. A tripwire also fails any
   attempt to resolve a Google API host. Both processes ended with zero tripwire hits.
+- Measured path (corrected at the Day 10 close-out). This is not the judge-enabled production path.
+  The faithfulness rail and the flash judge were disabled, and the downstream model was a local stub
+  with a fixed 200 ms latency. The input rails, the retrieval rail, the schema and phrase output rails
+  and the event pipeline ran for real. The latencies and the crash below describe that path only.
+- Deployment scope, stated as the accepted zero-cost constraint and not as a defect. The deployed Cloud
+  Run gateway runs the input rails, the retrieval rail and the flash judge. The frontier ensemble is not
+  deployed there, because a customer runs it on their own infrastructure. The streaming stack is replaced
+  by an in-memory queue on the cloud instance. This test measured a local single-process stack, so none of
+  its numbers describe the cloud deployment.
 - Load: open loop, constant arrival rate, the ten demo questions cycled, 60 s per stage, stub latency
   200 ms, 20 sequential requests as the unloaded baseline. Latency is measured from the scheduled
   arrival time. Limits: p95 3000 ms, p99 5000 ms, error rate 1 percent. Abort at free memory below 20
@@ -86,15 +95,17 @@ search 16 ms, output rails under 1 ms. At 2 rps (run 1) the retrieval rail media
 
 Reconciliation, run 1: 245 sent, 168 answered, 168 events in the topic, 168 verdicts, 168 rows in each
 RisingWave table, 0 duplicates, 0 answered requests without an event. The 77 unanswered requests have
-no event. Run 2: 70 sent, 55 answered, 55 events, verdicts and rows. Consumer backlog peaked at 0 and
-drained in 0.2 s. Model calls: 0 in the events, 0 in the verdicts, every faithfulness status
-`skipped_no_key`.
+no event. Run 2: 70 sent, 55 answered, 55 events, verdicts and rows. Model calls: 0 in the events, 0 in
+the verdicts, every faithfulness status `skipped_no_key`. Consumer backlog read 0 in all 71 in-run
+samples (60 in run 1, 11 in run 2, one every 3 s, none unreadable). See the corrections below for what
+the stored drain figures and the stored reconciliation do and do not establish.
 
 ### Finding
 
-Capacity: the gateway met the latency and error limits only at 0.5 rps (30 rpm), in one stage of 30
-requests. It did not hold 1 rps (crashed in run 2) or 2 rps (crashed in run 1). The limit is a crash,
-not a latency curve. Llama Guard 3 loads with `device_map="auto"` (the Apple GPU here) as one shared
+Capacity: no stage passed twice. 0.5 rps met the latency and error limits in one stage of 30 requests
+and was offered only in run 1, because run 2 started at 1 rps. 1 rps met them once (run 1, 60 of 60) and
+crashed once (run 2). 2 rps crashed in run 1. Two runs do not establish a capacity limit, and no rate
+is shown to be repeatable. The observed limit is a crash, not a latency curve. Llama Guard 3 loads with `device_map="auto"` (the Apple GPU here) as one shared
 model, and `generate` runs from several worker threads with no lock. Prompt Guard 2 is pinned to CPU.
 Concurrent requests are the likely trigger. I did not isolate it in a standalone reproduction.
 
@@ -113,9 +124,9 @@ three-replica nginx topology was not tested.
 
 Nothing in the product changed. Decisions for you before Day 11: serialize or bound concurrent Llama
 Guard inference, or pin it to CPU (touches a rail, needs the guardrails-integration checklist and your
-approval); and speed up the per-chunk retrieval check. The deployed Cloud Run gateway has no GPU, which
-should avoid the Metal abort, but that is untested. The 1,000 rpm target is not met and is reported as
-not reached.
+approval); and speed up the per-chunk retrieval check. The deployed Cloud Run gateway has no GPU, so it
+may avoid this specific Metal abort. That is not shown. The Cloud Run path needs its own evidence, and
+this test did not gather any. The 1,000 rpm target is not met and is reported as not reached.
 
 ### Housekeeping
 
@@ -123,6 +134,37 @@ I stopped `next dev` on :3000 for the production build and did not restart it. I
 gateway to load the new code. A gateway on :8000 that I did not start was running at the end. Deferred:
 MCP allowlist projection (Day 11), disagreement query scaling and tie note (0.5 cutoff unchanged),
 GAP-001, 422 to 503. Next: Day 10D cost versus accuracy, then the Day 11 Reliability Investigator.
+
+### Corrections at the Day 10 close-out
+
+Each item corrects what this entry said or what the stored run files can support. The harness
+changes behind items 2 to 4 are in `f58f95c`. The stored JSON files are left as measured.
+
+1. Run 1 has no final gateway attestation. The gateway crashed before it wrote
+   `gateway.attest.json.final`, so `tripwire_hits_at_shutdown.gateway` is "not written" in run 1. Only
+   run 2 has a final gateway attestation (0 tripwire hits). The zero-Gemini evidence for run 1 stands on
+   other records: the start attestation (faithfulness disabled, no model client, no Gemini credentials,
+   tripwire installed with 0 hits), 0 Gemini calls in all 168 events and all 168 verdicts with every
+   faithfulness status `skipped_no_key`, and the consumer's final attestation (0 hits).
+2. Stored drain figures. The "drained in 0.2 s, peak 0" results were written by a read that turned an
+   unreadable lag into 0, so they cannot show that the lag was readable. The independent evidence is the
+   in-run sampler, which kept an unreadable lag as unknown: all 71 samples read 0 and none was unknown.
+   Every event also had a verdict at collection time. That supports "no backlog was observed at a 3 s
+   sampling interval". It does not measure a judge-bound backlog, because the judge was stubbed. The
+   harness now reports an unreadable lag as unknown.
+3. Stored reconciliation. The netted figure `unmatched_events_minus_requests_without_id` (-77 in run 1,
+   -15 in run 2) subtracted requests with no HTTP response from events with no matching response id, and
+   so assumed that each such request produced an event. It is replaced by three populations with their
+   own statuses. Restated from the stored counts, run 1: 168 successful responses with a trace id, each
+   with an event, a verdict and a row in both tables (pass); 0 HTTP responses without a trace id; 77
+   requests with no HTTP response and 0 events unmatched to any response id, so none of the 77 left an
+   event. Run 2: 55, 0 and 15, with 0 unmatched events. Topic duplicates were 0 in both runs. Persisted
+   row totals were not stored, only unique ids, so a duplicate persisted row in those two runs is not
+   ruled out. The harness now keeps row totals and unique ids for all four tables.
+4. Capacity wording. "Only at 0.5 rps" in the first version overstated it. See the finding above: no
+   stage passed twice, and 0.5 rps was offered once.
+5. The measured path had the faithfulness rail and the flash judge disabled behind a local stub (see
+   Setup). It is not the complete judge-enabled path.
 
 ## 2026-10-09: Day 10B.1 closeout, display and contract gaps, then activation in dev
 
