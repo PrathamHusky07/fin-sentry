@@ -19,15 +19,22 @@ How each tool signals unavailability, from the code in finsentry/mcp/tools:
 - get_drift_report reads files. A missing health reading is empty, because the file is the
   source of truth and its absence is a fact about the platform.
 
-Known gap, not fixed here: a SQL error on a connected pool returns [] with
-risingwave_connected=True through the four fetch_all tools (the DAO keeps that in
-last_query_failed, which no tool result exposes). The adapter cannot tell that from empty.
-It is listed in KNOWN_TOOL_GAPS so every investigation starts with it declared.
+Known gap, closed only where it can be: a SQL error on a connected pool returns [] with
+risingwave_connected=True through the four fetch_all tools. The published tool results do not
+say a query failed, and they are not changed here. The DAO does count failures
+(failed_query_count). When the adapter shares a process with the DAO, it is given that count
+as a failure_probe and a call during which the count rose is unavailable, whatever the
+tool returned. Over the stdio server the count is in another process, so the adapter cannot
+tell a failed query from no rows. It then returns "empty" with empty_unverified set, and the
+investigator treats that as a missing answer and never as a clean signal. Closing this fully
+over stdio needs the four tools to raise on a failed query, as search_traces does, which is
+a behavior change to a published tool and has not been authorized.
 """
 
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -54,7 +61,8 @@ KNOWN_TOOL_GAPS: tuple[DataGap, ...] = (
         "search_prompt_injections",
         kind="ambiguous",
         detail="A failed SQL query on a connected pool returns an empty result with "
-        "risingwave_connected true, so it reads as no rows.",
+        "risingwave_connected true. It is detected only in a process that shares the DAO, so "
+        "over the stdio server an empty result from these tools cannot be told from a failure.",
     ),
     DataGap(
         source="search_prompt_injections",
@@ -84,6 +92,16 @@ KNOWN_TOOL_GAPS: tuple[DataGap, ...] = (
 
 _STORE_NOT_CONFIGURED = "is not configured"
 
+# The tools that read through fetch_all, where a failed query and no rows look the same.
+FETCH_ALL_TOOLS: frozenset[str] = frozenset(
+    {
+        "get_failing_traces",
+        "explain_guardrail_decision",
+        "get_judge_scores",
+        "search_prompt_injections",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ToolResult:
@@ -97,6 +115,8 @@ class ToolResult:
     payload: object | None
     error: str | None
     elapsed_s: float
+    # Empty from a fetch_all tool with no failure signal, so it may be a failed query.
+    empty_unverified: bool = False
 
 
 def _refs(query_id: str, kind: EvidenceKind, ids: list[str]) -> list[EvidenceRef]:
@@ -135,7 +155,7 @@ def interpret(
             return "empty", _refs(query_id, "injection_event", []), None
         case SearchPromptInjectionsResult(direct=events):
             return "ok", _refs(query_id, "injection_event", [e.app_trace_id for e in events]), None
-        case GetDriftReportResult(last_health_reading=None):
+        case GetDriftReportResult(last_health_reading=None, transition_history=[]):
             return "empty", _refs(query_id, "drift_report", []), None
         case GetDriftReportResult(judge_id=judge_id):
             return "ok", _refs(query_id, "drift_report", [judge_id]), None
@@ -165,16 +185,26 @@ def interpret(
 
 class ReadOnlyAdapter:
     """Calls the nine read tools and nothing else. It holds no write path and no other
-    attribute of the tool object is reachable through it."""
+    attribute of the tool object is reachable through it.
 
-    def __init__(self, tools: McpReadTools) -> None:
+    failure_probe returns the DAO's failed_query_count and is given only when the tools run
+    in this process. calls_made counts every call that reached the tools, so a runner can
+    still report spend after the investigator raised."""
+
+    def __init__(
+        self, tools: McpReadTools, *, failure_probe: Callable[[], int] | None = None
+    ) -> None:
         self._tools = tools
+        self._probe = failure_probe
+        self.calls_made = 0
 
     async def call(self, tool: str, query_id: str, **args: Any) -> ToolResult:
         if tool not in TOOL_NAMES:
             raise ValueError(f"{tool!r} is not one of the nine read-only investigation tools")
         name: ToolName = tool
+        self.calls_made += 1
         started = time.monotonic()
+        failures_before = self._probe() if self._probe else 0
         try:
             payload = await getattr(self._tools, name)(**args)
         except ValueError as exc:
@@ -185,8 +215,23 @@ class ReadOnlyAdapter:
         except Exception as exc:
             return self._failure(query_id, name, args, "unavailable", exc, started)
         status, evidence, error = interpret(name, payload, query_id)
+        unverified = False
+        if name in FETCH_ALL_TOOLS and status in ("ok", "empty"):
+            if self._probe is None:
+                unverified = status == "empty"
+            elif self._probe() > failures_before:
+                status, evidence = "unavailable", []
+                error = "a RisingWave query failed during this call, so its result is not trusted"
         return ToolResult(
-            query_id, name, dict(args), status, evidence, payload, error, time.monotonic() - started
+            query_id,
+            name,
+            dict(args),
+            status,
+            evidence,
+            payload,
+            error,
+            time.monotonic() - started,
+            empty_unverified=unverified,
         )
 
     @staticmethod

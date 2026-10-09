@@ -25,6 +25,15 @@ from finsentry.investigator.contracts import (
 Clock = Callable[[], float]
 
 
+class InvestigationFailedError(RuntimeError):
+    """An investigation that could not finish. It carries the last good state so a runner can
+    still account for the tool and inference calls already spent."""
+
+    def __init__(self, message: str, state: InvestigationState) -> None:
+        super().__init__(message)
+        self.state = state
+
+
 class Investigator(Protocol):
     agent_version: str
 

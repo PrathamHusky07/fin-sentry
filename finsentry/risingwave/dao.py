@@ -66,6 +66,7 @@ class RisingWavePool:
     def __init__(self) -> None:
         self._pool: Any = None
         self._last_query_failed: bool = False
+        self._failed_query_count: int = 0
 
     @property
     def connected(self) -> bool:
@@ -77,6 +78,14 @@ class RisingWavePool:
         against an established pool. Meaningless while `connected` is False
         (there is no pool to query against)."""
         return self._last_query_failed
+
+    @property
+    def failed_query_count(self) -> int:
+        """How many fetch_one/fetch_all calls have raised against an established pool since
+        this object was made. Unlike last_query_failed it is never overwritten by a later
+        success, so a caller that compares it before and after a tool call sees a failure even
+        when the tool ran a second query that succeeded."""
+        return self._failed_query_count
 
     async def open(self) -> None:
         try:
@@ -133,6 +142,7 @@ class RisingWavePool:
             return None
         except RisingWaveQueryError:
             self._last_query_failed = True
+            self._failed_query_count += 1
             return None
         self._last_query_failed = False
         return row
@@ -144,6 +154,7 @@ class RisingWavePool:
             return []
         except RisingWaveQueryError:
             self._last_query_failed = True
+            self._failed_query_count += 1
             return []
         self._last_query_failed = False
         return rows

@@ -204,6 +204,9 @@ class ExecutedQuery(_Frozen):
     evidence: list[EvidenceRef] = Field(default_factory=list)
     error: str | None = None
     retry_justification: str | None = None
+    # An empty result from a tool whose failed query reads the same as no rows, on a transport
+    # that cannot tell the two apart. It is not a clean "nothing happened".
+    empty_unverified: bool = False
 
 
 class InvestigationState(_Mutable):
@@ -237,10 +240,17 @@ class Claim(_Frozen):
 class CausalClaim(_Frozen):
     """A claim that something caused something. basis says what supports it: observational
     means stored records only. controlled_test means a stored Red Team execution that
-    exercised the defense on purpose. Day 11.0 can only read stored executions."""
+    exercised the defense on purpose.
+
+    scope says what the claim is about. test_behavior is a claim about the test itself (the
+    defense behaves this way under this controlled input). production_incident is a claim
+    about what caused the incident. The observational surface cannot establish that, and a
+    controlled test shows only how the defense behaves, so v1 never accepts a
+    production_incident causal claim. The production cause stays a hypothesis."""
 
     statement: str = Field(min_length=1)
     basis: Literal["observational", "controlled_test"]
+    scope: Literal["test_behavior", "production_incident"] = "production_incident"
     evidence: list[EvidenceRef] = Field(min_length=1)
 
 
@@ -262,9 +272,10 @@ class RankedHypothesis(_Frozen):
 
 class ProposedVerification(_Frozen):
     """The single next step the investigator recommends. It is never run here, and
-    executed is fixed to False so a report cannot claim otherwise."""
+    executed is fixed to False so a report cannot claim otherwise. none_available says that
+    every safe read-only step on offer was already executed."""
 
-    kind: Literal["red_team_scenario", "read_only_query"]
+    kind: Literal["red_team_scenario", "read_only_query", "none_available"]
     scenario_id: str | None = Field(default=None, max_length=16)
     tool: ToolName | None = None
     args: dict[str, object] | None = None
@@ -277,6 +288,8 @@ class ProposedVerification(_Frozen):
             raise ValueError("a red_team_scenario verification needs a scenario_id")
         if self.kind == "read_only_query" and (self.tool is None or self.args is None):
             raise ValueError("a read_only_query verification needs a tool and its args")
+        if self.kind == "none_available" and (self.scenario_id or self.tool or self.args):
+            raise ValueError("a none_available verification names no step")
         return self
 
 

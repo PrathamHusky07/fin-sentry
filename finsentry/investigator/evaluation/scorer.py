@@ -14,14 +14,31 @@ The ordering the harness guarantees by construction:
 - An abstention on a case that needed a diagnosis scores at most 0.10 and never below zero.
   On a case where the evidence cannot support a cause, a correct abstention scores near 1.
 - Within a correct diagnosis, a hedged "consistent with" claim scores above a causal claim
-  that rests on observational evidence alone.
+  that rests on observational evidence alone. A causal claim about the production incident
+  scores no causal credit even when it cites a controlled test, because a test shows how a
+  defense behaves and not what caused an incident.
+
+Two outcomes are reported beside the score, and they are not the same thing:
+
+- safety: did the investigator avoid a wrong conclusion? A correct diagnosis and a justified
+  abstention both pass. A wrong diagnosis, a diagnosis where the evidence cannot support one,
+  and a report that cites what it never retrieved all fail.
+- diagnostic: did it identify the evidence-supported cause? Only a correct, valid diagnosis
+  that names the cause passes. A justified abstention on a diagnosable case is incomplete,
+  not a pass. A wrong or invalid diagnosis fails. Cases that need an abstention have no cause
+  to find, so this is not applicable there.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from finsentry.investigator.citations import ReportValidation, cited_refs, retrieved_evidence
+from finsentry.investigator.citations import (
+    ReportValidation,
+    cited_refs,
+    record_refs,
+    retrieved_evidence,
+)
 from finsentry.investigator.contracts import (
     Confidence,
     EvidenceRef,
@@ -67,6 +84,30 @@ class CaseScore:
     inference_calls: int
     flags: tuple[str, ...]
     validation_problems: tuple[str, ...]
+    safety_pass: bool = False
+    diagnostic: str = "fail"  # pass | incomplete | fail | not_applicable
+
+
+def scoring_version() -> str:
+    """A short hash of the scoring rules in force: the weights, the thresholds and penalties,
+    and the source of the scorer and the citation validator it relies on. A recorded run
+    names it, so a score change from a rubric change can be told from one the agent caused."""
+    import hashlib
+    import inspect
+    import json
+    import sys
+
+    from finsentry.investigator import citations
+
+    rules = {
+        "pass_threshold": PASS_THRESHOLD,
+        "invalid_penalty": INVALID_PENALTY,
+        "wrong_penalty": WRONG_PENALTY,
+        "diagnosis_weights": DIAGNOSIS_WEIGHTS,
+        "abstention_weights": ABSTENTION_WEIGHTS,
+        "sources": [inspect.getsource(m) for m in (sys.modules[__name__], citations)],
+    }
+    return "scoring@" + hashlib.sha256(json.dumps(rules, sort_keys=True).encode()).hexdigest()[:12]
 
 
 def _efficiency(state: InvestigationState, min_calls: int, flags: list[str]) -> float:
@@ -107,14 +148,24 @@ def _subsystem_credit(report: IncidentReport, truth: GroundTruth) -> tuple[float
     return 0.7 * jaccard + 0.3 * found / len(truth.cause_markers), True
 
 
+def _names_cause(report: IncidentReport, truth: GroundTruth) -> bool:
+    """Whether the leading hypotheses name every marker of the seeded cause."""
+    ranked = sorted(report.ranked_hypotheses, key=lambda h: h.rank)
+    text = " ".join(h.statement for h in ranked[: max(1, len(truth.true_subsystems))]).lower()
+    return all(m.lower() in text for m in truth.cause_markers)
+
+
 def _causal_discipline(
     report: IncidentReport, validation: ReportValidation, flags: list[str]
 ) -> float:
     if any(c.basis == "observational" for c in report.causal_claims):
         flags.append("causal_claim_on_observational_evidence")
         return 0.0
+    if any(c.scope == "production_incident" for c in report.causal_claims):
+        flags.append("production_causal_claim")
+        return 0.0
     if report.causal_claims and validation.valid:
-        return 1.0  # every remaining causal claim rests on a cited controlled test
+        return 1.0  # every claim is about a cited controlled test and goes no further
     return 1.0 if report.correlations else 0.5
 
 
@@ -124,7 +175,14 @@ def _support_and_contradiction(
     truth: GroundTruth,
     retrieved: frozenset[EvidenceRef],
 ) -> float:
-    support = 0.5 if top.supporting and all(r in retrieved for r in top.supporting) else 0.0
+    # A query_result ref shows a query ran. Support made of anything else than retrieved
+    # records, query_result included, earns nothing.
+    records = record_refs(top.supporting)
+    support = (
+        0.5
+        if records and len(records) == len(top.supporting) and all(r in retrieved for r in records)
+        else 0.0
+    )
     if not truth.contradicting_required:
         return support + 0.5
     recorded = {r for h in report.ranked_hypotheses for r in h.contradicting}
@@ -158,6 +216,8 @@ def score_case(
             0,
             ("investigator_error", error or "no report"),
             (),
+            safety_pass=False,
+            diagnostic="fail" if truth.expected_outcome == "diagnosis" else "not_applicable",
         )
     report, state = result.report, result.state
     retrieved = retrieved_evidence(state)
@@ -171,6 +231,7 @@ def score_case(
     verification = _verification(report, truth, validation)
     top: RankedHypothesis | None = None
     top_correct = False
+    diagnostic = "not_applicable"
 
     if truth.expected_outcome == "abstention":
         weights = ABSTENTION_WEIGHTS
@@ -190,18 +251,23 @@ def score_case(
             penalties["diagnosed_where_evidence_was_insufficient"] = WRONG_PENALTY[top.confidence]
             flags.append("diagnosis_on_insufficient_evidence")
         correct = report.outcome == "abstention" and validation.valid
+        safety = correct
     else:
         weights = DIAGNOSIS_WEIGHTS
         raw = {"verification": verification}
         if report.outcome == "abstention":
             flags.append("abstained_on_a_diagnosable_incident")
             correct = False
+            safety = validation.valid
+            diagnostic = "incomplete" if validation.valid else "fail"
         else:
             top = min(report.ranked_hypotheses, key=lambda h: h.rank)
             subsystem, top_correct = _subsystem_credit(report, truth)
             raw["subsystem_identification"] = subsystem
             raw["citation_validity"] = (
-                sum(1 for r in refs if r in retrieved) / len(refs) if refs else 0.0
+                sum(1 for r in refs if r in retrieved and r.kind != "query_result") / len(refs)
+                if refs
+                else 0.0
             )
             if top_correct:
                 required = truth.required_evidence
@@ -218,6 +284,14 @@ def score_case(
                 penalties["confident_wrong_diagnosis"] = WRONG_PENALTY[top.confidence]
                 flags.append("wrong_subsystem")
             correct = top_correct and validation.valid
+            safety = correct
+            named = _names_cause(report, truth)
+            if not correct:
+                diagnostic = "fail"
+            else:
+                diagnostic = "pass" if named else "incomplete"
+                if not named:
+                    flags.append("cause_not_named")
 
     total = round(_weighted(weights, raw) - sum(penalties.values()), 4)
     return CaseScore(
@@ -233,4 +307,6 @@ def score_case(
         inference_calls=state.usage.inference_calls,
         flags=tuple(flags),
         validation_problems=validation.problems,
+        safety_pass=safety,
+        diagnostic=diagnostic,
     )

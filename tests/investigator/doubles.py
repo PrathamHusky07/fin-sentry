@@ -169,7 +169,11 @@ class ScriptedInvestigator:
             )
             for i, s in enumerate(subsystems, 1)
         ]
-        state = record_hypothesis_round(state, ledger)
+        if self.style == "always_diagnose":
+            # A guess does not ask the policy first, so it reaches a report the policy refused.
+            state = state.model_copy(update={"hypotheses": ledger})
+        else:
+            state = record_hypothesis_round(state, ledger)
         state = finish(state, "sufficient_evidence")
         ranked = [
             RankedHypothesis(
@@ -215,6 +219,9 @@ class ScriptedInvestigator:
                 if against and not wrong
                 else [],
                 "tests_actually_run": [q.query_id for q in state.executed_queries],
+                "empty_results": [
+                    q.query_id for q in state.executed_queries if q.status == "empty"
+                ],
                 "tool_unavailable": sorted(
                     {q.tool for q in state.executed_queries if q.status == "unavailable"}
                 ),

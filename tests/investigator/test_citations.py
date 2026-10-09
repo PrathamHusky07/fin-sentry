@@ -28,8 +28,8 @@ VERIFY = ProposedVerification(
 
 
 def _investigated() -> InvestigationState:
-    """One query ran and returned t-real, and one hypothesis is in the ledger."""
-    state = make_state(hypotheses=[make_hypothesis("h1")])
+    """One query ran and returned t-real, and one hypothesis in the ledger is supported by it."""
+    state = make_state(hypotheses=[make_hypothesis("h1", supporting=[REAL], status="supported")])
     query = ExecutedQuery(
         query_id="q1",
         tool="get_failing_traces",

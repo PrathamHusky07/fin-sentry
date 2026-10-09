@@ -6,7 +6,8 @@ real tools do, so an investigator written against the interface cannot tell it f
 server except by what is in the data. Nothing here touches a database, a file, a network or a
 model. A tool listed in `unavailable` fails the way the real one does when its source is
 down: the four RisingWave-backed list tools return an empty result with
-risingwave_connected false, and the rest raise.
+risingwave_connected false, and the rest raise. A tool listed in `failing_queries` fails the
+quieter way, and failed_query_count is the stand-in for the DAO's counter.
 """
 
 from __future__ import annotations
@@ -52,6 +53,9 @@ class WorldData:
     disagreeing: frozenset[str] = frozenset()
     executions: tuple[ExecutionRecord, ...] = ()
     unavailable: frozenset[ToolName] = frozenset()
+    # Tools whose SQL query fails on a connected pool: the four fetch_all tools return an empty
+    # result with risingwave_connected true, and the DAO's failed-query count rises.
+    failing_queries: frozenset[ToolName] = frozenset()
 
 
 def _minutes_ago(iso: str | None) -> float:
@@ -64,11 +68,19 @@ class FixtureWorld:
     def __init__(self, data: WorldData) -> None:
         self._d = data
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.failed_query_count = 0
 
     def _log(self, name: str, **args: object) -> bool:
         """Record the call and say whether this tool's source is down."""
         self.calls.append((name, args))
         return name in self._d.unavailable
+
+    def _query_failed(self, name: str) -> bool:
+        """Whether this tool's SQL query fails, counting it the way the DAO does."""
+        if name in self._d.failing_queries:
+            self.failed_query_count += 1
+            return True
+        return False
 
     async def get_failing_traces(
         self,
@@ -82,6 +94,8 @@ class FixtureWorld:
         validate_limit(limit)
         if down:
             return fx.failing_traces_result([], connected=False)
+        if self._query_failed("get_failing_traces"):
+            return fx.failing_traces_result([])
         wanted = {
             "blocked": ("guardrail_blocked",),
             "error": ("rag_system_error",),
@@ -101,12 +115,16 @@ class FixtureWorld:
     async def explain_guardrail_decision(self, app_trace_id: str) -> GuardrailDecisionSnapshot:
         if self._log("explain_guardrail_decision", app_trace_id=app_trace_id):
             return fx.guardrail_decision(app_trace_id, found=False, connected=False)
+        if self._query_failed("explain_guardrail_decision"):
+            return fx.guardrail_decision(app_trace_id, found=False)
         found = self._d.decisions.get(app_trace_id)
         return found or fx.guardrail_decision(app_trace_id, found=False)
 
     async def get_judge_scores(self, app_trace_id: str) -> GetJudgeScoresResult:
         if self._log("get_judge_scores", app_trace_id=app_trace_id):
             return fx.judge_scores(app_trace_id, [], connected=False)
+        if self._query_failed("get_judge_scores"):
+            return fx.judge_scores(app_trace_id, [])
         return fx.judge_scores(app_trace_id, list(self._d.verdicts.get(app_trace_id, ())))
 
     async def search_prompt_injections(
@@ -116,6 +134,8 @@ class FixtureWorld:
         validate_limit(limit)
         if down:
             return fx.injections_result([], window_minutes=time_window_minutes, connected=False)
+        if self._query_failed("search_prompt_injections"):
+            return fx.injections_result([], window_minutes=time_window_minutes)
         rows = [
             e for e in self._d.injections if _minutes_ago(e.timestamp_utc) <= time_window_minutes
         ]

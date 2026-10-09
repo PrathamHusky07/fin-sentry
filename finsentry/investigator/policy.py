@@ -74,19 +74,31 @@ def exhausted_ceilings(state: InvestigationState) -> list[str]:
     return [name for name, hit in reached.items() if hit]
 
 
+def _refusal(state: InvestigationState, ceilings: tuple[str, ...]) -> str | None:
+    """Why no action can run now, or None. Every gate shares it: a stopped run, an exhausted
+    ceiling the action draws on or the wall clock, and a critical source already lost."""
+    if state.status == "stopped":
+        return "the investigation has already stopped"
+    reached = [c for c in exhausted_ceilings(state) if c in (*ceilings, "wall_clock")]
+    if reached:
+        return f"budget exhausted: {', '.join(reached)}"
+    lost = critical_unavailable(state)
+    if lost:
+        return f"critical evidence is unavailable: {', '.join(lost)}"
+    return None
+
+
 def admit_query(
     state: InvestigationState,
     tool: str,
     args: dict[str, object],
     retry_justification: str | None = None,
 ) -> Admission:
-    if state.status == "stopped":
-        return Admission(False, "the investigation has already stopped")
     if tool not in TOOL_NAMES:
         return Admission(False, f"{tool} is not one of the nine read-only tools")
-    ceilings = [c for c in exhausted_ceilings(state) if c in ("tool_calls", "wall_clock")]
-    if ceilings:
-        return Admission(False, f"budget exhausted: {', '.join(ceilings)}")
+    refusal = _refusal(state, ("tool_calls",))
+    if refusal:
+        return Admission(False, refusal)
     key = canonical_args(args)
     prior = [q for q in state.executed_queries if q.tool == tool and canonical_args(q.args) == key]
     if not prior:
@@ -124,11 +136,8 @@ def with_elapsed(state: InvestigationState, elapsed_s: float) -> InvestigationSt
 
 
 def admit_inference(state: InvestigationState) -> Admission:
-    if state.status == "stopped":
-        return Admission(False, "the investigation has already stopped")
-    if "inference_calls" in exhausted_ceilings(state):
-        return Admission(False, "budget exhausted: inference_calls")
-    return Admission(True)
+    refusal = _refusal(state, ("inference_calls",))
+    return Admission(False, refusal) if refusal else Admission(True)
 
 
 def record_inference(state: InvestigationState) -> InvestigationState:
@@ -143,8 +152,9 @@ def record_hypothesis_round(
     state: InvestigationState, hypotheses: list[Hypothesis]
 ) -> InvestigationState:
     """Replace the ledger with the updated hypotheses and count one update round."""
-    if state.status == "stopped" or "hypothesis_rounds" in exhausted_ceilings(state):
-        raise PolicyViolationError("no hypothesis-update round left")
+    refusal = _refusal(state, ("hypothesis_rounds",))
+    if refusal:
+        raise PolicyViolationError(f"no hypothesis-update round left: {refusal}")
     rounds = state.usage.hypothesis_rounds + 1
     usage = state.usage.model_copy(update={"hypothesis_rounds": rounds})
     return _replace(state, hypotheses=hypotheses, usage=usage)

@@ -84,14 +84,24 @@ def _candidates(state: InvestigationState) -> list[ProposedVerification]:
     return [*by_trigger[state.trigger.kind], fallback]
 
 
-def default_verification(state: InvestigationState) -> ProposedVerification:
-    """The first candidate next step this investigation has not already executed. Always a
-    read-only query, so proposing it never starts a run."""
+def unexecuted_candidates(state: InvestigationState) -> list[ProposedVerification]:
+    """The candidate next steps this investigation has not already executed, in order."""
     executed = {(q.tool, canonical_args(q.args)) for q in state.executed_queries}
-    for candidate in _candidates(state):
-        if (candidate.tool, canonical_args(candidate.args or {})) not in executed:
-            return candidate
-    return _candidates(state)[-1]
+    return [c for c in _candidates(state) if (c.tool, canonical_args(c.args or {})) not in executed]
+
+
+def default_verification(state: InvestigationState) -> ProposedVerification:
+    """The first candidate next step not already executed, always a read-only query so that
+    proposing it never starts a run. When every candidate was executed, an explicit
+    none_available, because a step the validator rejects is not a next step."""
+    remaining = unexecuted_candidates(state)
+    if remaining:
+        return remaining[0]
+    return ProposedVerification(
+        kind="none_available",
+        rationale="Every safe read-only step on offer was already executed in this "
+        "investigation, so no further verification is proposed.",
+    )
 
 
 def abstention_report(

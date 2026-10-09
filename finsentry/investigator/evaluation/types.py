@@ -76,6 +76,9 @@ class GroundTruth:
     acceptable_scenarios: frozenset[str] = frozenset()
     acceptable_tools: frozenset[ToolName] = frozenset()
     acceptable_stops: frozenset[StoppingReason] = frozenset()
+    # The scoring rule for a case whose symptom points the wrong way, derived from what the
+    # case's own records show. Prose for a reader; the scorer does not parse it.
+    expected_behavior: str = ""
 
 
 @dataclass(frozen=True)

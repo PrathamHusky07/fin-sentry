@@ -160,3 +160,29 @@ async def test_query_methods_return_empty_for_a_query_that_matched_nothing() -> 
     pool._pool = _FakePool(row=None, rows=[])
     assert await pool.query_one("SELECT 1") is None
     assert await pool.query_all("SELECT 1") == []
+
+
+async def test_failed_query_count_moves_only_on_a_failure_and_a_later_success_keeps_it() -> None:
+    """last_query_failed is overwritten by the next call, so a tool that runs two queries
+    can lose a failure. The count only goes up."""
+    pool = RisingWavePool()
+    assert pool.failed_query_count == 0
+    pool._pool = _FakePool(rows=[{"x": 1}])
+    await pool.fetch_all("SELECT 1")
+    assert pool.failed_query_count == 0
+
+    pool._pool = _FakePool(fail=True)
+    await pool.fetch_all("SELECT 1")
+    await pool.fetch_one("SELECT 1")
+    assert pool.failed_query_count == 2
+
+    pool._pool = _FakePool(rows=[{"x": 1}])
+    await pool.fetch_all("SELECT 1")
+    assert pool.last_query_failed is False
+    assert pool.failed_query_count == 2
+
+
+async def test_an_offline_pool_does_not_count_as_a_failed_query() -> None:
+    pool = RisingWavePool()
+    await pool.fetch_all("SELECT 1")
+    assert pool.failed_query_count == 0
