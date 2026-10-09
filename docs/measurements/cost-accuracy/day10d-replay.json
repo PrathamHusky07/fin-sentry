@@ -1,0 +1,249 @@
+{
+  "generated_utc": "2026-10-09T19:18:36.708505+00:00",
+  "git_head": "a98f330",
+  "gemini_calls_made": 0,
+  "stage1_inventory": {
+    "labeled_benchmark": "Cleanlab/FinQA-hallucination-detection, 1651 unique rows, 238 hallucinations",
+    "frozen_evaluation_set": "The 150-row held-out split (seed d5a-m4-finqa-split-v1, 0.7 calibration fraction, class-stratified) of a 500-row scored subset. FinQA carries the human labels. FinanceBench is the retrieval corpus and has no hallucination labels.",
+    "persisted_scores": {
+      "judge": "gemini-rubric, GeminiRubricAdapter, Vertex gemini-3.6-flash",
+      "prompt_version": [
+        "frontier_rubric_v2_faithjudge"
+      ],
+      "score_semantics": "faithfulness_score in {0.0, 0.5, 1.0}. detector_score = 1 - faithfulness_score, so a higher value means more likely a hallucination.",
+      "peer_examples": "none (peer_retrieval=None, zero-shot)",
+      "rows": 500,
+      "by_split": {
+        "calibration": 350,
+        "holdout": 150
+      },
+      "status_counts": {
+        "success": 500
+      },
+      "scored_utc_range": [
+        "2026-10-03T22:20:43.162933+00:00",
+        "2026-10-03T23:54:20.442394+00:00"
+      ],
+      "judge_code_last_commit": "c44f9a6 2026-10-03 16:11:33 -0500"
+    },
+    "coverage_on_the_150_row_frozen_set": {
+      "rubric_v2_frontier_judge": "150/150 persisted",
+      "flash_tier_faithfulness": "0/150: no flash judge score exists for a labeled row",
+      "higher_resolution_rubric_variant": "0/150: the variant does not exist yet"
+    },
+    "label_check": {
+      "benchmark_rows": 1651,
+      "scored_ids_missing_from_benchmark": 0,
+      "scored_label_mismatches": 0,
+      "live_verdict_trace_ids": 441,
+      "live_verdict_ids_that_are_benchmark_ids": 0,
+      "holdout_context_chars_mean": 4171,
+      "holdout_answer_chars_mean": 8.7
+    },
+    "incompatible_evidence_not_used": {
+      "live_judge_verdicts": "SEC traffic, none of its trace ids is a benchmark id",
+      "canary_observations": "30 categorical rubric decisions on ids outside the 500"
+    }
+  },
+  "stage2_replay": {
+    "REPLAYED_100_percent_frontier": {
+      "heldout_150": {
+        "n": 150,
+        "positives": 22,
+        "positive_rate": 0.1467,
+        "average_precision": 0.5459,
+        "average_precision_ci95": [
+          0.3784,
+          0.728
+        ],
+        "roc_auc": 0.8342,
+        "roc_auc_ci95": [
+          0.7397,
+          0.9196
+        ],
+        "distinct_detector_scores": 3,
+        "detector_score_by_gold_label": {
+          "0.0": {
+            "hallucination": 6,
+            "faithful": 119
+          },
+          "0.5": {
+            "hallucination": 0,
+            "faithful": 2
+          },
+          "1.0": {
+            "hallucination": 16,
+            "faithful": 7
+          }
+        },
+        "recorded_estimated_cost_usd_total": 0.5045,
+        "recorded_estimated_cost_usd_per_row_mean": 0.00336,
+        "recorded_estimated_cost_usd_per_1000_requests": 3.36,
+        "latency_ms_mean": 3993,
+        "latency_ms_p50": 3317.0,
+        "latency_ms_p95": 7759.0,
+        "cost_basis": "usage-metadata estimate at the Vertex standard-tier constants, not billing"
+      },
+      "all_scored_500": {
+        "n": 500,
+        "positives": 72,
+        "positive_rate": 0.144,
+        "average_precision": 0.4964,
+        "average_precision_ci95": [
+          0.3931,
+          0.5982
+        ],
+        "roc_auc": 0.7884,
+        "roc_auc_ci95": [
+          0.7307,
+          0.8433
+        ],
+        "distinct_detector_scores": 3,
+        "detector_score_by_gold_label": {
+          "0.0": {
+            "hallucination": 27,
+            "faithful": 404
+          },
+          "0.5": {
+            "hallucination": 3,
+            "faithful": 7
+          },
+          "1.0": {
+            "hallucination": 42,
+            "faithful": 17
+          }
+        },
+        "recorded_estimated_cost_usd_total": 1.649,
+        "recorded_estimated_cost_usd_per_row_mean": 0.0033,
+        "recorded_estimated_cost_usd_per_1000_requests": 3.3,
+        "latency_ms_mean": 3664,
+        "latency_ms_p50": 3223.0,
+        "latency_ms_p95": 7142.0,
+        "cost_basis": "usage-metadata estimate at the Vertex standard-tier constants, not billing"
+      },
+      "calibration_350": {
+        "n": 350,
+        "positives": 50,
+        "positive_rate": 0.1429,
+        "average_precision": 0.4751,
+        "average_precision_ci95": [
+          0.3516,
+          0.611
+        ],
+        "roc_auc": 0.7683,
+        "roc_auc_ci95": [
+          0.6977,
+          0.8403
+        ],
+        "distinct_detector_scores": 3,
+        "detector_score_by_gold_label": {
+          "0.0": {
+            "hallucination": 21,
+            "faithful": 285
+          },
+          "0.5": {
+            "hallucination": 3,
+            "faithful": 5
+          },
+          "1.0": {
+            "hallucination": 26,
+            "faithful": 10
+          }
+        }
+      },
+      "holdout_recall_at_any_nonzero_detector_score": {
+        "flagged": 16,
+        "hallucinations": 22,
+        "wilson95": [
+          0.5185,
+          0.8685
+        ]
+      }
+    },
+    "NOT_EVALUATED_flash_only": "No flash scores exist for the labeled rows. Nothing is extrapolated.",
+    "flash_plus_10_percent_frontier": {
+      "status": "not evaluated: it needs flash scores on every row",
+      "sampling_rule": "should_sample_for_frontier(id, 10): SHA-256 of the row id modulo 10 equals 0. This is the platform's own rule. It never reads a label, and it depends only on the id, so the same rows are sampled in every comparison.",
+      "combination_rule": "A sampled row takes the frontier detector_score and every other row takes the flash detector_score. Both are 1 - faithfulness but come from different prompts, so the mixed ranking is reported only beside the paired flash and frontier scores on the sampled rows.",
+      "reporting_rule": "Report the policy's realized accuracy on its sampled subset and its estimated cost over all traffic as two separate figures. Never compare the subset against the full-set flash baseline as if equivalent.",
+      "sampled_rows_in_holdout": 12,
+      "sampled_rows_that_are_hallucinations": 1,
+      "sampled_ids": [
+        "00734687e2718db0",
+        "341df34e56b701e6",
+        "462be61bff2d8a36",
+        "4dd9d0f0240fe882",
+        "6458df9aed7d8043",
+        "82b000ae6250600c",
+        "bfe0b423f0c7677b",
+        "de0ee2f8dcc90f20",
+        "e482797b6f533bf9",
+        "e998059958deb798",
+        "f44cbd699431e8fe",
+        "fbca866c8e723b25"
+      ],
+      "REPLAYED_frontier_component_on_sampled_rows": {
+        "n": 12,
+        "positives": 1,
+        "metrics": "withheld: fewer than 5 rows in one class"
+      },
+      "estimated_full_operating_cost": "not computable: it needs the flash cost per row"
+    },
+    "crossover": "NOT ESTABLISHED. It needs three policy points and one cannot be computed. The literature value of about 20 percent is neither confirmed nor refuted here.",
+    "judge_resolution": {
+      "control": "frontier_rubric_v2_faithjudge, frozen",
+      "control_distinct_scores": 3,
+      "variant": "NOT_EVALUATED: not written and not run"
+    }
+  },
+  "stage3_preflight": {
+    "cap_usd": 0.5,
+    "planning_ceiling_usd": 0.4,
+    "estimate_basis": {
+      "extraction_call_usd": 0.00117,
+      "verification_call_usd": 0.00205,
+      "flash_per_call_tokens_from": "live judge_verdicts probe (a different workload)",
+      "context_tokens_per_verification": 1192,
+      "chars_per_token_assumption": 3.5
+    },
+    "flash_faithfulness_on_holdout": {
+      "0_claims_per_row": {
+        "calls": 150,
+        "projected_usd": 0.175,
+        "fits_within_cap_with_margin": true
+      },
+      "1_claims_per_row": {
+        "calls": 300,
+        "projected_usd": 0.483,
+        "fits_within_cap_with_margin": false
+      },
+      "2_claims_per_row": {
+        "calls": 450,
+        "projected_usd": 0.791,
+        "fits_within_cap_with_margin": false
+      },
+      "3_claims_per_row": {
+        "calls": 600,
+        "projected_usd": 1.099,
+        "fits_within_cap_with_margin": false
+      },
+      "10_claims_per_row": {
+        "calls": 1650,
+        "projected_usd": 3.254,
+        "fits_within_cap_with_margin": false
+      }
+    },
+    "flash_calls_established_exactly": false,
+    "flash_calls_range": [
+      150,
+      1650
+    ],
+    "resolution_variant_lower_bound": {
+      "calls": 150,
+      "projected_usd": 0.504,
+      "basis": "holdout rows times the measured mean rubric call cost; a finer score needs more output tokens, so this is a floor",
+      "fits_within_cap_with_margin": false
+    },
+    "frontier_replay_needs_calls": 0
+  }
+}

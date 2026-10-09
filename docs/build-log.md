@@ -1,5 +1,169 @@
 # Build Log
 
+## 2026-10-09 (close-out): Day 10 evidence corrections and Day 10D cost versus accuracy
+
+Model: Sonnet 5.5, no escalation. Zero Gemini calls, so $0.00 of the $0.50 cap. No frozen contract,
+guardrail rail, persisted taxonomy value or migration changed. No load test was rerun.
+
+### Evidence corrections (each reproduced against current code first)
+
+- Backlog drain failed open: an unreadable consumer lag became 0 and read as drained. It is now
+  `unknown` with `drained: null` (`f58f95c`). Reproduced before the fix: an empty `rpk` reading returned
+  `drained: true` in 0 s.
+- The combined reconciliation figure is replaced by three populations with their own pass, fail or
+  unknown status: successful responses with a trace id, HTTP responses without one, and requests with no
+  response. A fourth line keeps non-200 responses that carry an id (a 504) so none is dropped. Events that
+  match no response id are checked against how many requests could explain them (`f58f95c`).
+- Duplicate persisted rows are detected when the id sets match. The report keeps row totals and unique ids
+  for the event topic, verdict topic and both tables, and fails on any duplicate or any topic-to-table
+  row-count gap (`f58f95c`).
+- A failed resource reading now sets the abort and ends the sampler. Before, it recorded an error and
+  load continued unmonitored (`f58f95c`).
+- A gateway `ScenarioSetupError` sent nothing, so it no longer gets `continuation_unknown` and no longer
+  uses the one-continuation bound. A gateway execution interrupted after a send was possible keeps both
+  (`b80a329`). The console now says such an execution was interrupted and that whether a request was
+  sent is unknown (`03cae4a`). A gateway setup error now shows the neutral "provenance not recorded" copy,
+  because no marker exists to say "no request was sent". Adding one would be a new evidence key.
+- The MCP query cap is stated as the first 500 source characters plus `...` only when cut, at most 503
+  characters, in both tools, the tool note and the test names (`8460027`).
+- The Day 10C writeup is corrected above (`a98f330`). One correction goes against the brief for this
+  session: 0.5 rps was offered only in run 1, because run 2 started at 1 rps. No stage passed twice.
+
+Gate: pytest 929 passed (909 before). Changed files clean under ruff and mypy. Vitest 81, tsc, eslint and
+prettier clean. Production build passed, and the red-team rendering tests passed on both the dev server
+and the production build, including a 375, 768 and 1440 px overflow check. I stopped `next dev` for the
+build and restarted it afterwards (200 on :3000).
+
+### Day 10D question
+
+How much detection accuracy does the frontier judge add over the flash judge on the frozen labeled set,
+at what cost, and does a higher-resolution rubric justify its cost?
+
+### Setup
+
+Labeled set: Cleanlab FinQA hallucination benchmark (1,651 rows, 238 hallucinations). FinQA carries the
+human labels. FinanceBench is the retrieval corpus and has none. The frozen evaluation set is the
+150-row held-out split (seed `d5a-m4-finqa-split-v1`, 22 hallucinations). The 500-row scored subset is
+a larger-sample secondary view.
+
+Persisted scores: one judge only. The Gemini rubric judge (`gemini-3.6-flash`, prompt
+`frontier_rubric_v2_faithjudge`, zero-shot with no peer examples) scored 500 rows on 2026-10-03, all with
+status success. The judge code has not changed since (`c44f9a6`). Scores take the values 0.0, 0.5 and
+1.0 only. The detector score is 1 minus the faithfulness score. Labels in Postgres match the persisted
+gold labels on all 500 ids.
+
+Coverage on the 150 frozen rows: frontier rubric 150 of 150. Flash-tier faithfulness 0 of 150, because no
+flash score exists for any labeled row (live flash verdicts cover SEC traffic, and none of their 441
+trace ids is a benchmark id). Higher-resolution variant 0 of 150, because it does not exist yet.
+
+The 10 percent rule, stated before any result: a row is sampled when SHA-256 of its id modulo 10 is 0.
+This is the platform's own `should_sample_for_frontier`. It never reads a label, depends only on the id,
+and so is the same set in every comparison. A sampled row would take the frontier score and every other
+row the flash score. The policy's realized accuracy on its sampled subset and its estimated cost over all
+traffic are reported as two separate figures. A subset is never compared with the full-set flash baseline.
+
+Scripts: `scripts/day10d_probe.py` (read-only), `scripts/day10d_replay.py`, tests in
+`tests/scripts/test_day10d_replay.py`. Outputs: `docs/measurements/cost-accuracy/`.
+
+### Numbers
+
+REPLAYED, 100 percent frontier (rubric v2, from the persisted scores). The replay reproduces the committed
+calibration summary exactly (held-out AP 0.5459, ROC-AUC 0.8342), which a test checks.
+
+| Set | n | Hallucinations | Average Precision (95% CI) | ROC-AUC (95% CI) |
+|---|---|---|---|---|
+| Held-out | 150 | 22 | 0.546 (0.378 to 0.728) | 0.834 (0.740 to 0.920) |
+| All scored | 500 | 72 | 0.496 (0.393 to 0.598) | 0.788 (0.731 to 0.843) |
+| Calibration | 350 | 50 | 0.475 (0.352 to 0.611) | 0.768 (0.698 to 0.840) |
+
+Intervals are 95 percent, from a class-stratified bootstrap (1,000 resamples, seed 20261009).
+
+On the held-out set the judge scores 6 of 22 hallucinations as faithful (detector 0.0), gives 0.5 to 2
+faithful rows and no hallucination, and flags 16 of 22 hallucinations and 7 of 128 faithful rows at
+detector 1.0. Recall at any nonzero score is 16 of 22 (Wilson 95 percent: 0.52 to 0.87).
+
+Cost and latency, recorded per call from usage metadata (an estimate at the Vertex standard-tier
+constants, not billing): held-out $0.5045 for 150 rows, $0.00336 per row, $3.36 per 1,000 requests.
+Latency mean 3,993 ms, p50 3,317 ms, p95 7,759 ms. Over all 500 rows: $1.649, $3.30 per 1,000.
+
+NOT EVALUATED, flash only: no flash scores exist. Nothing is extrapolated.
+
+NOT EVALUATED, flash plus 10 percent frontier: it needs flash scores on every row. The rule selects 12
+of the 150 held-out rows (15 expected), and 1 of those 12 is a hallucination. AP and ROC-AUC on 12 rows
+with one positive are withheld, because they would be noise. The guard is at least 5 rows in each class.
+Even with flash scores, the 10 percent subset alone cannot support a metric at this set size.
+
+NOT EVALUATED, resolution variant. The control (frozen) has 3 distinct scores, so its ROC curve has two
+interior operating points. That limits the control. It does not show a finer judge would do better.
+
+Crossover: NOT ESTABLISHED. It needs three policy points and one cannot be computed. The literature value
+of about 20 percent is neither confirmed nor refuted.
+
+### Cost preflight (Stage 3). Result: stopped, no paid call made
+
+The missing flash faithfulness inference cannot be counted exactly. The metric is one claim-extraction
+call plus one verification call per claim, up to 10, and each verification re-sends the context (about
+1,190 tokens on these rows). Claim count per row is the unknown. FinQA answers average 9 characters
+(bare values), so the count could be near zero or near one, and only a call would show which.
+
+Estimate inputs: live flash calls average 997 input, 44 output and 249 thinking tokens and cost $0.00185
+per call, from 349 verdicts and 2,349 calls on SEC traffic. A different workload, so these feed an
+estimate and are not a measurement of this one. Extraction call about $0.0012, verification call about
+$0.0021.
+
+| Claims per row | Calls on 150 rows | Projected cost | Fits $0.40 (cap less 20% margin) |
+|---|---|---|---|
+| 0 | 150 | $0.18 | yes |
+| 1 | 300 | $0.48 | no |
+| 2 | 450 | $0.79 | no |
+| 3 | 600 | $1.10 | no |
+| 10 (maximum) | 1,650 | $3.25 | no |
+
+The resolution variant is a further 150 calls and at least $0.50 (150 rows at the measured $0.00336), a
+floor because finer scores need more output tokens. It exceeds the cap on its own.
+
+A valid comparison needs flash scores on all 150 rows, and a valid resolution test needs the variant on
+all 150. Neither fits in $0.50 with margin, and the flash count cannot be fixed in advance. Per the
+session rule, no call was made.
+
+One observation, not a finding: on live traffic the three-metric flash verdict averages 6.73 calls and
+$0.0124, while one rubric call costs $0.0033. In this build the frontier tier is a single Gemini call,
+so it may be cheaper per evaluation than the flash tier, the reverse of the premise. The two costs come
+from different workloads and metrics, so this needs the same-workload run to confirm.
+
+### Finding
+
+On the 150 frozen rows the rubric judge separates hallucinations from faithful answers with ROC-AUC 0.83
+(0.74 to 0.92) and Average Precision 0.55 (0.38 to 0.73), at $3.36 per 1,000 requests. The flash tier,
+the 10 percent policy, the crossover and the resolution variant were not measured. The comparison the
+experiment exists to make was not made.
+
+### Consequence
+
+No default changed. The frontier sampling rate stays at its configured 10 percent, and it is not yet
+backed by this experiment. Decisions for you, none taken:
+
+1. Approve a pilot of flash faithfulness on 10 held-out rows. About 20 to 40 calls, projected under
+   $0.06. It measures claims per row and cost per row, which turns the range above into a number.
+   Recommended.
+2. Raise the 10D cap. At one claim per row, flash on 150 rows is about $0.48 and the variant is at least
+   $0.50, so about $1.00 in all. Only after the pilot shows the real claim count.
+3. Accept the replay as the 10D result and defer flash, the 10 percent policy and the variant.
+
+### Limitations
+
+The frozen set has 22 hallucinations, so intervals are wide. The score has three levels. The persisted
+judge was zero-shot, without the live path's peer examples. Flash and the frontier rubric both run
+`gemini-3.6-flash`, so the tiers differ in prompt, not in model, and the spec's Gemini 2.5 Flash is not
+what the code defaults to (ADR 005). Cost is an estimate from usage metadata. Latency is single-request.
+
+### Deferred
+
+Llama Guard concurrency fix (its own rail-scoped session), retrieval-rail speedup, MCP allowlist
+projection, GAP-001, 422 to 503. Pre-existing one-line format drift in `finsentry/mcp/state.py` and
+`finsentry/mcp/tools/judges.py`, and ruff findings in unrelated diagnostic scripts, left untouched.
+Next: your decision on 10D, then Day 11, the Reliability Investigator.
+
 ## 2026-10-09 (later): Day 10B.2 release-gate fixes and Day 10C staged load test
 
 Model: Sonnet 5.5, no escalation. Zero Gemini calls. No persisted outcome value changed, no frozen

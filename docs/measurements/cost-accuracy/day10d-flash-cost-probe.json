@@ -1,0 +1,22 @@
+{
+  "probed_utc": "2026-10-09T19:17:46.181854+00:00",
+  "source": "RisingWave judge_verdicts (rows with total_gemini_calls > 0) and Postgres hallucination_bench, both read-only",
+  "verdicts": 349,
+  "gemini_calls": 2349,
+  "per_call_input_tokens": 997,
+  "per_call_output_tokens": 44,
+  "per_call_thought_tokens": 249,
+  "per_call_usd": 0.00185,
+  "per_verdict_usd_three_ragas_metrics": 0.01242,
+  "per_verdict_calls_three_ragas_metrics": 6.73,
+  "note": "Three metrics on multi-chunk SEC contexts. Faithfulness alone on FinQA rows is a different workload, so these are inputs to an estimate and not a measurement of it.",
+  "labeled_rows": {
+    "benchmark_rows": 1651,
+    "scored_ids_missing_from_benchmark": 0,
+    "scored_label_mismatches": 0,
+    "live_verdict_trace_ids": 441,
+    "live_verdict_ids_that_are_benchmark_ids": 0,
+    "holdout_context_chars_mean": 4171,
+    "holdout_answer_chars_mean": 8.7
+  }
+}
