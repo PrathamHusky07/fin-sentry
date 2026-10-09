@@ -538,9 +538,17 @@ async def _fetch_trace_list(
         else:
             conditions.append("NOT (r.app_trace_id = ANY(%s))")
             params.append(sampled_ids)
-    if disagreement:
-        conditions.append("r.app_trace_id = ANY(%s)")
-        params.append(list(await _fetch_disagreement_trace_ids()))
+    if disagreement is not None:
+        # Same shape as frontier_sampled: True keeps the flagged traces, False keeps
+        # every other trace, and None does not filter. False is the complement of the
+        # flagged set, so it also holds traces that were never compared (blocked,
+        # never evaluated, not frontier-sampled). It does not mean the tiers agreed.
+        disagreement_ids = list(await _fetch_disagreement_trace_ids())
+        if disagreement:
+            conditions.append("r.app_trace_id = ANY(%s)")
+        else:
+            conditions.append("NOT (r.app_trace_id = ANY(%s))")
+        params.append(disagreement_ids)
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     # LIMIT/OFFSET must be const expressions in RisingWave's streaming query

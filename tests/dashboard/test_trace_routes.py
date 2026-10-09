@@ -688,3 +688,63 @@ async def test_trace_detail_and_list_agree_on_a_failed_verdict(
 
     assert detail["judge_state"] == expected
     assert listing["traces"][0]["judge_state"] == expected
+
+
+# ---------------------------------------------------------------------------
+# Day 10B.1: the disagreement filter contract. True keeps the flagged traces, False
+# keeps every other trace, None does not filter. frontier_sampled behaves the same way.
+# ---------------------------------------------------------------------------
+
+
+async def _disagreement_filter_sql(**filters: bool) -> tuple[str, tuple[Any, ...]]:
+    captured: dict[str, Any] = {}
+
+    async def _capture(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        if "LEFT JOIN (" in sql:
+            captured["sql"], captured["params"] = sql, params
+        return []
+
+    from finsentry.dashboard.app import _fetch_trace_list
+
+    with (
+        patch("finsentry.dashboard.app._query_all", AsyncMock(side_effect=_capture)),
+        patch(
+            "finsentry.dashboard.app._fetch_disagreement_trace_ids",
+            AsyncMock(return_value={"flagged-1"}),
+        ),
+    ):
+        await _fetch_trace_list(10, 0, None, None, **filters)
+    return captured["sql"], captured["params"]
+
+
+async def test_disagreement_true_keeps_only_the_flagged_traces() -> None:
+    sql, params = await _disagreement_filter_sql(disagreement=True)
+    assert "r.app_trace_id = ANY(%s)" in sql and "NOT (r.app_trace_id" not in sql
+    assert params == (["flagged-1"],)
+
+
+async def test_disagreement_false_keeps_every_trace_that_is_not_flagged() -> None:
+    sql, params = await _disagreement_filter_sql(disagreement=False)
+    assert "NOT (r.app_trace_id = ANY(%s))" in sql
+    assert params == (["flagged-1"],)
+
+
+async def test_an_omitted_disagreement_filter_adds_no_condition_and_runs_no_lookup() -> None:
+    sql, params = await _disagreement_filter_sql()
+    assert "ANY(%s)" not in sql and params == ()
+
+
+async def test_the_route_passes_disagreement_false_through_instead_of_ignoring_it() -> None:
+    seen: list[bool | None] = []
+
+    async def _spy(*args: Any) -> list[dict[str, Any]]:
+        seen.append(args[7])
+        return []
+
+    with patch("finsentry.dashboard.app._fetch_trace_list", AsyncMock(side_effect=_spy)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            for value in ("true", "false"):
+                resp = await client.get("/traces", params={"disagreement": value})
+                assert resp.status_code == 200
+            await client.get("/traces")
+    assert seen == [True, False, None]
