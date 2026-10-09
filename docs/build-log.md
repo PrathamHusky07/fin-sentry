@@ -1,5 +1,51 @@
 # Build Log
 
+## 2026-10-09: Day 10B.1 closeout, display and contract gaps, then activation in dev
+
+Model: Sonnet 5.5, no escalation. Zero Gemini calls: no request was sent to any gateway, and
+the RisingWave counts (rag_events 476, judge_verdicts 499, rag_frontier_verdicts 186) were the
+same before and after. No persisted outcome value changed and no frozen contract was touched.
+
+Fix 1, continuation uncertainty (`cac3ec3`, `e4c9a9c`). A gateway execution that raised or timed
+out stored empty evidence, yet the run counted it against the one-continuation bound. It now
+stores `continuation_unknown: true`. The evidence drawer shows three states: continued past the
+input rails (Gemini calls possible), did not continue, and may have continued. Unknown is never
+shown as did not continue.
+
+Fix 2, safety-bound skips (same commits). A scenario skipped by the bound stores
+`skipped_by_safety_bound: true`, and the console reads that key, not the reason text. The badge,
+the summary, the run bar and the drawer show it as "Not run (safety bound)". The persisted
+outcome stays execution_failed, and the general execution_failed wording now covers both causes.
+
+Fix 3, disagreement filter (`1a09f0a`). True keeps flagged traces, False keeps every other
+trace, omitted does not filter, the same shape as frontier_sampled. False was a silent no-op.
+Chosen over rejecting False because it adds no new error path through the gateway proxy, which
+would turn a 422 into a 503. The catch is documented: False includes traces never compared, so
+it does not mean the tiers agreed.
+
+Fix 4, get_trace_detail boundary (`0a5faac`). The query is kept, cut to 500 characters, because
+the gateway persists it after Presidio redaction. The answer is withheld, since no output rail
+redacts it. Citations keep only chunk_id. error_detail is withheld, since the gateway stores
+`str(exception)[:500]` for any unhandled error. The frontier rubric_reasoning is withheld too,
+as unredacted Gemini text about the answer. Only the MCP tool changed, not the dashboard route.
+
+Activation. Migration 006 applied to the finsentry dev database. It closed no runs, because dev
+held 13 completed runs and none running. The unique index `red_team_one_running_run` exists. The
+gateway image is baked from the repo, so the three gateways and the dashboard were rebuilt and
+recreated without touching volumes, and nginx was restarted to re-resolve its upstreams. A probe
+from two separate processes against the dev database got 409 from both the natural check and
+the pre-check-blinded path, so the index is what refused the second run. The probe rows were
+removed and the red team tables are back to 13 runs and 21 executions.
+
+Open item. The host gateway on port 8000 (the one the frontend calls, with live Gemini enabled
+in `.env`) was stopped by this session and could not be restarted from it. Restart it with
+`.venv/bin/uvicorn finsentry.gateway.main:app --port 8000` from the project root. Until then
+the full Playwright suite, whose real-stack tests call that port, was not run.
+
+Checks. pytest 878 passed, ruff and mypy clean, Vitest 75 passed, eslint and prettier clean,
+`next build` passed. Playwright RENDERING tests passed (8) on the production build. A throwaway
+width check at 375, 768 and 1440 had no overflow and no console warnings.
+
 ## 2026-10-08 (late): Day 10B Red Team evidence contracts and read-only MCP queries
 
 Model: Sonnet 5.5, no escalation. Run end to end as instructed. Three fixes to the Red Team
