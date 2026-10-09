@@ -254,14 +254,14 @@ export const LAYERS: Layer[] = [
         ],
       },
       {
-        caption: "Adversarial testing: not built",
+        caption: "Adversarial testing",
         steps: [
-          { label: "Scenario registry", sub: "does not exist yet" },
-          { label: "Scenario tool", sub: "an MCP tool that is not registered" },
+          { label: "Scenario registry", sub: "ten stored scenarios" },
           {
             label: "Red Team route",
-            sub: "shows this status instead of a mock",
+            sub: "runs scenarios and shows stored results",
           },
+          { label: "Scenario tool", sub: "an MCP tool that is not registered" },
         ],
       },
     ],
@@ -275,8 +275,8 @@ export const LAYERS: Layer[] = [
         body: "Each request stage and each rail records a span, with the trace id as an attribute. The default exporter is off, so spans exist but are not shipped anywhere until one is configured.",
       },
       {
-        term: "Why Red Team is shown as not built",
-        body: "There is no stored scenario registry yet, and the MCP tool that would fire scenarios is deliberately unregistered. A console over nothing would be a mock, so the route says what is missing.",
+        term: "Why the Red Team tool is not registered",
+        body: "The registry and the route run today. The MCP tool that would let an agent start scenarios is deliberately unregistered, because starting a run changes stored state and the read tools change nothing.",
       },
     ],
   },

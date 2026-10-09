@@ -49,18 +49,21 @@ test("Architecture lays out four layers and keeps its claims source-accurate", a
   ]) {
     await expect(page.getByRole("img", { name })).toBeVisible();
   }
-  // Red Team is shown as not built, never as a working capability.
+  // The Red Team scenario tool is the one piece that is still not registered.
   await expect(body).toContainText("not registered");
 
   expect(errors).toEqual([]);
 });
 
-test("Red Team states it is not built", async ({ page }) => {
+test("Red Team renders the console, not a placeholder", async ({ page }) => {
   await page.goto("/red-team");
   await expect(
     page.getByRole("heading", { name: "Red Team", level: 1 }),
   ).toBeVisible();
-  await expect(page.getByText("Not built", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Scenario registry" }),
+  ).toBeVisible();
+  await expect(page.getByText("Not built", { exact: true })).toHaveCount(0);
 });
 
 test("the global navigation stays pinned while scrolling", async ({ page }) => {

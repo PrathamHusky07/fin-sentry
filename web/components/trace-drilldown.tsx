@@ -19,7 +19,7 @@ const FOCUSABLE_SELECTOR =
 
 /** Keeps Tab and Shift+Tab inside the dialog, closes on Escape, locks page
  * scroll while open, and hands focus back to whatever opened it. */
-function useDialogBehavior(
+export function useDialogBehavior(
   dialogRef: React.RefObject<HTMLDivElement | null>,
   onClose: () => void,
   active: boolean,
@@ -65,7 +65,7 @@ const noopSubscribe = () => () => {};
 
 /** False during server render and hydration, true once on the client, so
  * the portal below only touches document.body in the browser. */
-function useIsClient(): boolean {
+export function useIsClient(): boolean {
   return useSyncExternalStore(
     noopSubscribe,
     () => true,

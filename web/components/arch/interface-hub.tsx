@@ -68,15 +68,15 @@ const DETAILS: Record<string, NodeDetail> = {
   },
   registry: {
     title: "Scenario registry",
-    text: "There is no stored scenario registry yet. Nothing in the Red Team row runs.",
+    text: "Ten versioned scenarios stored as data, each aimed at a defense that exists in the code. One of them is a known gap that is expected to be missed.",
   },
   scenarioTool: {
     title: "Scenario tool",
-    text: "The MCP tool that would fire Red Team scenarios. It is deliberately not registered.",
+    text: "The MCP tool that would fire Red Team scenarios. It is deliberately not registered, so an agent cannot start a run yet.",
   },
   route: {
     title: "Red Team route",
-    text: "Shows its not-built status instead of a mock, because a console over nothing would be a mock.",
+    text: "Fires stored scenarios at the live defenses and shows every stored execution with the layer that acted and the evidence it left.",
   },
   ...Object.fromEntries(
     TOOL_NAMES.map((name, i) => [
@@ -94,8 +94,9 @@ const DETAILS: Record<string, NodeDetail> = {
  * persisted evidence is the hub. Three screens for people read from it on
  * the left. On the right, the MCP server reads from it and fans out into
  * five read tools for an engineer or an agent. Nothing here writes back.
- * Red Team sits apart as a dashed chain that connects to nothing: it is
- * not built, and the diagram never draws it as working.
+ * Red Team sits apart. Its registry and route run, so they are drawn solid.
+ * The MCP tool that would start scenarios is not registered, so it stays
+ * dashed and unconnected.
  */
 export function InterfaceHub() {
   return (
@@ -105,7 +106,7 @@ export function InterfaceHub() {
           <svg
             viewBox="0 0 1200 600"
             role="img"
-            aria-label="The MCP and operational interface as a hub. Persisted evidence sits in the center. On the left, the Overview, Live Operations and Investigations screens read it for people. On the right, the MCP server reads it and exposes five read tools to an engineer or agent. At the bottom, Red Team is drawn dashed and unconnected, because it is not built."
+            aria-label="The MCP and operational interface as a hub. Persisted evidence sits in the center. On the left, the Overview, Live Operations and Investigations screens read it for people. On the right, the MCP server reads it and exposes five read tools to an engineer or agent. At the bottom, the Red Team scenario registry feeds the Red Team route, which runs. The MCP tool that would start scenarios is drawn dashed, because it is not registered."
             className="h-auto w-full"
           >
             <ArrowDefs prefix={P} />
@@ -299,8 +300,8 @@ export function InterfaceHub() {
               y={430}
               w={1160}
               h={150}
-              label="Red Team: not built. Nothing in this row runs."
-              tone="muted"
+              label="Red Team: the registry and route run. The MCP tool is not registered."
+              tone="evidence"
             />
             <Box
               x={50}
@@ -309,12 +310,21 @@ export function InterfaceHub() {
               h={72}
               id="registry"
               title="Scenario registry"
-              lines={["does not exist yet"]}
-              tone="muted"
-              dashed
+              lines={["ten stored scenarios"]}
+              tone="evidence"
             />
             <Box
               x={400}
+              y={480}
+              w={250}
+              h={72}
+              id="route"
+              title="Red Team route"
+              lines={["runs scenarios, shows results"]}
+              tone="evidence"
+            />
+            <Box
+              x={750}
               y={480}
               w={250}
               h={72}
@@ -324,33 +334,22 @@ export function InterfaceHub() {
               tone="muted"
               dashed
             />
-            <Box
-              x={750}
-              y={480}
-              w={250}
-              h={72}
-              id="route"
-              title="Red Team route"
-              lines={["shows this status, not a mock"]}
-              tone="muted"
-              dashed
-            />
             <Edge
               prefix={P}
-              kind="muted"
+              kind="read"
               from="registry"
-              to="scenarioTool"
+              to="route"
               d="M300,516 H396"
             />
             <Edge
               prefix={P}
               kind="muted"
-              from="scenarioTool"
-              to="route"
+              from="route"
+              to="scenarioTool"
               d="M650,516 H746"
             />
             <Label x={1090} y={522}>
-              not connected
+              tool not built
             </Label>
           </svg>
           <NodeDetailStrip />
