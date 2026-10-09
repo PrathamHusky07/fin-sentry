@@ -37,7 +37,7 @@ def make_deps(**overrides: object) -> Deps:
 
 def trace(
     rag_status: str = "blocked",
-    block_rail: str | None = "prompt-guard-2",
+    block_rail: str | None = "check prompt injection",
     query: str = "stored query",
     trace_id: str = "11111111-2222-3333-4444-555555555555",
 ) -> TraceDetailResponse:
