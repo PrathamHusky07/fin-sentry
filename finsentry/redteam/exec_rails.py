@@ -17,6 +17,7 @@ import psycopg
 
 from finsentry.redteam.classify import Observation
 from finsentry.redteam.deps import Deps, ScenarioSetupError
+from finsentry.redteam.exec_gateway import rail_for
 from finsentry.redteam.models import InputRailsScenario, RetrievalScenario
 
 _PLACEHOLDER_RE = re.compile(r"<REDACTED_([A-Z_]+)>")
@@ -38,17 +39,30 @@ async def run_input_rails(scenario: InputRailsScenario, deps: Deps) -> Observati
             unavailable_reason=f"The input rail stack failed to run ({type(exc).__name__}).",
         )
     if status == RailStatus.BLOCKED:
+        layer = rail_for(rail_name)
+        evidence: dict[str, object] = {
+            "rail_status": "blocked",
+            "rail_reported": rail_name,
+            "redacted_entities": [],
+            "leaked_entities": [],
+        }
+        if layer is None:
+            return Observation(
+                summary="The input stack blocked the text.",
+                evidence=evidence,
+                inconclusive_reason=f"The block came from an unrecognized rail: {rail_name}.",
+            )
         return Observation(
-            summary=f"The request was blocked by {rail_name} before redaction was assessed.",
-            evidence={"rail_status": "blocked", "redacted_entities": [], "leaked_entities": []},
+            summary=f"The request was blocked by {layer} before redaction could be observed.",
+            evidence=evidence,
             defense_acted=True,
-            acting_layer=rail_name,
+            acting_layer=layer,
         )
     content = str(updated[0].get("content", "")) if updated else ""
     redacted = sorted(set(_PLACEHOLDER_RE.findall(content)))
     leaked = sorted(set(scenario.input.expected_entities) - set(redacted))
     residual = bool(_RESIDUAL_PII_RE.search(content))
-    evidence: dict[str, object] = {
+    outcome_evidence: dict[str, object] = {
         "rail_status": "modified" if status == RailStatus.MODIFIED else "passed",
         "redacted_entities": redacted,
         "leaked_entities": leaked,
@@ -57,7 +71,7 @@ async def run_input_rails(scenario: InputRailsScenario, deps: Deps) -> Observati
     if redacted and not leaked and not residual:
         return Observation(
             summary=f"Redacted {', '.join(redacted)} before any downstream step.",
-            evidence=evidence,
+            evidence=outcome_evidence,
             defense_acted=True,
             acting_layer="pii-redaction",
             acting_check="placeholder emitted by the pii-redaction operators",
@@ -65,7 +79,7 @@ async def run_input_rails(scenario: InputRailsScenario, deps: Deps) -> Observati
     detail = ", ".join(leaked) if leaked else "personal data in the output"
     return Observation(
         summary=f"Personal data was not fully redacted: {detail}.",
-        evidence=evidence,
+        evidence=outcome_evidence,
         attack_passed=True,
     )
 

@@ -72,7 +72,7 @@ async def _post(app: FastAPI, query: str, ticker: str | None) -> tuple[int, dict
     return resp.status_code, body if isinstance(body, dict) else {}
 
 
-def _rail_for(reported: object) -> Rail | None:
+def rail_for(reported: object) -> Rail | None:
     if not isinstance(reported, str):
         return None
     if reported in FLOW_TO_RAIL:
@@ -83,7 +83,7 @@ def _rail_for(reported: object) -> Rail | None:
 def _observe_response(status: int, body: dict[str, object]) -> Observation:
     evidence: dict[str, object] = {"gateway_status": status}
     reported = body.get("rail")
-    layer = _rail_for(reported)
+    layer = rail_for(reported)
     if status in (403, 422) and layer is not None:
         evidence["gateway_rail"] = layer
         evidence["gateway_rail_reported"] = reported

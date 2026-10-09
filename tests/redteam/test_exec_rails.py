@@ -53,9 +53,17 @@ async def test_text_that_passes_unchanged_is_a_miss() -> None:
 
 
 async def test_a_block_by_another_rail_is_caught_by_that_rail_and_flagged() -> None:
-    _, result = await _pii(_adapter(RailStatus.BLOCKED, "x", rail="prompt-guard-2"))
+    obs, result = await _pii(_adapter(RailStatus.BLOCKED, "x", rail="check hazard taxonomy"))
     assert (result.outcome, result.expectation) == ("caught", "not_met")
-    assert result.acting_layer == "prompt-guard-2"
+    assert result.acting_layer == "llama-guard-3"
+    assert obs.evidence["rail_reported"] == "check hazard taxonomy"
+    assert "before redaction could be observed" in result.reason
+
+
+async def test_a_block_from_an_unrecognized_rail_is_inconclusive_not_caught() -> None:
+    _, result = await _pii(_adapter(RailStatus.BLOCKED, "x", rail="some new flow"))
+    assert result.outcome == "inconclusive"
+    assert result.acting_layer is None
 
 
 async def test_an_input_stack_failure_is_evaluator_unavailable() -> None:
