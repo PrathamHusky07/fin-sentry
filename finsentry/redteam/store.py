@@ -133,27 +133,35 @@ def finish_run(database_url: str, run_id: str, failure_reason: str | None) -> No
         )
 
 
+def fail_unfinished(database_url: str, run_id: str, reason: str) -> None:
+    """Mark every execution of a run that never finished as execution_failed, so a run
+    that stopped early leaves visible failures instead of rows stuck in queued."""
+    with _connect(database_url) as conn:
+        conn.execute(
+            "UPDATE red_team_executions SET state = 'finished', outcome = 'execution_failed',"
+            " expectation = 'not_assessable', finished_at = now(), reason = %s"
+            " WHERE run_id = %s::uuid AND state <> 'finished'",
+            (reason, run_id),
+        )
+
+
 def reclaim_stale_runs(database_url: str) -> int:
     """Fail runs a dead process left in running state, and their unfinished
     executions, so they stay visible as failed instead of looking active forever."""
-    with _connect(database_url) as conn, conn.transaction():
+    reason = "The process that started this run stopped before it finished."
+    with _connect(database_url) as conn:
         stale = conn.execute(
             "UPDATE red_team_runs SET status = 'failed', finished_at = now(),"
-            " failure_reason = 'The process that started this run stopped before it finished.'"
+            " failure_reason = %s"
             " WHERE status = 'running' AND created_at < now() - make_interval(mins => %s)"
-            " RETURNING run_id",
-            (STALE_RUN_MINUTES,),
+            " RETURNING run_id::text AS run_id",
+            (reason, STALE_RUN_MINUTES),
         ).fetchall()
-        run_ids = [str(r["run_id"]) for r in stale]
-        if run_ids:
-            conn.execute(
-                "UPDATE red_team_executions SET state = 'finished', outcome = 'execution_failed',"
-                " expectation = 'not_assessable', finished_at = now(),"
-                " reason = 'The run ended before this execution completed.'"
-                " WHERE run_id = ANY(%s::uuid[]) AND state <> 'finished'",
-                (run_ids,),
-            )
-    return len(run_ids)
+    for row in stale:
+        fail_unfinished(
+            database_url, str(row["run_id"]), "The run ended before this execution completed."
+        )
+    return len(stale)
 
 
 def active_run_id(database_url: str) -> str | None:
@@ -264,3 +272,13 @@ def get_execution(database_url: str, execution_id: str) -> ExecutionRecord | Non
             (execution_id,),
         ).fetchone()
     return None if row is None else _to_execution(row)
+
+
+def latest_finished_per_scenario(database_url: str) -> dict[str, ExecutionRecord]:
+    """The most recent finished execution of each scenario, for the registry view."""
+    with _connect(database_url) as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT ON (e.scenario_id) {_EXEC_COLUMNS} FROM red_team_executions e"
+            " WHERE e.state = 'finished' ORDER BY e.scenario_id, e.finished_at DESC"
+        ).fetchall()
+    return {r["scenario_id"]: _to_execution(r) for r in rows}

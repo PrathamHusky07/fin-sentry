@@ -80,10 +80,16 @@ def classify(scenario: Scenario, obs: Observation) -> Classification:
         return Classification(
             "inconclusive", "not_assessable", "No defense decision and no pass decision recorded."
         )
-    missing = _missing_evidence(scenario, obs)
+    # A catch must carry the scenario's required evidence. A miss has no blocking
+    # layer to name, so it only needs some measured facts to stand on.
+    missing = _missing_evidence(scenario, obs) if obs.defense_acted else []
     if missing:
         return Classification(
             "inconclusive", "not_assessable", f"Required evidence is missing: {', '.join(missing)}."
+        )
+    if obs.attack_passed and not obs.defense_acted and not obs.evidence:
+        return Classification(
+            "inconclusive", "not_assessable", "A pass was reported with no evidence."
         )
     outcome: Outcome = "caught" if obs.defense_acted else "missed"
     expectation, note = _expectation(scenario, outcome, obs)

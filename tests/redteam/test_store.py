@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import psycopg
 import pytest
 
@@ -11,18 +9,6 @@ from finsentry.redteam import store
 from finsentry.redteam.classify import Classification, Observation
 from finsentry.redteam.registry import get_scenario
 from tests.conftest import TEST_DATABASE_URL
-
-
-@pytest.fixture(autouse=True)
-def _clean_tables() -> Iterator[None]:
-    def wipe() -> None:
-        with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
-            conn.execute("DELETE FROM red_team_executions")
-            conn.execute("DELETE FROM red_team_runs")
-
-    wipe()
-    yield
-    wipe()
 
 
 def _scenarios(*ids: str):  # type: ignore[no-untyped-def]

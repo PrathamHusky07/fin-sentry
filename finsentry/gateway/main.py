@@ -54,6 +54,9 @@ from finsentry.rails.output.guardrails_schema import SchemaEnforcementRail
 from finsentry.rails.output.regulated_phrases import RegulatedPhraseRail
 from finsentry.rails.output.schema import RagAnswerResponse
 from finsentry.rails.retrieval.rail import RetrievalRail
+from finsentry.redteam import store as redteam_store
+from finsentry.redteam.api import build_router as build_redteam_router
+from finsentry.redteam.deps import Deps as RedTeamDeps
 
 load_dotenv()
 
@@ -240,6 +243,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _metrics_poller = MetricsPoller(_metrics_http_client)
     await _metrics_poller.start()
 
+    # A red team run left in running state by a process that died would block every
+    # later run. Fail it now so it stays visible as failed. Non-fatal: the table may
+    # not exist before migration 005 has been applied.
+    if _DATABASE_URL:
+        try:
+            await asyncio.to_thread(redteam_store.reclaim_stale_runs, _DATABASE_URL)
+        except Exception:
+            log.warning("red team stale-run reclaim failed", exc_info=True)
+
     yield
 
     await _metrics_poller.stop()
@@ -260,6 +272,23 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+def _redteam_deps() -> RedTeamDeps:
+    """The live rail objects, read at call time so a rail that failed to start is None."""
+    return RedTeamDeps(
+        app=app,
+        database_url=_DATABASE_URL,
+        input_adapter=_adapter,
+        retrieval_rail=_retrieval_rail,
+        schema_rail=_schema_rail,
+        phrase_rail=_phrase_rail,
+        faithfulness_rail=_faithfulness_rail,
+        metrics_client=_metrics_http_client,
+    )
+
+
+app.include_router(build_redteam_router(_redteam_deps))
 
 
 # ---------------------------------------------------------------------------

@@ -138,3 +138,10 @@ def test_a_retrieval_catch_must_come_from_the_expected_check() -> None:
     result = classify(_scenario("IND-001"), obs)
     assert (result.outcome, result.expectation) == ("caught", "not_met")
     assert "prompt-guard" in result.reason
+
+
+def test_a_miss_does_not_need_the_catch_evidence_but_needs_some_evidence() -> None:
+    passed = Observation(summary="Passed.", evidence={"gateway_status": 200}, attack_passed=True)
+    assert classify(_scenario("DI-001"), passed).outcome == "missed"
+    bare = Observation(summary="Passed.", attack_passed=True)
+    assert classify(_scenario("DI-001"), bare).outcome == "inconclusive"
