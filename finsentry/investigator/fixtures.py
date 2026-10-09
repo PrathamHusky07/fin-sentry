@@ -268,17 +268,22 @@ def trace_detail(
     contradicting_chunks: list[str] | None = None,
     connected: bool = True,
 ) -> TraceDetailResponse:
-    flash = FlashJudgeView(
-        status="complete" if flash_faithfulness is not None else "failed",
-        timestamp_utc=at(9),
-        faithfulness_score=flash_faithfulness,
-        faithfulness_status="complete"
-        if flash_faithfulness is not None
-        else "skipped_evaluator_error",
-        answer_relevance_score=0.9,
-        answer_relevance_status="complete",
-        context_relevance_score=0.9,
-        context_relevance_status="complete",
+    never_judged = judge_state in ("blocked_before_evaluation", "never_evaluated")
+    flash = (
+        None
+        if never_judged
+        else FlashJudgeView(
+            status="complete" if flash_faithfulness is not None else "failed",
+            timestamp_utc=at(9),
+            faithfulness_score=flash_faithfulness,
+            faithfulness_status="complete"
+            if flash_faithfulness is not None
+            else "skipped_evaluator_error",
+            answer_relevance_score=0.9,
+            answer_relevance_status="complete",
+            context_relevance_score=0.9,
+            context_relevance_status="complete",
+        )
     )
     if frontier_faithfulness is None:
         frontier = FrontierSectionView(sampled=False, evidence=None, note="not frontier-sampled")

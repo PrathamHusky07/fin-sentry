@@ -1,0 +1,235 @@
+{
+  "agent_version": "always-abstain-0",
+  "cases": [
+    {
+      "actual_outcome": "abstention",
+      "case_id": "judge-outage",
+      "dimensions": {
+        "causal_discipline": 0.0,
+        "citation_validity": 0.0,
+        "efficiency": 0.0,
+        "evidence_coverage": 0.0,
+        "subsystem_identification": 0.0,
+        "supporting_and_contradicting": 0.0,
+        "verification": 0.0
+      },
+      "expected_outcome": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "incident_class": "judge_degradation",
+      "inference_calls": 0,
+      "passed": false,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 0.0,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "stale-chunk",
+      "dimensions": {
+        "causal_discipline": 0.0,
+        "citation_validity": 0.0,
+        "efficiency": 0.0,
+        "evidence_coverage": 0.0,
+        "subsystem_identification": 0.0,
+        "supporting_and_contradicting": 0.0,
+        "verification": 1.0
+      },
+      "expected_outcome": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "incident_class": "bad_retrieval_chunk",
+      "inference_calls": 0,
+      "passed": false,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "injection-surge",
+      "dimensions": {
+        "causal_discipline": 0.0,
+        "citation_validity": 0.0,
+        "efficiency": 0.0,
+        "evidence_coverage": 0.0,
+        "subsystem_identification": 0.0,
+        "supporting_and_contradicting": 0.0,
+        "verification": 0.0
+      },
+      "expected_outcome": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "incident_class": "injection_surge",
+      "inference_calls": 0,
+      "passed": false,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 0.0,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "schema-rail-regression",
+      "dimensions": {
+        "causal_discipline": 0.0,
+        "citation_validity": 0.0,
+        "efficiency": 0.0,
+        "evidence_coverage": 0.0,
+        "subsystem_identification": 0.0,
+        "supporting_and_contradicting": 0.0,
+        "verification": 1.0
+      },
+      "expected_outcome": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "incident_class": "guardrail_regression",
+      "inference_calls": 0,
+      "passed": false,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "retrieval-and-judge",
+      "dimensions": {
+        "causal_discipline": 0.0,
+        "citation_validity": 0.0,
+        "efficiency": 0.0,
+        "evidence_coverage": 0.0,
+        "subsystem_identification": 0.0,
+        "supporting_and_contradicting": 0.0,
+        "verification": 1.0
+      },
+      "expected_outcome": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "incident_class": "mixed_multi_subsystem",
+      "inference_calls": 0,
+      "passed": false,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "drifted-judge-misleading",
+      "dimensions": {
+        "causal_discipline": 0.0,
+        "citation_validity": 0.0,
+        "efficiency": 0.0,
+        "evidence_coverage": 0.0,
+        "subsystem_identification": 0.0,
+        "supporting_and_contradicting": 0.0,
+        "verification": 1.0
+      },
+      "expected_outcome": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "incident_class": "misleading_symptom",
+      "inference_calls": 0,
+      "passed": false,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "unavailable-source",
+      "dimensions": {
+        "correct_abstention": 1.0,
+        "efficiency": 1.0,
+        "honest_reporting": 1.0,
+        "verification": 1.0
+      },
+      "expected_outcome": "abstention",
+      "flags": [],
+      "incident_class": "insufficient_evidence",
+      "inference_calls": 0,
+      "passed": true,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 1.0,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "sparse-signal",
+      "dimensions": {
+        "correct_abstention": 1.0,
+        "efficiency": 1.0,
+        "honest_reporting": 1.0,
+        "verification": 1.0
+      },
+      "expected_outcome": "abstention",
+      "flags": [],
+      "incident_class": "insufficient_evidence",
+      "inference_calls": 0,
+      "passed": true,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 1.0,
+      "validation_problems": []
+    },
+    {
+      "actual_outcome": "abstention",
+      "case_id": "ambiguous-signal",
+      "dimensions": {
+        "correct_abstention": 1.0,
+        "efficiency": 1.0,
+        "honest_reporting": 1.0,
+        "verification": 1.0
+      },
+      "expected_outcome": "abstention",
+      "flags": [],
+      "incident_class": "insufficient_evidence",
+      "inference_calls": 0,
+      "passed": true,
+      "penalties": {},
+      "tool_calls": 0,
+      "total": 1.0,
+      "validation_problems": []
+    }
+  ],
+  "harness_version": "known-answer-1",
+  "pass_threshold": 0.75,
+  "suite_fingerprint": "c8c2e8367c5d9f4e",
+  "summary": {
+    "by_expected_outcome": {
+      "abstention": {
+        "cases": 3,
+        "passed": 3
+      },
+      "diagnosis": {
+        "cases": 6,
+        "passed": 0
+      }
+    },
+    "cases": 9,
+    "failed": [
+      "judge-outage",
+      "stale-chunk",
+      "injection-surge",
+      "schema-rail-regression",
+      "retrieval-and-judge",
+      "drifted-judge-misleading"
+    ],
+    "inference_calls_total": 0,
+    "mean_score": 0.3778,
+    "passed": 3,
+    "tool_calls_total": 0
+  },
+  "tool_contract_version": "mcp-read-9@db064f578365"
+}

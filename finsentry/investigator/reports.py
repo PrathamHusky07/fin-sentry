@@ -94,7 +94,9 @@ def default_verification(state: InvestigationState) -> ProposedVerification:
     return _candidates(state)[-1]
 
 
-def abstention_report(state: InvestigationState) -> IncidentReport:
+def abstention_report(
+    state: InvestigationState, verification: ProposedVerification | None = None
+) -> IncidentReport:
     if state.stopping_reason is None:
         raise ValueError("an abstention report needs a stopped investigation")
     queries = state.executed_queries
@@ -105,7 +107,7 @@ def abstention_report(state: InvestigationState) -> IncidentReport:
         tool_unavailable=sorted({q.tool for q in queries if q.status == "unavailable"}),
         empty_results=[q.query_id for q in queries if q.status == "empty"],
         tests_actually_run=[q.query_id for q in queries],
-        proposed_verification=default_verification(state),
+        proposed_verification=verification or default_verification(state),
         limitations=[f"{g.source}: {g.detail}" for g in state.known_data_gaps],
         stopping_reason=state.stopping_reason,
         abstention_statement=ABSTENTION_STATEMENT,

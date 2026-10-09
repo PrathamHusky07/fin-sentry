@@ -13,7 +13,9 @@ How each tool signals unavailability, from the code in finsentry/mcp/tools:
   the only signal. An empty list with the flag False is unavailable, not empty.
 - search_traces and get_trace_detail raise when RisingWave fails, and the dashboard
   response carries the same flag. A raise is unavailable.
-- the Red Team tools raise when DATABASE_URL is unset or the store fails.
+- the Red Team tools raise ValueError("DATABASE_URL is not configured ...") when the store is
+  unreachable. That is unavailable. Their other ValueErrors (limit, offset, a malformed UUID)
+  are a rejected call.
 - get_drift_report reads files. A missing health reading is empty, because the file is the
   source of truth and its absence is a fact about the platform.
 
@@ -78,6 +80,9 @@ KNOWN_TOOL_GAPS: tuple[DataGap, ...] = (
         "so it does not mean the tiers agreed.",
     ),
 )
+
+
+_STORE_NOT_CONFIGURED = "is not configured"
 
 
 @dataclass(frozen=True)
@@ -173,7 +178,10 @@ class ReadOnlyAdapter:
         try:
             payload = await getattr(self._tools, name)(**args)
         except ValueError as exc:
-            return self._failure(query_id, name, args, "rejected", exc, started)
+            # The Red Team tools raise ValueError for an unset DATABASE_URL, which is an
+            # unreachable store and not a bad argument.
+            status: ToolStatus = "unavailable" if _STORE_NOT_CONFIGURED in str(exc) else "rejected"
+            return self._failure(query_id, name, args, status, exc, started)
         except Exception as exc:
             return self._failure(query_id, name, args, "unavailable", exc, started)
         status, evidence, error = interpret(name, payload, query_id)

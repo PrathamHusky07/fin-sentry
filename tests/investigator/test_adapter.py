@@ -72,6 +72,13 @@ async def test_a_tool_that_refuses_its_arguments_is_rejected_not_unavailable() -
     assert "limit" in (result.error or "")
 
 
+async def test_an_unconfigured_red_team_store_is_unavailable_and_a_bad_uuid_is_rejected() -> None:
+    down = ValueError("DATABASE_URL is not configured, so the red team store cannot be read")
+    assert (await _call("get_red_team_execution", down, execution_id="x")).status == "unavailable"
+    bad = ValueError("execution_id must be a UUID")
+    assert (await _call("get_red_team_execution", bad, execution_id="x")).status == "rejected"
+
+
 async def test_every_tool_family_tells_offline_from_empty_from_data() -> None:
     cases = {
         "explain_guardrail_decision": (
