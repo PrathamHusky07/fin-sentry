@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Day 10C bounded, staged load test of the gateway with every rail enabled.
+"""Day 10C bounded, staged load test of the gateway on a local single-process stack.
+
+The measured path is not the judge-enabled production path. The faithfulness rail and the
+flash judge are disabled, and the downstream model is a local stub with a fixed latency. The
+input rails, the retrieval rail, the schema and phrase output rails and the event pipeline
+run for real. The numbers describe that path only.
 
 Runs its own isolated pipeline (stub downstream, gateway on :8010, flash consumer, two
 topics, two RisingWave tables) so the live topics and dashboards are never touched and no
 Gemini call can happen. The harness refuses to generate load unless the isolation
-attestations pass. It then offers load in stages at a fixed arrival rate, checks the
-machine between and during stages, and stops at the first stage that breaks the SLO or
-the resource limits. Offered load and achieved throughput are reported separately.
+attestations pass and the consumer group is Stable with a member. It then offers load in
+stages at a fixed arrival rate, checks the machine between and during stages, and stops at
+the first stage that breaks the SLO or the resource limits. Offered load and achieved
+throughput are reported separately.
 
     python scripts/load_test.py                       # the full staged run
     python scripts/load_test.py --stages 0.5:10 --out /tmp/smoke.json   # harness smoke run
@@ -78,6 +84,10 @@ MAX_IN_FLIGHT = 256
 SAMPLE_EVERY_S = 3.0
 TARGET_RPS = 16.0  # the 1,000 requests/minute target stage starts at this rate
 SLO, LIMITS = Slo(), ResourceLimits()
+
+
+class ConsumerNotReadyError(RuntimeError):
+    """The flash consumer group never became Stable with a member, so no load may start."""
 
 
 class IsolationError(RuntimeError):
@@ -338,12 +348,18 @@ def start_stack(
     gateway_att = wait_for_file(gw_att, procs[2], 240)
     run.gateway_pid = gateway_att["pid"]
     run.gateway = procs[2]
+    # The consumer starts at the latest offset, so load sent before it joins is never judged.
+    # A group that is not Stable with a member after the wait ends the run before any load.
     deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        state = group_state()
-        if state["state"] == "Stable" and state["members"]:
-            break
+    state = group_state()
+    while not (state["state"] == "Stable" and state["members"]):
+        if time.monotonic() >= deadline:
+            raise ConsumerNotReadyError(
+                f"consumer group {GROUP} was not Stable with a member after 60 s "
+                f"(state {state['state']}, members {state['members']}), no load generated"
+            )
         time.sleep(1.0)
+        state = group_state()
     summary["isolation_attestation"] = {"gateway": gateway_att, "consumer": consumer_att}
     summary["isolation_check"] = verify_isolation(gateway_att, consumer_att)
 
@@ -391,6 +407,9 @@ def main() -> None:
         infra_created = True
         start_stack(args, run, summary, procs)
         asyncio.run(run_all(run, plan, summary))
+    except ConsumerNotReadyError as exc:
+        summary["outcome"] = f"aborted before load: {exc}"
+        exit_code = 2
     except IsolationError as exc:
         summary["isolation_check"] = {"passed": False, "problems": str(exc)}
         summary["outcome"] = "refused: isolation check failed, no load generated"
