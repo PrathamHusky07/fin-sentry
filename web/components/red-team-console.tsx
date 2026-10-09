@@ -222,7 +222,7 @@ export function RedTeamConsole() {
               setOverviewStatus("loading");
               setRefreshToken((n) => n + 1);
             }}
-            loadingLabel="Loading the scenario registry"
+            loadingLabel="Loading the scenario registry…"
           >
             <RedTeamSummary
               summary={summary}

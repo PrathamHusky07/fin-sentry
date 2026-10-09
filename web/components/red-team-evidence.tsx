@@ -32,7 +32,7 @@ function Section({
 }) {
   return (
     <section className="border-border border-t pt-6">
-      <h3 className="eyebrow">{title}</h3>
+      <h2 className="eyebrow">{title}</h2>
       <div className="mt-3 space-y-3">{children}</div>
     </section>
   );
@@ -275,7 +275,7 @@ export function RedTeamEvidence({
               <p className="text-text-primary text-lg font-semibold">
                 {record
                   ? `${record.scenario_id}, version ${record.scenario_version}`
-                  : "Loading"}
+                  : "Loading…"}
               </p>
             </div>
             <button
@@ -308,7 +308,7 @@ export function RedTeamEvidence({
               setStatus("loading");
               setRetryToken((n) => n + 1);
             }}
-            loadingLabel="Loading execution evidence"
+            loadingLabel="Loading execution evidence…"
           >
             {record ? <EvidenceBody e={record} /> : null}
           </AsyncState>

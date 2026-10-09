@@ -155,7 +155,7 @@ export function RedTeamResults({
           status={status}
           errorMessage={errorMessage}
           onRetry={onRetry}
-          loadingLabel="Loading stored executions"
+          loadingLabel="Loading stored executions…"
         >
           {executions.length === 0 ? (
             <div className="border-border-strong rounded-xl border border-dashed px-6 py-12 text-center">
@@ -299,7 +299,7 @@ export function RedTeamResults({
                   onClick={onLoadMore}
                   className="border-border-strong text-text-primary hover:bg-surface mt-4 min-h-11 rounded-lg border px-4 text-sm font-medium disabled:opacity-50"
                 >
-                  {loadingMore ? "Loading" : "Show more executions"}
+                  {loadingMore ? "Loading…" : "Show more executions"}
                 </button>
               ) : null}
             </>

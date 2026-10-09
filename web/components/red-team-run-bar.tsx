@@ -36,7 +36,7 @@ function RunProgress({ detail }: { detail: RunDetail }) {
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="text-text-secondary mt-2 text-sm">
+      <p aria-live="polite" className="text-text-secondary mt-2 text-sm">
         {finished} of {total} executions finished. Read from the stored rows
         every 1.5 seconds while the run is active.
       </p>
