@@ -1,0 +1,274 @@
+{
+  "purpose": "price the flash-vs-frontier comparison by measuring claims per row; the comparison itself is not made",
+  "labels_read": false,
+  "preflight": {
+    "sub_cap_usd": 0.06,
+    "rows": 12,
+    "row_ids": [
+      "00734687e2718db0",
+      "341df34e56b701e6",
+      "462be61bff2d8a36",
+      "4dd9d0f0240fe882",
+      "6458df9aed7d8043",
+      "82b000ae6250600c",
+      "bfe0b423f0c7677b",
+      "de0ee2f8dcc90f20",
+      "e482797b6f533bf9",
+      "e998059958deb798",
+      "f44cbd699431e8fe",
+      "fbca866c8e723b25"
+    ],
+    "selection": "held-out split filtered by should_sample_for_frontier(id, 10); no label read",
+    "stage1_extraction_calls": 12,
+    "stage1_projected_usd": 0.01402,
+    "stage1_fits_sub_cap": true,
+    "estimate_basis": {
+      "output_tokens_per_call": 44,
+      "thought_tokens_per_call": 249,
+      "from": "Day 10D live-judge probe, a different workload",
+      "chars_per_token_assumption": 3.5,
+      "mean_extraction_call_usd": 0.00117,
+      "mean_verification_call_usd": 0.00209
+    },
+    "stage2_note": "the verification call count is the sum of stage 1 claim counts, known only after stage 1, and is priced before any verification call",
+    "verification_calls_if_claims_per_row": {
+      "1": {
+        "calls": 12,
+        "total_projected_usd": 0.039,
+        "fits_sub_cap": true
+      },
+      "2": {
+        "calls": 24,
+        "total_projected_usd": 0.0641,
+        "fits_sub_cap": false
+      },
+      "3": {
+        "calls": 36,
+        "total_projected_usd": 0.0891,
+        "fits_sub_cap": false
+      }
+    }
+  },
+  "stage1": {
+    "extraction_calls": 12,
+    "stopped": null,
+    "claims_per_row": {
+      "00734687e2718db0": 0,
+      "341df34e56b701e6": 0,
+      "462be61bff2d8a36": 0,
+      "4dd9d0f0240fe882": 0,
+      "6458df9aed7d8043": 0,
+      "82b000ae6250600c": 0,
+      "bfe0b423f0c7677b": 0,
+      "de0ee2f8dcc90f20": 0,
+      "e482797b6f533bf9": 0,
+      "e998059958deb798": 0,
+      "f44cbd699431e8fe": 0,
+      "fbca866c8e723b25": 0
+    },
+    "unparseable_rows": [],
+    "claims_total": 0,
+    "claims_per_row_mean": 0,
+    "spent_usd": 0.010123
+  },
+  "stage2_preflight": {
+    "verification_calls": 0,
+    "projected_usd": 0.0,
+    "total_if_run_usd": 0.01012,
+    "decision": "run",
+    "priced_from": {
+      "output_tokens_per_call": 1,
+      "thought_tokens_per_call": 209
+    }
+  },
+  "stage2": {
+    "00734687e2718db0": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "341df34e56b701e6": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "462be61bff2d8a36": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "4dd9d0f0240fe882": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "6458df9aed7d8043": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "82b000ae6250600c": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "bfe0b423f0c7677b": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "de0ee2f8dcc90f20": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "e482797b6f533bf9": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "e998059958deb798": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "f44cbd699431e8fe": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    },
+    "fbca866c8e723b25": {
+      "score": 1.0,
+      "claims": 0,
+      "note": "no claims extracted"
+    }
+  },
+  "totals": {
+    "real_gemini_calls": 12,
+    "calls_by_stage": {
+      "extract": 12,
+      "verify": 0
+    },
+    "input_tokens": 877,
+    "output_tokens": 12,
+    "thought_tokens": 2512,
+    "estimated_cost_usd": 0.010123,
+    "sub_cap_usd": 0.06,
+    "within_sub_cap": true,
+    "cost_per_row_usd_mean": 0.000844,
+    "latency_ms_mean": 4086,
+    "latency_ms_max": 26689,
+    "cost_basis": "usage-metadata estimate at the Vertex standard-tier constants, not billing"
+  },
+  "calls": [
+    {
+      "row": "00734687e2718db0",
+      "stage": "extract",
+      "input_tokens": 76,
+      "output_tokens": 1,
+      "thought_tokens": 225,
+      "cost_usd": 0.0009044999999999999,
+      "latency_ms": 4871
+    },
+    {
+      "row": "341df34e56b701e6",
+      "stage": "extract",
+      "input_tokens": 70,
+      "output_tokens": 1,
+      "thought_tokens": 243,
+      "cost_usd": 0.0009675,
+      "latency_ms": 2010
+    },
+    {
+      "row": "462be61bff2d8a36",
+      "stage": "extract",
+      "input_tokens": 73,
+      "output_tokens": 1,
+      "thought_tokens": 131,
+      "cost_usd": 0.00054975,
+      "latency_ms": 1704
+    },
+    {
+      "row": "4dd9d0f0240fe882",
+      "stage": "extract",
+      "input_tokens": 73,
+      "output_tokens": 1,
+      "thought_tokens": 227,
+      "cost_usd": 0.0009097500000000001,
+      "latency_ms": 1742
+    },
+    {
+      "row": "6458df9aed7d8043",
+      "stage": "extract",
+      "input_tokens": 69,
+      "output_tokens": 1,
+      "thought_tokens": 194,
+      "cost_usd": 0.0007830000000000001,
+      "latency_ms": 1631
+    },
+    {
+      "row": "82b000ae6250600c",
+      "stage": "extract",
+      "input_tokens": 72,
+      "output_tokens": 1,
+      "thought_tokens": 153,
+      "cost_usd": 0.0006315,
+      "latency_ms": 1368
+    },
+    {
+      "row": "bfe0b423f0c7677b",
+      "stage": "extract",
+      "input_tokens": 73,
+      "output_tokens": 1,
+      "thought_tokens": 141,
+      "cost_usd": 0.00058725,
+      "latency_ms": 1341
+    },
+    {
+      "row": "de0ee2f8dcc90f20",
+      "stage": "extract",
+      "input_tokens": 73,
+      "output_tokens": 1,
+      "thought_tokens": 148,
+      "cost_usd": 0.0006135,
+      "latency_ms": 26689
+    },
+    {
+      "row": "e482797b6f533bf9",
+      "stage": "extract",
+      "input_tokens": 73,
+      "output_tokens": 1,
+      "thought_tokens": 262,
+      "cost_usd": 0.0010409999999999998,
+      "latency_ms": 1763
+    },
+    {
+      "row": "e998059958deb798",
+      "stage": "extract",
+      "input_tokens": 73,
+      "output_tokens": 1,
+      "thought_tokens": 239,
+      "cost_usd": 0.00095475,
+      "latency_ms": 2103
+    },
+    {
+      "row": "f44cbd699431e8fe",
+      "stage": "extract",
+      "input_tokens": 74,
+      "output_tokens": 1,
+      "thought_tokens": 182,
+      "cost_usd": 0.00074175,
+      "latency_ms": 1456
+    },
+    {
+      "row": "fbca866c8e723b25",
+      "stage": "extract",
+      "input_tokens": 78,
+      "output_tokens": 1,
+      "thought_tokens": 367,
+      "cost_usd": 0.0014385,
+      "latency_ms": 2354
+    }
+  ],
+  "outcome": "pilot ran"
+}
