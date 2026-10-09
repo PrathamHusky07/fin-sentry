@@ -24,6 +24,8 @@ import os
 import re
 import signal
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -142,6 +144,14 @@ def run_gateway(args: argparse.Namespace) -> None:
             await task
             return
         rail, producer = gw._faithfulness_rail, gw._rag_event_producer
+
+        def heartbeat() -> None:
+            # A hard crash skips the final write, so the last snapshot stands in for it.
+            while True:
+                write_json(args.attest + ".final", {"tripwire_hits": list(tripwire.hits)})
+                time.sleep(2.0)
+
+        threading.Thread(target=heartbeat, daemon=True).start()
         write_json(
             args.attest,
             {

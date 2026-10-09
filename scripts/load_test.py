@@ -92,6 +92,7 @@ class Run:
         self.baseline: dict[str, float] = {}
         self.stop_sampler = threading.Event()
         self.gateway_pid = 0
+        self.gateway: Proc | None = None
 
     def next_request(self) -> tuple[int, str, str]:
         seq = self.seq
@@ -115,6 +116,8 @@ def sampler(run: Run) -> None:
                     "gateway_rss_mb": usage.get("rss_mb"),
                 }
             )
+            if run.gateway is not None and not run.gateway.alive() and run.abort is None:
+                run.abort = f"gateway process exited with code {run.gateway.popen.returncode}"
             breach = resource_breach(res, run.baseline, LIMITS)
             if breach and run.abort is None:
                 run.abort = f"resource limit: {breach}"
@@ -277,6 +280,7 @@ async def run_all(run: Run, plan: list[tuple[float, float]], summary: dict[str, 
                 break
 
         run.stage = "recovery"
+        summary["gateway_alive_at_recovery_start"] = bool(run.gateway and run.gateway.alive())
         summary["recovery"] = {"consumer": await drain_lag(120.0)}
         summary["resources_after_load"] = read_resources()
         after = stage_stats(await sequential(client, run, 10), 10.0)
@@ -296,16 +300,13 @@ def git_head() -> str:
     ).stdout.strip()
 
 
-def start_stack(args: argparse.Namespace, run: Run, summary: dict[str, Any]) -> list[Proc]:
+def start_stack(
+    args: argparse.Namespace, run: Run, summary: dict[str, Any], procs: list[Proc]
+) -> None:
     raw = run.raw
     gw_att, c_att = raw / "gateway.attest.json", raw / "consumer.attest.json"
-    procs = [
-        spawn(
-            "stub",
-            ["stub", "--port", str(STUB_PORT), "--latency-ms", str(args.stub_latency_ms)],
-            raw,
-        )
-    ]
+    stub_args = ["stub", "--port", str(STUB_PORT), "--latency-ms", str(args.stub_latency_ms)]
+    procs.append(spawn("stub", stub_args, raw))
     consumer_args = ["consumer", "--topic", EVENTS_TOPIC, "--group", GROUP]
     consumer_args += ["--verdict-topic", VERDICTS_TOPIC, "--attest", str(c_att)]
     procs.append(spawn("consumer", consumer_args, raw))
@@ -322,6 +323,7 @@ def start_stack(args: argparse.Namespace, run: Run, summary: dict[str, Any]) -> 
     procs.append(spawn("gateway", gateway_args, raw))
     gateway_att = wait_for_file(gw_att, procs[2], 240)
     run.gateway_pid = gateway_att["pid"]
+    run.gateway = procs[2]
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         state = group_state()
@@ -330,7 +332,6 @@ def start_stack(args: argparse.Namespace, run: Run, summary: dict[str, Any]) -> 
         time.sleep(1.0)
     summary["isolation_attestation"] = {"gateway": gateway_att, "consumer": consumer_att}
     summary["isolation_check"] = verify_isolation(gateway_att, consumer_att)
-    return procs
 
 
 def main() -> None:
@@ -374,7 +375,7 @@ def main() -> None:
         create_topics()
         create_tables()
         infra_created = True
-        procs = start_stack(args, run, summary)
+        start_stack(args, run, summary, procs)
         asyncio.run(run_all(run, plan, summary))
     except IsolationError as exc:
         summary["isolation_check"] = {"passed": False, "problems": str(exc)}
@@ -392,6 +393,9 @@ def main() -> None:
             final = raw / f"{name}.attest.json.final"
             finals[name] = json.loads(final.read_text()) if final.exists() else "not written"
         summary["tripwire_hits_at_shutdown"] = finals
+        if run.gateway is not None:
+            summary["gateway_exit_code"] = run.gateway.popen.poll()
+            summary["gateway_alive_at_end"] = run.gateway.alive()
         if infra_created:
             summary["teardown"] = teardown_infra()
         try:
