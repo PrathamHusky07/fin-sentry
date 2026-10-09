@@ -369,7 +369,7 @@ async def test_a_gateway_setup_error_does_not_use_up_the_continuation_bound() ->
     assert executions[1].outcome == "missed"
 
 
-async def test_a_gateway_execution_interrupted_after_a_send_keeps_the_marker_and_the_bound() -> None:
+async def test_an_interrupted_gateway_execution_keeps_the_marker_and_uses_the_bound() -> None:
     sent: list[str] = []
 
     async def fake(s: object, deps: object, execution_id: str) -> Observation:
