@@ -106,9 +106,13 @@ def finish_execution(
     observation: Observation | None,
     reason: str,
     duration_ms: int,
+    evidence: dict[str, object] | None = None,
 ) -> None:
     """Record the end of an execution. classification and observation are None only
-    for execution_failed, where the harness raised before any facts existed."""
+    for execution_failed, where the harness raised before any facts existed. `evidence`
+    is then the only evidence there is: the runner uses it to record what a failed or
+    skipped execution can still say, such as an unknown continuation. An observation's
+    own evidence always wins."""
     with _connect(database_url) as conn:
         conn.execute(
             "UPDATE red_team_executions SET state = 'finished', outcome = %s,"
@@ -122,7 +126,7 @@ def finish_execution(
                 classification.acting_check if classification else None,
                 classification.expectation if classification else "not_assessable",
                 reason,
-                Jsonb(observation.evidence if observation else {}),
+                Jsonb(observation.evidence if observation else (evidence or {})),
                 observation.trace_ref if observation else None,
                 observation.gemini_calls if observation else 0,
                 observation.cost_usd if observation else 0,

@@ -35,6 +35,16 @@ RUN_DEADLINE_SECONDS = 600.0
 # requests in one run have gone past the input rails, the run does not send another.
 # Each Gemini call is still capped by the rails' own CostBudget.
 MAX_CONTINUED_GATEWAY_REQUESTS = 1
+# Structured evidence markers for an execution that has no observation. The web console
+# reads these keys, not the reason prose, to tell the cases apart. Neither changes the
+# persisted outcome, which stays execution_failed.
+#
+# continuation_unknown: a gateway execution failed or timed out, so the request may have
+#   gone past the input rails and nothing recorded whether it did.
+# skipped_by_safety_bound: the scenario was deliberately not run because the bound above
+#   was already used up. It is not a harness failure.
+CONTINUATION_UNKNOWN = "continuation_unknown"
+SKIPPED_BY_SAFETY_BOUND = "skipped_by_safety_bound"
 _GATEWAY_STOP_REASON = (
     "Not run. An earlier gateway scenario in this run was not stopped by an input rail, "
     "so the request went on to the model path, where Gemini calls are possible. The run "
@@ -130,6 +140,7 @@ async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> bool:
         return obs.evidence.get("continued_past_input_rails") is True
     except Exception as exc:
         log.exception("red team execution %s of %s failed", execution_id, scenario.id)
+        may_have_continued = scenario.executor == "gateway_route"
         ms = int((time.monotonic() - started) * 1000)
         await asyncio.to_thread(
             store.finish_execution,
@@ -140,8 +151,9 @@ async def run_one(scenario: Scenario, deps: Deps, execution_id: str) -> bool:
             None,
             _failure_reason(exc),
             ms,
+            {CONTINUATION_UNKNOWN: True} if may_have_continued else None,
         )
-        return scenario.executor == "gateway_route"
+        return may_have_continued
 
 
 async def run_suite(
@@ -164,6 +176,7 @@ async def run_suite(
                         None,
                         _GATEWAY_STOP_REASON,
                         0,
+                        {SKIPPED_BY_SAFETY_BOUND: True},
                     )
                     continue
                 if await run_one(scenario, deps, execution_id):

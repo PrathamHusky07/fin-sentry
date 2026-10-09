@@ -288,6 +288,60 @@ async def test_a_gateway_execution_that_raised_counts_as_having_gone_past_the_in
     assert "Not run" in (executions[1].reason or "")
 
 
+async def test_a_failed_gateway_execution_records_that_continuation_is_unknown() -> None:
+    _, row = await _run_single("DI-001", RuntimeError("connection reset"))
+    assert row.outcome == "execution_failed"  # type: ignore[attr-defined]
+    assert row.evidence == {runner.CONTINUATION_UNKNOWN: True}  # type: ignore[attr-defined]
+    assert "continued_past_input_rails" not in row.evidence  # type: ignore[attr-defined]
+
+
+async def test_a_timed_out_gateway_execution_records_that_continuation_is_unknown() -> None:
+    async def hang(*_: object, **__: object) -> Observation:
+        await asyncio.sleep(30)
+        return _CAUGHT
+
+    s = scenario("DI-001")
+    _, ids = store.create_run(TEST_DATABASE_URL, [s], False)
+    with (
+        patch.object(runner, "_execute", hang),
+        patch.object(runner, "PER_EXECUTION_SECONDS", 0.05),
+    ):
+        await runner.run_one(s, make_deps(), ids[0])
+    row = store.get_execution(TEST_DATABASE_URL, ids[0])
+    assert row is not None and row.outcome == "execution_failed"
+    assert row.evidence == {runner.CONTINUATION_UNKNOWN: True}
+
+
+async def test_a_failed_non_gateway_execution_makes_no_claim_about_continuation() -> None:
+    _, row = await _run_single("OUT-001", RuntimeError("boom"))
+    assert row.outcome == "execution_failed" and row.evidence == {}  # type: ignore[attr-defined]
+
+
+async def test_a_completed_gateway_execution_keeps_its_observed_continuation() -> None:
+    _, row = await _run_single("DI-001", _PASSED_GATEWAY)
+    assert row.outcome == "missed"  # type: ignore[attr-defined]
+    assert row.evidence["continued_past_input_rails"] is True  # type: ignore[attr-defined]
+    assert runner.CONTINUATION_UNKNOWN not in row.evidence  # type: ignore[attr-defined]
+
+
+async def test_a_safety_bound_skip_is_marked_and_a_real_failure_is_not() -> None:
+    async def fake(s: object, deps: object, execution_id: str) -> Observation:
+        if getattr(s, "id") == "OUT-001":
+            raise RuntimeError("boom")
+        return _PASSED_GATEWAY
+
+    with patch.object(runner, "_execute", fake):
+        run_id = await runner.start_run(
+            RunRequest(scenario_ids=["DI-001", "HZ-001", "OUT-001"]), make_deps()
+        )
+        await _wait_for_run(run_id)
+    _, executions = _only_execution(run_id)
+    skipped, failed = executions[1], executions[2]
+    assert skipped.outcome == "execution_failed" and failed.outcome == "execution_failed"
+    assert skipped.evidence == {runner.SKIPPED_BY_SAFETY_BOUND: True}
+    assert failed.evidence == {}
+
+
 # --- one active run across processes ------------------------------------
 # These start two separate Python processes against the real test database. Each has its
 # own asyncio.Lock, so only the partial unique index from migration 006 can keep them
