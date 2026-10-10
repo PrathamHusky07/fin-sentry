@@ -1,5 +1,85 @@
 # Build Log
 
+## 2026-10-09 (late night): Day 11.1 Reliability Incident Investigator
+
+Model: Sonnet 5.5, no escalation. Gemini spend is about $0.33 of the $0.50 cap, all of it the investigator's own
+planner calls (details below). No frozen tool schema, guardrail rail or persisted value changed. No new or
+mutating MCP tool, no UI, no autonomous subagent, no separate LLM critic, no agent framework. The Day 11.0 commits
+were on `origin/main` at the start (`7107055` equals the remote head, checked with `git ls-remote`). Nothing was
+pushed this session. The approved `.gitignore` lines went in (`a5c09af`).
+
+### Phase 1: evidence-boundary fixes, each with a failing test first (`413d080`, `5973eda`)
+
+- `query_result` is no longer evidence. Support, contradiction, correlations, causal claims and evidence-against may
+  not cite it, and the scorer gives no support credit for it. 25 of the 30 new boundary tests failed before the fix.
+- A failed query on the four `fetch_all` tools. The published result schemas were not touched. The DAO gained an
+  additive `failed_query_count` that a later success cannot overwrite (`last_query_failed` can, and `get_failing_traces`
+  with `any` runs two queries). The adapter takes it as a `failure_probe`: a call during which it rose is
+  `unavailable`. That works only in a process that shares the DAO. Over the stdio server the count lives in another
+  process, so those tools' empty results are marked `empty_unverified` and the investigator never reads one as a clean
+  signal. Closing it fully over stdio needs the four tools to raise on a failed query, as `search_traces` does. That
+  changes a published tool's behavior, so it was not made and needs your call.
+- A controlled test shows how a defense behaves, not what caused an incident. `CausalClaim` has a `scope`.
+  A `production_incident` claim resting on a controlled test is invalid and earns no causal credit.
+- `admit_inference` and `record_hypothesis_round` now refuse after the wall clock, after a stop and after a critical
+  source is lost, like `admit_query`. `default_verification` returns an explicit `none_available` when every
+  candidate has run. A report must list every executed query once, every empty result once, and rank the ledger's
+  hypotheses with their own subsystems and evidence. Drift history without a latest reading is evidence. A failing
+  investigator keeps its spend (`InvestigationFailedError` carries the state), and a malformed result is a case
+  failure. The suite fingerprint now covers the scoring rules (`scoring_version`).
+- The judge-assisted Mode copy follows the execution outcome (`5973eda`, 3 rendering tests failed first).
+- Safety and diagnostic success are scored apart. A justified abstention on a diagnosable case is a safety pass and a
+  diagnostic incomplete. The misleading case states its own expected behavior from its records (eight agreeing
+  traces cite the tempting chunk, and the frontier judge's drift reading is below the entry threshold).
+
+### MCP client (`3bdd824`)
+
+The official SDK client over the real `python -m finsentry.mcp.server` stdio entry point. It lists the server's tools
+and refuses to connect unless they are exactly the nine, each marked read-only. A live run against the running stack
+reached all nine tools. The server hides why a tool failed (a `ValueError` and a dead backend both arrive as "Error
+executing tool"), so `tool_args.py` decides rejected from unavailable before the call, using the limits the tool
+modules export.
+
+### The loop (`7439f9b`, `13ae67d`, `47bf9e6`)
+
+Code opens from the trigger, runs only queries that separate hypotheses, evaluates nine closed signals against the
+results, challenges the leader and builds the report. A planner proposes hypotheses at most twice. Every tool and
+model call runs under `asyncio.wait_for` with the time left. The review found three ways a live model got a
+hypothesis reported without evidence of its own mechanism, and each is now a rule with a test: a rival cleared by
+an absent signal is not support, the trigger's own symptom is not support, and an absence prediction that fails
+weakens a rival and does not refute it.
+
+### Results (`8a27aad`, `docs/measurements/investigator/day11-1-live-runs.md`)
+
+| run | passed | safety | diagnostic pass / incomplete / fail | model calls |
+|---|---|---|---|---|
+| always-abstain stub | 3 of 9 | 9 of 9 | 0 / 6 / 0 | 0 |
+| planner double (no model) | 9 of 9 | 9 of 9 | 6 / 0 / 0 | 9 |
+| live Gemini, final run | 7 of 9 | 8 of 9 | 4 / 1 / 1 | 12 |
+
+The planner double tests the loop and says nothing about a model. The live runs are the only diagnostic evidence.
+Five full live runs gave 6 to 8 passes. The misleading case passed in all five, but the model never read an agreeing
+trace. It named the judge from the drift reading. The weak case is `retrieval-and-judge` (two independent causes):
+the final run described a chunk cause and tagged it `output_rails`, reported at medium confidence, score -0.6. The
+loop was changed five times after reading live failures on these nine cases, so the live score is optimistic. Replaying
+the recorded plans under the final loop costs nothing (`--replay`). It reproduced run 5 exactly before the last rule.
+
+### Gate
+
+`pytest 1220 passed` with `.venv/bin/python -m pytest -x -q` at `8a27aad` (baseline 1047, so 173 new). ruff and
+mypy clean on the changed files. `ruff format` would reformat `finsentry/risingwave/dao.py`, which already drifted at
+`7107055`, and it was left alone. Vitest 94 (88 before). tsc, eslint, prettier clean. Production build passed with the
+dev server stopped, restarted afterwards (200 on :3000). Only copy changed, so the full real-stack Playwright suite
+was not needed. The red-team spec ran (13 passed), including two real-stack specs, and one of them stored a new
+deterministic execution.
+
+### Day 11.2 handoff
+
+Next: durable investigation sessions, an incident API, and the Investigations page. Open decisions for you: whether
+the four RisingWave tools should raise on a failed query (see above), and a held-out set of new cases before any score
+is quoted. Deferred: a check that each supporting signal fits the hypothesis's subsystem label (the run 5 failure),
+the 10D flash comparison, and the resolution variant.
+
 ## 2026-10-09 (night): Day 11.0 foundation for the Reliability Incident Investigator
 
 Model: Sonnet 5.5, no escalation. Contracts, policy and harness are zero inference. The one paid step was
