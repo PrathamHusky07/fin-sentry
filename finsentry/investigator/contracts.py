@@ -76,6 +76,20 @@ TriggerKind = Literal[
     "single_trace",
 ]
 
+# What a prediction is about. Each signal has one deterministic evaluator (signals.py), so a
+# hypothesis is confirmed or contradicted by code reading the tool results, never by a model.
+Signal = Literal[
+    "judge_failures",
+    "judge_drift",
+    "chunk_contradicted",
+    "chunk_shared_by_failures",
+    "block_cluster",
+    "injection_surge",
+    "rail_regression",
+    "rail_working",
+    "error_cluster",
+]
+
 HypothesisStatus = Literal["open", "supported", "weakened", "refuted"]
 Confidence = Literal["low", "medium", "high"]
 StoppingReason = Literal[
@@ -153,10 +167,16 @@ class DataGap(_Frozen):
 
 
 class PredictedObservation(_Frozen):
-    """What would be seen, and from which tool, if the hypothesis were true."""
+    """What would be seen, and from which tool, if the hypothesis were true. When signal is
+    set, code can check it: expect says whether the hypothesis predicts the signal present
+    or absent, and subject narrows it (a chunk id, a rail). Without a signal the prediction
+    is prose only and is never counted as met or unmet."""
 
     tool: ToolName
     description: str = Field(min_length=1)
+    signal: Signal | None = None
+    expect: bool = True
+    subject: str | None = None
 
 
 class Hypothesis(_Mutable):
@@ -167,6 +187,9 @@ class Hypothesis(_Mutable):
     supporting: list[EvidenceRef] = Field(default_factory=list)
     contradicting: list[EvidenceRef] = Field(default_factory=list)
     status: HypothesisStatus = "open"
+    # The symptom this hypothesis explains. Hypotheses that share one are rivals, because one
+    # symptom has one cause. Hypotheses with different symptoms can all be true.
+    symptom: str = Field(default="incident", min_length=1)
 
     @model_validator(mode="after")
     def _status_matches_evidence(self) -> Hypothesis:
@@ -207,6 +230,8 @@ class ExecutedQuery(_Frozen):
     # An empty result from a tool whose failed query reads the same as no rows, on a transport
     # that cannot tell the two apart. It is not a clean "nothing happened".
     empty_unverified: bool = False
+    # The hypotheses this query was chosen to tell apart. Empty for the opening query.
+    separates: list[str] = Field(default_factory=list)
 
 
 class InvestigationState(_Mutable):

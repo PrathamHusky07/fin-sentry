@@ -29,6 +29,7 @@ from finsentry.investigator.contracts import (
     EvidenceRef,
     IncidentReport,
     InvestigationState,
+    ProposedVerification,
 )
 from finsentry.investigator.policy import canonical_args
 from finsentry.investigator.reports import unexecuted_candidates
@@ -66,8 +67,7 @@ def cited_refs(report: IncidentReport) -> list[EvidenceRef]:
     return refs
 
 
-def _verification_problems(report: IncidentReport, state: InvestigationState) -> list[str]:
-    v = report.proposed_verification
+def verification_problems(v: ProposedVerification, state: InvestigationState) -> list[str]:
     if v.kind == "none_available":
         left = unexecuted_candidates(state)
         if left:
@@ -221,7 +221,7 @@ def validate_report(report: IncidentReport, state: InvestigationState) -> Report
 
     problems += _execution_problems(report, state)
     problems += _causal_problems(report)
-    problems += _verification_problems(report, state)
+    problems += verification_problems(report.proposed_verification, state)
     return ReportValidation(valid=not problems, problems=tuple(problems))
 
 

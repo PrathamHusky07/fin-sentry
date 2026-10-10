@@ -105,7 +105,9 @@ def default_verification(state: InvestigationState) -> ProposedVerification:
 
 
 def abstention_report(
-    state: InvestigationState, verification: ProposedVerification | None = None
+    state: InvestigationState,
+    verification: ProposedVerification | None = None,
+    notes: list[str] | None = None,
 ) -> IncidentReport:
     if state.stopping_reason is None:
         raise ValueError("an abstention report needs a stopped investigation")
@@ -118,7 +120,7 @@ def abstention_report(
         empty_results=[q.query_id for q in queries if q.status == "empty"],
         tests_actually_run=[q.query_id for q in queries],
         proposed_verification=verification or default_verification(state),
-        limitations=[f"{g.source}: {g.detail}" for g in state.known_data_gaps],
+        limitations=[f"{g.source}: {g.detail}" for g in state.known_data_gaps] + (notes or []),
         stopping_reason=state.stopping_reason,
         abstention_statement=ABSTENTION_STATEMENT,
     )
