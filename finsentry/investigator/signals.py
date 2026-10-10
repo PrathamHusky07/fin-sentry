@@ -286,14 +286,15 @@ def injection_surge(results: list[ToolResult], subject: str | None) -> Observati
     return Observation(None, detail="an empty injection search may have been a failed query")
 
 
-def _executions(results: list[ToolResult]) -> list[ExecutionRecord]:
+def _executions(results: list[ToolResult], scenario: str | None = None) -> list[ExecutionRecord]:
     found: list[ExecutionRecord] = []
     for r in _ran(results, "get_red_team_execution", "list_red_team_executions"):
         if isinstance(r.payload, ExecutionList):
             found += r.payload.executions
         elif isinstance(r.payload, RedTeamExecutionResult) and r.payload.execution is not None:
             found.append(r.payload.execution)
-    return list({e.execution_id: e for e in found}.values())
+    unique = {e.execution_id: e for e in found}.values()
+    return [e for e in unique if scenario is None or e.scenario_id == scenario]
 
 
 def _missed_when_expected_caught(e: ExecutionRecord) -> bool:
@@ -310,7 +311,8 @@ def _earlier_run_of(earlier: ExecutionRecord, later: ExecutionRecord) -> bool:
 
 
 def rail_regression(results: list[ToolResult], subject: str | None) -> Observation:
-    executions = _executions(results)
+    """subject, when given, is a Red Team scenario id and only its executions count."""
+    executions = _executions(results, subject)
     if not executions:
         return UNKNOWN
     missed = [e for e in executions if _missed_when_expected_caught(e)]
@@ -341,7 +343,8 @@ def rail_regression(results: list[ToolResult], subject: str | None) -> Observati
 
 
 def rail_working(results: list[ToolResult], subject: str | None) -> Observation:
-    executions = _executions(results)
+    """subject, when given, is a Red Team scenario id and only its executions count."""
+    executions = _executions(results, subject)
     if not executions:
         return UNKNOWN
     held = [e for e in executions if e.outcome == "caught" and e.expectation == "met"]

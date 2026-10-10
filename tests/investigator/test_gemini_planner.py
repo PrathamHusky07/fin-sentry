@@ -72,4 +72,3 @@ async def test_a_planner_at_its_cost_cap_makes_no_further_call() -> None:
     with pytest.raises(PlanningError, match="cost cap"):
         await planner.plan("digest", round_no=2)
     assert len(client.calls) == 1
-

@@ -10,6 +10,7 @@ call once its running total reaches the cap, so a bad prompt loop cannot run up 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from typing import Any
@@ -24,6 +25,14 @@ log = logging.getLogger(__name__)
 
 DEFAULT_COST_CAP_USD = 0.25  # half of the session cap, so an estimate that is off still holds
 MAX_OUTPUT_TOKENS = 4096
+THINKING_BUDGET = 1024  # thinking tokens are billed as output, so they are bounded too
+
+
+def system_prompt() -> str:
+    """The instructions plus the plan schema. Vertex rejects this schema as a response_schema
+    (HTTP 400), so it is given in the prompt and the reply is validated here instead."""
+    schema = json.dumps(Plan.model_json_schema(), separators=(",", ":"))
+    return f"{SYSTEM_PROMPT}\nThe JSON must match this JSON schema exactly:\n{schema}\n"
 
 
 class GeminiPlanner:
@@ -67,11 +76,11 @@ class GeminiPlanner:
             model=self._model,
             contents=digest,
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
+                system_instruction=system_prompt(),
                 response_mime_type="application/json",
-                response_schema=Plan,
                 temperature=0.0,
                 max_output_tokens=MAX_OUTPUT_TOKENS,
+                thinking_config=types.ThinkingConfig(thinking_budget=THINKING_BUDGET),
             ),
         )
 
@@ -92,6 +101,9 @@ class GeminiPlanner:
         try:
             return Plan.model_validate_json(text)
         except ValidationError as exc:
+            first = exc.errors()[0]
+            where = ".".join(str(part) for part in first["loc"])
             raise PlanningError(
-                f"the plan did not match the schema: {exc.error_count()} errors"
+                f"the plan did not match the schema, {exc.error_count()} errors, first at "
+                f"{where}: {first['msg']}"
             ) from exc

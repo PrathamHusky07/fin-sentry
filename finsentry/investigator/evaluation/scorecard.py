@@ -1,0 +1,248 @@
+"""Run the investigator over the known-answer suite and write a scorecard.
+
+    python -m finsentry.investigator.evaluation.scorecard --label day11-1
+    python -m finsentry.investigator.evaluation.scorecard --label day11-1 --live
+
+Three runs are recorded, because they answer different questions. The always-abstain stub
+shows the suite discriminates. The planner double shows the loop's orchestration and contracts
+hold on every case. A live run with Gemini shows what a model plans, and is the only one that
+says anything about diagnostic quality. A live run needs --live and a configured model, caps
+its own spend, and labels every case with whether a model call was made.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import time
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from finsentry.investigator.adapter import ReadOnlyAdapter
+from finsentry.investigator.contracts import InvestigationResult, InvestigationState
+from finsentry.investigator.evaluation.cases import all_cases
+from finsentry.investigator.evaluation.planner_double import PlannerDouble
+from finsentry.investigator.evaluation.runner import SuiteResult, run_suite
+from finsentry.investigator.gemini_planner import GeminiPlanner
+from finsentry.investigator.loop import BoundedInvestigator, Clock, InvestigationFailedError
+from finsentry.investigator.planning import Plan, Planner
+from finsentry.investigator.stub import AlwaysAbstainInvestigator
+
+OUTPUT = Path(__file__).resolve().parents[3] / "docs/measurements/investigator"
+
+
+class PlannerLog:
+    """Wraps a planner and keeps every plan it returned and every error it raised, per case,
+    so a scorecard row can be traced to what the planner proposed."""
+
+    def __init__(self, inner: Planner) -> None:
+        self.inner = inner
+        self.name = inner.name
+        self.current = ""
+        self.entries: dict[str, list[dict[str, Any]]] = {}
+
+    @property
+    def cost_usd(self) -> float:
+        return self.inner.cost_usd
+
+    async def plan(self, digest: str, *, round_no: int) -> Plan:
+        log = self.entries.setdefault(self.current, [])
+        try:
+            plan = await self.inner.plan(digest, round_no=round_no)
+        except Exception as exc:
+            log.append({"round": round_no, "error": f"{type(exc).__name__}: {exc}"[:300]})
+            raise
+        log.append({"round": round_no, "plan": plan.model_dump(exclude_none=True)})
+        return plan
+
+
+class Recording:
+    """Wraps an investigator and keeps what each case returned, for the scorecard."""
+
+    def __init__(
+        self,
+        inner: BoundedInvestigator | AlwaysAbstainInvestigator,
+        planner: Planner | None,
+        log: PlannerLog | None = None,
+    ):
+        self.inner, self.planner, self.log = inner, planner, log
+        self.agent_version = inner.agent_version
+        self.results: dict[str, InvestigationResult] = {}
+        self.extra: dict[str, dict[str, Any]] = {}
+
+    async def investigate(
+        self, state: InvestigationState, tools: ReadOnlyAdapter, clock: Clock
+    ) -> InvestigationResult:
+        spent_before = self.planner.cost_usd if self.planner else 0.0
+        started = time.monotonic()
+        entry = self.extra.setdefault(state.incident_id, {})
+        if self.log:
+            self.log.current = state.incident_id
+        try:
+            result = await self.inner.investigate(state, tools, clock)
+        except InvestigationFailedError as exc:
+            entry["error"] = str(exc)
+            raise
+        finally:
+            entry["elapsed_s"] = round(time.monotonic() - started, 3)
+            entry["planner_cost_usd"] = round(
+                (self.planner.cost_usd if self.planner else 0.0) - spent_before, 6
+            )
+        self.results[state.incident_id] = result
+        return result
+
+
+def _case_row(score: Any, rec: Recording) -> dict[str, Any]:
+    key = f"inc-{score.case_id}"
+    result = rec.results.get(key)
+    row: dict[str, Any] = {
+        "case_id": score.case_id,
+        "expected": score.expected_outcome,
+        "outcome": score.actual_outcome,
+        "total": score.total,
+        "passed": score.passed,
+        "safety": score.safety_pass,
+        "diagnostic": score.diagnostic,
+        "flags": list(score.flags),
+        "tool_calls": score.tool_calls,
+        "inference_calls": score.inference_calls,
+        "model_called": score.inference_calls > 0,
+        **rec.extra.get(key, {}),
+    }
+    if rec.log:
+        row["planner_transcript"] = rec.log.entries.get(key, [])
+    if result is None:
+        return row
+    r = result.report
+    gaps = {f"{g.source}: {g.detail}" for g in result.state.known_data_gaps}
+    row.update(
+        stopping_reason=r.stopping_reason,
+        citations_valid=not score.validation_problems,
+        validation_problems=list(score.validation_problems),
+        ranked=[
+            {
+                "rank": h.rank,
+                "subsystem": h.subsystem,
+                "confidence": h.confidence,
+                "statement": h.statement,
+                "supporting": [f"{x.kind}:{x.record_id}" for x in h.supporting],
+                "contradicting": [f"{x.kind}:{x.record_id}" for x in h.contradicting],
+            }
+            for h in r.ranked_hypotheses
+        ],
+        counter_evidence=sorted(
+            {f"{x.kind}:{x.record_id}" for a in r.evidence_against for x in a.evidence}
+        ),
+        missing_evidence=r.missing_evidence,
+        run_notes=[n for n in r.limitations if n not in gaps],
+        verification=r.proposed_verification.model_dump(exclude_none=True),
+        queries=[
+            {
+                "id": q.query_id,
+                "tool": q.tool,
+                "args": q.args,
+                "status": q.status,
+                "separates": q.separates,
+            }
+            for q in result.state.executed_queries
+        ],
+    )
+    return row
+
+
+async def run(
+    label: str,
+    investigator: Any,
+    planner: Planner | None,
+    only: list[str] | None,
+    log: PlannerLog | None = None,
+) -> dict[str, Any]:
+    rec = Recording(investigator, planner, log)
+    cases = [c for c in all_cases() if not only or c.case_id in only]
+    suite: SuiteResult = await run_suite(rec, cases)
+    return {
+        "label": label,
+        "agent_version": suite.agent_version,
+        "planner": planner.name if planner else None,
+        "planner_cost_usd": round(planner.cost_usd, 6) if planner else 0.0,
+        "suite": {k: v for k, v in asdict(suite).items() if k != "cases"},
+        "cases": [_case_row(s, rec) for s in suite.cases],
+    }
+
+
+def to_markdown(runs: list[dict[str, Any]]) -> str:
+    out = ["# Investigator scorecard", ""]
+    for r in runs:
+        s = r["suite"]["summary"]
+        out += [
+            f"## {r['label']}",
+            "",
+            f"Agent `{r['agent_version']}`, scoring `{r['suite']['scoring_version']}`, "
+            f"suite `{r['suite']['suite_fingerprint']}`, planner cost ${r['planner_cost_usd']}.",
+            f"Passed {s['passed']} of {s['cases']}. Safety passed {s['safety_passed']}. "
+            f"Diagnostic: {s['diagnostic']}. Tool calls {s['tool_calls_total']}, "
+            f"model calls {s['inference_calls_total']}.",
+            "",
+            "| case | expected | outcome | stop | score | safety | diagnostic | tools | model "
+            "| top hypothesis |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for c in r["cases"]:
+            top = (c.get("ranked") or [{}])[0]
+            lead = f"{top.get('subsystem', '')} {top.get('confidence', '')}".strip()
+            out.append(
+                f"| {c['case_id']} | {c['expected']} | {c['outcome']} "
+                f"| {c.get('stopping_reason', '')} | {c['total']} | {c['safety']} "
+                f"| {c['diagnostic']} | {c['tool_calls']} | {c['inference_calls']} | {lead} |"
+            )
+        out.append("")
+    return "\n".join(out) + "\n"
+
+
+async def main_async(args: argparse.Namespace) -> None:
+    only = args.only or None
+    runs = [
+        await run(f"{args.label} always-abstain stub", AlwaysAbstainInvestigator(), None, only),
+    ]
+    double = PlannerDouble()
+    runs.append(
+        await run(
+            f"{args.label} planner double (no model)", BoundedInvestigator(double), double, only
+        )
+    )
+    if args.live:
+        live = GeminiPlanner.from_env(cost_cap_usd=args.cost_cap)
+        logged = PlannerLog(live)
+        runs.append(
+            await run(
+                f"{args.label} live {live.name}", BoundedInvestigator(logged), live, only, logged
+            )
+        )
+        runs[-1]["gemini"] = {
+            "calls": live.calls,
+            "tokens": live.tokens,
+            "cost_usd": round(live.cost_usd, 6),
+        }
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    names = ["stub-baseline", "planner-double", "live-gemini"]
+    for run_, name in zip(runs, names, strict=False):
+        (OUTPUT / f"{args.label}-{name}.json").write_text(
+            json.dumps(run_, indent=2, sort_keys=True) + "\n"
+        )
+    (OUTPUT / f"{args.label}-scorecard.md").write_text(to_markdown(runs))
+    print(to_markdown(runs))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--label", required=True)
+    parser.add_argument("--live", action="store_true")
+    parser.add_argument("--cost-cap", type=float, default=0.25)
+    parser.add_argument("--only", nargs="*")
+    asyncio.run(main_async(parser.parse_args()))
+
+
+if __name__ == "__main__":
+    main()

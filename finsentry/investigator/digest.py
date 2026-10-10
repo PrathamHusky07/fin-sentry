@@ -48,6 +48,13 @@ Return JSON for the schema you are given. Rules:
 - To read details of traces an earlier query listed, use get_trace_detail, leave
   app_trace_id out of args_json and set sample_from to that query id. The investigator picks
   traces spread across the list. Never invent a trace id or a chunk id.
+- A prediction can name a subject: a Red Team scenario id for rail_regression and
+  rail_working, a chunk id for chunk_contradicted. Set it whenever your statement is about
+  one scenario or one chunk, because without it the signal reads every retrieved record.
+- Your statement may say only what your predictions can check. Do not claim a wider failure
+  or a cause your predictions never test.
+- A query already listed in executed_queries has run. Naming it again in a prediction is
+  free, and the results already in hand are read for it.
 - Use only the tools and signals below. Arguments are JSON text, for example
   {"disagreement": true, "ticker": "AMZN"}.
 - Spend few queries. The run has a hard limit on tool calls and on model calls.

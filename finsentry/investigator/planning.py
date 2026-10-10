@@ -98,7 +98,9 @@ class Planner(Protocol):
     planner has spent so far, zero for one that calls no model."""
 
     name: str
-    cost_usd: float
+
+    @property
+    def cost_usd(self) -> float: ...
 
     async def plan(self, digest: str, *, round_no: int) -> Plan: ...
 
@@ -146,6 +148,12 @@ def _query_problem(spec: QuerySpec, state: InvestigationState) -> str | None:
     if args is None:
         return "arguments are not a JSON object"
     sampled = spec.sample_from is not None or spec.listing_tool is not None
+    key = canonical_args(args)
+    if not sampled and any(
+        q.tool == spec.tool and canonical_args(q.args) == key and q.status in ("ok", "empty")
+        for q in state.executed_queries
+    ):
+        return None  # already answered, so naming it again asks for nothing new
     if not sampled:
         problems = validate_tool_args(spec.tool, args)
         return "; ".join(problems) if problems else None

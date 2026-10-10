@@ -36,7 +36,7 @@ from finsentry.investigator.contracts import (
 )
 from finsentry.investigator.digest import build_digest
 from finsentry.investigator.finalize import build_diagnosis, choose_verification
-from finsentry.investigator.ledger import Assessment, Review, assess, review
+from finsentry.investigator.ledger import SYMPTOM_SIGNALS, Assessment, Review, assess, review
 from finsentry.investigator.planning import PlannedQuery, Planner, ValidatedPlan, validate_plan
 from finsentry.investigator.policy import (
     PolicyViolationError,
@@ -302,11 +302,12 @@ class _Run:
         return None
 
     async def _plan(self, round_no: int) -> ValidatedPlan | None:
+        rejection = ""
         for attempt in range(2 if round_no == 1 else 1):
             self._tick()
             if not admit_inference(self.state).allowed:
                 break
-            digest = build_digest(self.state, self.results, self.ledger or None)
+            digest = build_digest(self.state, self.results, self.ledger or None) + rejection
             self.state = record_inference(self.state)
             try:
                 plan = await asyncio.wait_for(
@@ -317,7 +318,9 @@ class _Run:
             except TimeoutError:
                 self.notes.append(f"planner call {attempt + 1} timed out")
             except Exception as exc:
-                self.notes.append(f"planner call {attempt + 1} failed: {type(exc).__name__}: {exc}")
+                detail = f"{type(exc).__name__}: {exc}"
+                self.notes.append(f"planner call {attempt + 1} failed: {detail}")
+                rejection = f"\n\nYour previous reply was rejected ({detail}). Reply again."
         self.cut_short = True
         return None
 
@@ -387,7 +390,9 @@ class _Run:
         return [{**q.args, "app_trace_id": i} for i in spread(ids, q.sample_size)]
 
     def _reassess(self, *, can_continue: bool) -> Review | InvestigationResult:
-        ledger, self.assessments = assess(self.proposed, self.results)
+        ledger, self.assessments = assess(
+            self.proposed, self.results, SYMPTOM_SIGNALS[self.state.trigger.kind]
+        )
         if not self._record(ledger):
             return self._abstain("no hypothesis round was available", forced=True)
         unverified = any(r.empty_unverified for r in self.results)

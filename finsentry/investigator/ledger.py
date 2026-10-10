@@ -24,10 +24,27 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from finsentry.investigator.adapter import ToolResult
-from finsentry.investigator.contracts import Confidence, EvidenceRef, Hypothesis
+from finsentry.investigator.contracts import (
+    Confidence,
+    EvidenceRef,
+    Hypothesis,
+    Signal,
+    TriggerKind,
+)
 from finsentry.investigator.signals import evaluate
 
 MAX_DETAILS = 2
+
+# The signals a trigger already states. A block cluster was reported because requests were
+# blocked, so seeing blocks again shows the incident exists and says nothing about why.
+SYMPTOM_SIGNALS: dict[TriggerKind, frozenset[Signal]] = {
+    "faithfulness_block_cluster": frozenset({"block_cluster"}),
+    "error_kind_surge": frozenset({"error_cluster"}),
+    "drift_degradation": frozenset({"judge_drift"}),
+    "judge_disagreement_cluster": frozenset(),
+    "red_team_miss": frozenset(),
+    "single_trace": frozenset(),
+}
 
 
 def clean(text: str) -> str:
@@ -41,6 +58,7 @@ class PredictionOutcome:
     expect: bool
     observed: bool | None
     detail: str
+    restates_trigger: bool = False
 
     @property
     def state(self) -> Literal["met", "unmet", "unknown"]:
@@ -57,16 +75,25 @@ class Assessment:
     def count(self, state: str) -> int:
         return sum(1 for o in self.outcomes if o.state == state)
 
+    @property
+    def shows_own_mechanism(self) -> bool:
+        """A prediction that a signal is present was met, and the signal is not the symptom
+        the trigger already stated."""
+        return any(o.state == "met" and o.expect and not o.restates_trigger for o in self.outcomes)
+
 
 def _dedupe(refs: list[EvidenceRef]) -> list[EvidenceRef]:
     return list(dict.fromkeys(refs))
 
 
 def assess(
-    plan: list[Hypothesis], results: list[ToolResult]
+    plan: list[Hypothesis],
+    results: list[ToolResult],
+    symptom_signals: frozenset[Signal] = frozenset(),
 ) -> tuple[list[Hypothesis], dict[str, Assessment]]:
     """The ledger as the results leave it, and each hypothesis's per-prediction outcomes.
-    plan holds the hypotheses as proposed, so a statement is never extended twice."""
+    plan holds the hypotheses as proposed, so a statement is never extended twice.
+    symptom_signals are the signals the trigger already stated."""
     updated: list[Hypothesis] = []
     assessments: dict[str, Assessment] = {}
     for h in plan:
@@ -79,7 +106,9 @@ def assess(
             if p.signal is None:
                 continue
             obs = evaluate(p.signal, p.subject, results)
-            outcome = PredictionOutcome(p.signal, p.expect, obs.observed, obs.detail)
+            outcome = PredictionOutcome(
+                p.signal, p.expect, obs.observed, obs.detail, p.signal in symptom_signals
+            )
             outcomes.append(outcome)
             if outcome.state == "met":
                 supporting += list(obs.support if p.expect else obs.against)
@@ -90,7 +119,12 @@ def assess(
         supporting, contradicting = _dedupe(supporting), _dedupe(contradicting)
         a = Assessment(h.hypothesis_id, tuple(outcomes))
         assessments[h.hypothesis_id] = a
-        if a.count("met") and not a.count("unmet") and supporting:
+        # A hypothesis is supported only when it predicted a signal to be present, the signal
+        # was seen, and the signal is not just the incident's own symptom. Predictions of
+        # absence that held (a rival's signal was missing) clear it of one objection, and the
+        # trigger's symptom shows the incident exists. Neither shows a mechanism, so both
+        # leave the hypothesis open.
+        if a.shows_own_mechanism and not a.count("unmet") and supporting:
             status = "supported"
         elif a.count("unmet") and contradicting:
             status = "weakened" if a.count("met") else "refuted"
@@ -125,11 +159,17 @@ class Review:
 
 
 def _unknowns(h: Hypothesis, a: Assessment) -> list[str]:
-    return [
+    lines = [
         f"{h.hypothesis_id} ({h.subsystem}): {o.signal} could not be told, {o.detail}"
         for o in a.outcomes
         if o.state == "unknown"
     ]
+    if h.status == "open" and a.count("met") and not a.shows_own_mechanism:
+        lines.append(
+            f"{h.hypothesis_id} ({h.subsystem}) is only not contradicted or restates the "
+            "incident's own symptom: no record shows its own mechanism"
+        )
+    return lines
 
 
 def review(

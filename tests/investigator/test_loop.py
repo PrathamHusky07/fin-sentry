@@ -469,3 +469,108 @@ async def test_without_the_agreeing_trace_test_the_misleading_case_ends_in_abste
     assert any("each supported for the same symptom" in m for m in result.report.missing_evidence)
     score = await run_case(BoundedInvestigator(Scripted(plan)), case, lambda: 0.0)
     assert score.safety_pass and score.diagnostic == "incomplete"
+
+
+async def test_a_hypothesis_is_not_supported_just_because_its_rival_was_cleared() -> None:
+    """The first live run crowned a rail hypothesis with high confidence because a healthy
+    drift reading refuted its rival. That clears one objection and shows nothing about the
+    rail, so the hypothesis stays open and the run abstains."""
+    case = CASES["sparse-signal"]
+    plan = Plan(
+        hypotheses=[
+            hypothesis(
+                "h1",
+                "blocks",
+                "output_rails",
+                "The faithfulness rail is too strict.",
+                prediction("get_drift_report", "judge_drift", "the judge is healthy", expect=False),
+            ),
+            hypothesis(
+                "h2",
+                "blocks",
+                "judges",
+                "The frontier judge has drifted.",
+                prediction("get_drift_report", "judge_drift", "the judge has drifted"),
+            ),
+        ]
+    )
+    result = await investigate(case, Scripted(plan))
+    by_id = {h.hypothesis_id: h for h in result.state.hypotheses}
+    assert by_id["h1"].status == "open" and by_id["h2"].status == "refuted"
+    assert by_id["h1"].supporting, "the healthy reading is still recorded against the rival"
+    assert result.report.outcome == "abstention"
+    assert any("only not contradicted or restates" in m for m in result.report.missing_evidence)
+
+
+async def test_naming_an_executed_query_again_in_a_prediction_is_free_even_with_a_fixture_id() -> (
+    None
+):
+    """The opening query used an execution id that is not a UUID, which a fresh call would be
+    rejected for. A prediction that repeats it asks for nothing new and is kept."""
+    case = CASES["schema-rail-regression"]
+    repeat = prediction(
+        "get_red_team_execution", "rail_regression", "the miss", args={"execution_id": "rt-out-001"}
+    )
+    listing = prediction(
+        "list_red_team_executions",
+        "rail_working",
+        "the scenario is caught as expected",
+        args={"scenario_id": "OUT-001", "limit": 10},
+    )
+    plan = Plan(
+        hypotheses=[
+            hypothesis("h1", "miss", "output_rails", "The rail regressed.", repeat),
+            hypothesis("h2", "miss", "output_rails", "The miss is isolated.", listing),
+        ]
+    )
+    result = await investigate(case, Scripted(plan))
+    h1 = next(h for h in result.state.hypotheses if h.hypothesis_id == "h1")
+    assert h1.predicted_observations and h1.status == "supported"
+
+
+async def test_the_second_planner_call_is_told_why_the_first_reply_was_rejected() -> None:
+    good = await PlannerDouble().plan(await _first_digest(CASES["stale-chunk"]), round_no=1)
+    planner = Scripted(PlanningError("the plan did not match the schema at hypotheses.0"), good)
+    result = await investigate(CASES["stale-chunk"], planner)
+    assert result.report.outcome == "diagnosis" and result.state.usage.inference_calls == 2
+    assert "rejected" not in planner.digests[0]
+    assert "previous reply was rejected" in planner.digests[1]
+    assert "hypotheses.0" in planner.digests[1]
+
+
+async def test_a_hypothesis_that_only_restates_the_trigger_symptom_is_not_a_diagnosis() -> None:
+    """The fourth live run named the output rail as the cause of a faithfulness block cluster
+    with high confidence. Its only positive evidence was that the blocks exist, which is what
+    the trigger already said."""
+    case = CASES["retrieval-and-judge"]
+    anyf = {"time_window_minutes": 60, "failure_type": "any", "limit": 50}
+    plan = Plan(
+        hypotheses=[
+            hypothesis(
+                "h1",
+                "blocks",
+                "output_rails",
+                "Faithfulness guardrails are blocking META outputs.",
+                prediction("get_failing_traces", "block_cluster", "blocks cluster", args=anyf),
+            ),
+            hypothesis(
+                "h2",
+                "blocks",
+                "input_rails",
+                "Injection attacks are triggering the blocks.",
+                prediction(
+                    "search_prompt_injections",
+                    "injection_surge",
+                    "injections",
+                    args={"time_window_minutes": 60, "limit": 50},
+                ),
+            ),
+        ]
+    )
+    result = await investigate(case, Scripted(plan))
+    by_id = {h.hypothesis_id: h for h in result.state.hypotheses}
+    assert by_id["h1"].status == "open", "the cluster is the incident, not a cause of it"
+    assert result.report.outcome == "abstention"
+    assert any("restates the incident" in m for m in result.report.missing_evidence)
+    score = await run_case(BoundedInvestigator(Scripted(plan)), case, lambda: 0.0)
+    assert score.safety_pass
