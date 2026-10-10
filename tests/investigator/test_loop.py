@@ -574,3 +574,40 @@ async def test_a_hypothesis_that_only_restates_the_trigger_symptom_is_not_a_diag
     assert any("restates the incident" in m for m in result.report.missing_evidence)
     score = await run_case(BoundedInvestigator(Scripted(plan)), case, lambda: 0.0)
     assert score.safety_pass
+
+
+async def test_a_rival_that_only_failed_a_prediction_of_absence_is_weakened_not_refuted() -> None:
+    """The live misleading-case passes refuted the retrieval hypothesis by writing it as 'the
+    judge has not drifted'. That is the model's claim, so it weakens a rival and the leader's
+    confidence stays below high."""
+    case = CASES["judge-outage"]
+    anyf = {"time_window_minutes": 60, "failure_type": "any", "limit": 50}
+    plan = Plan(
+        hypotheses=[
+            hypothesis(
+                "h1",
+                "failure",
+                "judges",
+                "judges fail",
+                prediction("get_failing_traces", "judge_failures", "failures cluster", args=anyf),
+            ),
+            hypothesis(
+                "h2",
+                "failure",
+                "retrieval",
+                "a chunk is faulty",
+                prediction(
+                    "get_failing_traces",
+                    "judge_failures",
+                    "no judge failures",
+                    expect=False,
+                    args=anyf,
+                ),
+            ),
+        ]
+    )
+    result = await investigate(case, Scripted(plan))
+    by_id = {h.hypothesis_id: h for h in result.state.hypotheses}
+    assert by_id["h2"].status == "weakened"
+    top = min(result.report.ranked_hypotheses, key=lambda h: h.rank)
+    assert top.hypothesis_id == "h1" and top.confidence == "medium"

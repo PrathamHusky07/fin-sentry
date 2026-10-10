@@ -127,7 +127,11 @@ def assess(
         if a.shows_own_mechanism and not a.count("unmet") and supporting:
             status = "supported"
         elif a.count("unmet") and contradicting:
-            status = "weakened" if a.count("met") else "refuted"
+            # Only a failed prediction of presence refutes: the hypothesis's own mechanism was
+            # looked for and is missing. A failed prediction of absence rests on the model's
+            # claim that the hypothesis rules a signal out, which weakens it and no more.
+            direct = any(o.state == "unmet" and o.expect for o in outcomes)
+            status = "refuted" if direct and not a.count("met") else "weakened"
         else:
             status = "open"
         statement = clean(h.statement)
@@ -225,7 +229,7 @@ def review(
                 else ""
             )
         )
-        high = bool(refuted) and not unverified_empties
+        high = any(h.status == "refuted" for h in refuted) and not unverified_empties
         confidence[lead.hypothesis_id] = (
             "high" if high else "medium" if (refuted or len(lead.supporting) > 1) else "low"
         )
