@@ -24,6 +24,7 @@ from finsentry.investigator.adapter import ReadOnlyAdapter
 from finsentry.investigator.contracts import InvestigationResult, InvestigationState
 from finsentry.investigator.evaluation.cases import all_cases
 from finsentry.investigator.evaluation.planner_double import PlannerDouble
+from finsentry.investigator.evaluation.replay import ReplayPlanner
 from finsentry.investigator.evaluation.runner import SuiteResult, run_suite
 from finsentry.investigator.gemini_planner import GeminiPlanner
 from finsentry.investigator.loop import BoundedInvestigator, Clock, InvestigationFailedError
@@ -40,15 +41,25 @@ class PlannerLog:
     def __init__(self, inner: Planner) -> None:
         self.inner = inner
         self.name = inner.name
-        self.current = ""
         self.entries: dict[str, list[dict[str, Any]]] = {}
+        self._current = ""
+
+    @property
+    def current(self) -> str:
+        return self._current
+
+    @current.setter
+    def current(self, incident_id: str) -> None:
+        self._current = incident_id
+        if hasattr(self.inner, "current"):
+            self.inner.current = incident_id  # a replay planner serves the plans of this case
 
     @property
     def cost_usd(self) -> float:
         return self.inner.cost_usd
 
     async def plan(self, digest: str, *, round_no: int) -> Plan:
-        log = self.entries.setdefault(self.current, [])
+        log = self.entries.setdefault(self._current, [])
         try:
             plan = await self.inner.plan(digest, round_no=round_no)
         except Exception as exc:
@@ -201,7 +212,27 @@ def to_markdown(runs: list[dict[str, Any]]) -> str:
     return "\n".join(out) + "\n"
 
 
+async def replay_async(args: argparse.Namespace) -> None:
+    planner = ReplayPlanner(Path(args.replay))
+    logged = PlannerLog(planner)
+    result = await run(
+        f"{args.label} {planner.name}",
+        BoundedInvestigator(logged),
+        planner,
+        args.only or None,
+        logged,
+    )
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    (OUTPUT / f"{args.label}-replay.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n"
+    )
+    print(to_markdown([result]))
+
+
 async def main_async(args: argparse.Namespace) -> None:
+    if args.replay:
+        await replay_async(args)
+        return
     only = args.only or None
     runs = [
         await run(f"{args.label} always-abstain stub", AlwaysAbstainInvestigator(), None, only),
@@ -231,8 +262,9 @@ async def main_async(args: argparse.Namespace) -> None:
         (OUTPUT / f"{args.label}-{name}.json").write_text(
             json.dumps(run_, indent=2, sort_keys=True) + "\n"
         )
-    (OUTPUT / f"{args.label}-scorecard.md").write_text(to_markdown(runs))
-    print(to_markdown(runs))
+    shown = [*runs, *(json.loads(Path(p).read_text()) for p in args.include)]
+    (OUTPUT / f"{args.label}-scorecard.md").write_text(to_markdown(shown))
+    print(to_markdown(shown))
 
 
 def main() -> None:
@@ -241,6 +273,10 @@ def main() -> None:
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--cost-cap", type=float, default=0.25)
     parser.add_argument("--only", nargs="*")
+    parser.add_argument("--replay", help="a recorded live scorecard JSON whose plans to replay")
+    parser.add_argument(
+        "--include", nargs="*", default=[], help="recorded run JSON to append to the markdown"
+    )
     asyncio.run(main_async(parser.parse_args()))
 
 

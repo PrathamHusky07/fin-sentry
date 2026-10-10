@@ -1,0 +1,1613 @@
+{
+  "agent_version": "bounded-investigator-1+gemini-planner:gemini-3.6-flash",
+  "cases": [
+    {
+      "case_id": "judge-outage",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 3.755,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.003629,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "System-wide judge pipeline failures across multiple traces.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"failure_type\":\"judge_failed\",\"time_window_minutes\":60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  }
+                ],
+                "statement": "An isolated or systemic failure in the evaluation pipeline caused judge execution errors.",
+                "subsystem": "judges",
+                "symptom": "judge execution failure"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Frontier judge has persisted model drift.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "Model drift in the evaluation judge degraded reliability.",
+                "subsystem": "judges",
+                "symptom": "judge execution failure"
+              }
+            ],
+            "verification": {
+              "args_json": "{\"failure_type\":\"judge_failed\",\"time_window_minutes\":60}",
+              "kind": "read_only_query",
+              "rationale": "Verify if judge failures are widespread across traces in the window.",
+              "tool": "get_failing_traces"
+            }
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "jf-01"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "failure_type": "judge_failed",
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {},
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "An isolated or systemic failure in the evaluation pipeline caused judge execution errors. Observed: 14 traces in the window had a judge pipeline failure.",
+          "subsystem": "judges",
+          "supporting": [
+            "trace:jf-01",
+            "trace:jf-02",
+            "trace:jf-03",
+            "trace:jf-04",
+            "trace:jf-05"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "drift_report:gemini-rubric"
+          ],
+          "rank": 2,
+          "statement": "Model drift in the evaluation judge degraded reliability. Contradicted: judge gemini-rubric drift state healthy, kappa 0.6.",
+          "subsystem": "judges",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for judge execution failure: met 1 of 1 predictions with none unmet. Rivals: h2 refuted by 1 record. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 3,
+      "total": 0.85,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "stale-chunk",
+      "citations_valid": true,
+      "counter_evidence": [
+        "trace:ad-01",
+        "trace:ad-10"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 10.428,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.012656,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Drift report indicates the frontier judge has drifted.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "Frontier judge drift is causing disagreement with the lower tier judge on AMZN queries.",
+                "subsystem": "judges",
+                "symptom": "AMZN judge disagreement"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Drift report shows the frontier judge is healthy.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "Judge failures are detected in the failing traces log.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"failure_type\":\"judge_failed\",\"time_window_minutes\":60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  }
+                ],
+                "statement": "Judge pipeline execution failures are causing evaluation discrepancies rather than model drift.",
+                "subsystem": "judges",
+                "symptom": "AMZN judge disagreement"
+              }
+            ]
+          },
+          "round": 1
+        },
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Sampled disagreeing AMZN traces share a contradicted chunk cited in judge reasoning.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_from": "q1",
+                      "sample_size": 2,
+                      "tool": "get_trace_detail"
+                    },
+                    "signal": "chunk_contradicted"
+                  }
+                ],
+                "statement": "A retrieved context chunk contains contradictory information about AMZN causing score divergence between judge tiers.",
+                "subsystem": "retrieval",
+                "symptom": "AMZN judge disagreement"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "An influx of direct prompt injection attacks is detected in the input rails.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"time_window_minutes\": 60, \"limit\": 10}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  },
+                  {
+                    "description": "Disagreeing traces are not caused by a specific contradicted retrieved chunk.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_from": "q1",
+                      "sample_size": 2,
+                      "tool": "get_trace_detail"
+                    },
+                    "signal": "chunk_contradicted"
+                  }
+                ],
+                "statement": "Direct prompt injection attempts in AMZN queries are driving the score divergence between judge tiers.",
+                "subsystem": "input_rails",
+                "symptom": "AMZN judge disagreement"
+              }
+            ]
+          },
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "AMZN"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "failure_type": "judge_failed",
+            "time_window_minutes": 60
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "ad-01"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "ad-10"
+          },
+          "id": "q5",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "limit": 10,
+            "time_window_minutes": 60
+          },
+          "id": "q6",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "search_prompt_injections"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "A retrieved context chunk contains contradictory information about AMZN causing score divergence between judge tiers. Observed: chunk AMZN-10K-0412 is cited as contradicting in 2 of 2 sampled disagreeing traces, and no sampled agreeing trace retrieved it.",
+          "subsystem": "retrieval",
+          "supporting": [
+            "trace:ad-01",
+            "trace:ad-10"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:ad-01",
+            "trace:ad-10"
+          ],
+          "rank": 2,
+          "statement": "Direct prompt injection attempts in AMZN queries are driving the score divergence between judge tiers. Contradicted: no direct injection attempts were blocked in the window; chunk AMZN-10K-0412 is cited as contradicting in 2 of 2 sampled disagreeing traces, and no sampled agreeing trace retrieved it.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for AMZN judge disagreement: met 1 of 1 predictions with none unmet. Rivals: h2 refuted by 2 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 6,
+      "total": 0.85,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the retrieval defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "IND-001"
+      }
+    },
+    {
+      "case_id": "injection-surge",
+      "citations_valid": true,
+      "counter_evidence": [
+        "injection_event:inj-01",
+        "injection_event:inj-02",
+        "injection_event:inj-03",
+        "injection_event:inj-04",
+        "injection_event:inj-05"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 5.178,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.005749,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "An injection surge signal is present due to multiple direct prompt injection blocks in the time window.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"limit\": 10, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "An active prompt injection surge is causing widespread blocks on the input guardrail.",
+                "subsystem": "input_rails",
+                "symptom": "Blocked request inj-01"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "No injection surge signal is present as trace inj-01 was an isolated incident.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"limit\": 10, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "Trace inj-01 is an isolated prompt injection attempt without a broader surge across the system.",
+                "subsystem": "input_rails",
+                "symptom": "Blocked request inj-01"
+              }
+            ],
+            "verification": {
+              "args_json": "{\"failure_type\": \"blocked\", \"limit\": 10, \"time_window_minutes\": 60}",
+              "kind": "read_only_query",
+              "rationale": "Check overall blocked trace patterns in the same timeframe to verify if other rails triggered.",
+              "tool": "get_failing_traces"
+            }
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "inj-01"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "limit": 10,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "search_prompt_injections"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "An active prompt injection surge is causing widespread blocks on the input guardrail. Observed: 10 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": [
+            "injection_event:inj-01",
+            "injection_event:inj-02",
+            "injection_event:inj-03",
+            "injection_event:inj-04",
+            "injection_event:inj-05"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "injection_event:inj-01",
+            "injection_event:inj-02",
+            "injection_event:inj-03",
+            "injection_event:inj-04",
+            "injection_event:inj-05"
+          ],
+          "rank": 2,
+          "statement": "Trace inj-01 is an isolated prompt injection attempt without a broader surge across the system. Contradicted: 10 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for Blocked request inj-01: met 1 of 1 predictions with none unmet. Rivals: h2 refuted by 5 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 2,
+      "total": 0.85,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 10,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check overall blocked trace patterns in the same timeframe to verify if other rails triggered.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "schema-rail-regression",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 16.561,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h2 (judges): rail_regression could not be told, no retrieved result bears on this signal",
+        "no hypothesis for Judge pipeline degradation is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.01494,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report is expected to be false if the failure is isolated to output rails.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "Red team scenario OUT-002 is expected to pass if the regression is specific to unretrieved citation detection.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"scenario_id\": \"OUT-002\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "OUT-002"
+                  }
+                ],
+                "statement": "An isolated output guardrail regression caused OUT-001 to be missed while other output rail checks remain working and judges remain healthy.",
+                "subsystem": "output_rails",
+                "symptom": "Output rail failure on OUT-001"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report is expected to show drift explaining systemic judge evaluation misses.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "Other output red team scenarios like OUT-002 are expected to be missed if judge drift is widespread.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"scenario_id\": \"OUT-002\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_regression",
+                    "subject": "OUT-002"
+                  }
+                ],
+                "statement": "Frontier judge drift caused output guardrail evaluations to fail across multiple output scenarios.",
+                "subsystem": "judges",
+                "symptom": "Judge pipeline degradation"
+              }
+            ],
+            "verification": {
+              "args_json": "{\"failure_type\": \"judge_failed\", \"time_window_minutes\": 60}",
+              "kind": "read_only_query",
+              "rationale": "Checks whether judge pipeline failures were recorded during the incident window.",
+              "tool": "get_failing_traces"
+            }
+          },
+          "round": 1
+        },
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Output rail failure is isolated, so judge failure count in traces remains low.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"judge_failed\", \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  },
+                  {
+                    "description": "Scenario OUT-001 execution result remains recorded as missed.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"execution_id\": \"rt-out-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_red_team_execution"
+                    },
+                    "signal": "rail_regression",
+                    "subject": "OUT-001"
+                  }
+                ],
+                "statement": "An isolated output guardrail regression caused scenario OUT-001 to be missed while judge pipeline evaluations operate without errors.",
+                "subsystem": "output_rails",
+                "symptom": "Output rail miss on OUT-001"
+              },
+              {
+                "hypothesis_id": "h3",
+                "predictions": [
+                  {
+                    "description": "Judge pipeline failures are present in failing traces within the window.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"judge_failed\", \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  },
+                  {
+                    "description": "Scenario OUT-001 execution result remains recorded as missed.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"execution_id\": \"rt-out-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_red_team_execution"
+                    },
+                    "signal": "rail_regression",
+                    "subject": "OUT-001"
+                  }
+                ],
+                "statement": "Systemic judge pipeline failures prevented output evaluation from completing for OUT-001.",
+                "subsystem": "judges",
+                "symptom": "Output rail miss on OUT-001"
+              }
+            ],
+            "verification": {
+              "args_json": "{\"failure_type\": \"judge_failed\", \"time_window_minutes\": 60}",
+              "kind": "read_only_query",
+              "rationale": "Checking failing trace counts for judge failures separates isolated output rail regression from judge pipeline failures.",
+              "tool": "get_failing_traces"
+            }
+          },
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "execution_id": "rt-out-001"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_red_team_execution"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "scenario_id": "OUT-002"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "list_red_team_executions"
+        },
+        {
+          "args": {
+            "failure_type": "judge_failed",
+            "time_window_minutes": 60
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h3"
+          ],
+          "status": "empty",
+          "tool": "get_failing_traces"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "low",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "An isolated output guardrail regression caused scenario OUT-001 to be missed while judge pipeline evaluations operate without errors. Observed: 0 judge pipeline failures, below 3; Red Team scenario OUT-001 (schema-enforcement) was missed though its expectation is caught.",
+          "subsystem": "output_rails",
+          "supporting": [
+            "red_team_execution:rt-out-001"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [],
+          "rank": 2,
+          "statement": "Systemic judge pipeline failures prevented output evaluation from completing for OUT-001.",
+          "subsystem": "judges",
+          "supporting": [
+            "red_team_execution:rt-out-001"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "drift_report:gemini-rubric"
+          ],
+          "rank": 3,
+          "statement": "Frontier judge drift caused output guardrail evaluations to fail across multiple output scenarios. Contradicted: judge gemini-rubric drift state healthy, kappa 0.6.",
+          "subsystem": "judges",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for Output rail miss on OUT-001: met 2 of 2 predictions with none unmet. No rival was refuted by a record. Rivals h3 stayed open. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause.",
+        "dropped get_red_team_execution, every hypothesis predicts the same from it"
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 4,
+      "total": 0.91,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the output_rails defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "OUT-001"
+      }
+    },
+    {
+      "case_id": "retrieval-and-judge",
+      "citations_valid": true,
+      "counter_evidence": [
+        "trace:bl-01",
+        "trace:bl-02",
+        "trace:bl-03",
+        "trace:bl-04",
+        "trace:bl-05"
+      ],
+      "diagnostic": "fail",
+      "elapsed_s": 9.257,
+      "expected": "diagnosis",
+      "flags": [
+        "wrong_subsystem"
+      ],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": false,
+      "planner_cost_usd": 0.009076,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Direct prompt injections are not causing the blocks.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"limit\": 50, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  },
+                  {
+                    "description": "Block cluster is confirmed in failing traces.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"any\", \"limit\": 50, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "block_cluster"
+                  }
+                ],
+                "statement": "Faithfulness guardrails are blocking META ticker outputs.",
+                "subsystem": "output_rails",
+                "symptom": "blocks on META queries"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Direct prompt injections account for the surge in blocks.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"limit\": 50, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  },
+                  {
+                    "description": "Output faithfulness rail is not the primary block source.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"any\", \"limit\": 50, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "block_cluster"
+                  }
+                ],
+                "statement": "Direct prompt injection attacks are triggering guardrail blocks on META queries.",
+                "subsystem": "input_rails",
+                "symptom": "blocks on META queries"
+              }
+            ],
+            "verification": {
+              "args_json": "{\"limit\": 50, \"time_window_minutes\": 60}",
+              "kind": "read_only_query",
+              "rationale": "Check whether direct prompt injection attempts account for the blocked requests on META.",
+              "tool": "search_prompt_injections"
+            }
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "search_prompt_injections"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "Faithfulness guardrails are blocking META ticker outputs. Observed: no direct injection attempts were blocked in the window; 8 of 8 blocked requests were blocked by the faithfulness rail.",
+          "subsystem": "output_rails",
+          "supporting": [
+            "trace:bl-01",
+            "trace:bl-02",
+            "trace:bl-03",
+            "trace:bl-04",
+            "trace:bl-05"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:bl-01",
+            "trace:bl-02",
+            "trace:bl-03",
+            "trace:bl-04",
+            "trace:bl-05"
+          ],
+          "rank": 2,
+          "statement": "Direct prompt injection attacks are triggering guardrail blocks on META queries. Contradicted: no direct injection attempts were blocked in the window; 8 of 8 blocked requests were blocked by the faithfulness rail.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for blocks on META queries: met 2 of 2 predictions with none unmet. Rivals: h2 refuted by 5 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": false,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 2,
+      "total": -0.9,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the output_rails defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "OUT-001"
+      }
+    },
+    {
+      "case_id": "drifted-judge-misleading",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 2.123,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.003527,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report indicates drifted status.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "The frontier judge model has drifted from standard calibration.",
+                "subsystem": "judges",
+                "symptom": "judge_disagreement_cluster"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report indicates healthy status.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "Retrieved chunks contain contradictory information causing judge score variance.",
+                "subsystem": "retrieval",
+                "symptom": "judge_disagreement_cluster"
+              }
+            ],
+            "verification": {
+              "args_json": "{}",
+              "kind": "read_only_query",
+              "rationale": "Checking the drift report determines whether judge scoring disagreement is caused by frontier model drift.",
+              "tool": "get_drift_report"
+            }
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "MSFT"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "The frontier judge model has drifted from standard calibration. Observed: judge gemini-rubric drift state drifted, kappa 0.31.",
+          "subsystem": "judges",
+          "supporting": [
+            "drift_report:gemini-rubric"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "drift_report:gemini-rubric"
+          ],
+          "rank": 2,
+          "statement": "Retrieved chunks contain contradictory information causing judge score variance. Contradicted: judge gemini-rubric drift state drifted, kappa 0.31.",
+          "subsystem": "retrieval",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for judge_disagreement_cluster: met 1 of 1 predictions with none unmet. Rivals: h2 refuted by 1 record. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 2,
+      "total": 0.875,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "unavailable-source",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.001,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [
+        "get_failing_traces could not be read, so the incident cannot be examined"
+      ],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "planner_transcript": [],
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "critical_evidence_unavailable",
+      "tool_calls": 2,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "sparse-signal",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 8.103,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h1 (output_rails): rail_regression could not be told, no retrieved result bears on this signal",
+        "h2 (output_rails): rail_working could not be told, no retrieved result bears on this signal",
+        "no hypothesis for faithfulness blocks is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.009809,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report indicates drift in the output evaluations.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "An output rail is misclassifying outputs leading to faithful responses being blocked.",
+                "subsystem": "output_rails",
+                "symptom": "faithfulness blocks"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report shows healthy metrics with no judge drift.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "The frontier judge model remains healthy and output evaluation parameters are within limits.",
+                "subsystem": "judges",
+                "symptom": "faithfulness blocks"
+              }
+            ],
+            "verification": {
+              "args_json": "{}",
+              "kind": "read_only_query",
+              "rationale": "Checking the drift report will determine whether judge evaluation drift is present.",
+              "tool": "get_drift_report"
+            }
+          },
+          "round": 1
+        },
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Red team execution shows regression on scenario OUT-003.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_regression",
+                    "subject": "OUT-003"
+                  }
+                ],
+                "statement": "The output guardrail experienced a regression on unsupported context scenario OUT-003.",
+                "subsystem": "output_rails",
+                "symptom": "faithfulness blocks"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Red team execution shows scenario OUT-003 is working as expected.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "OUT-003"
+                  }
+                ],
+                "statement": "The output guardrail is functioning correctly on scenario OUT-003.",
+                "subsystem": "output_rails",
+                "symptom": "faithfulness blocks"
+              }
+            ]
+          },
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {},
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "list_red_team_executions"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 3,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "ambiguous-signal",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 5.187,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h1 (judges): judge_drift could not be told, judge gemini-rubric drift state degraded, kappa 0.48, which is neither drifted nor healthy",
+        "h2 (retrieval): judge_drift could not be told, judge gemini-rubric drift state degraded, kappa 0.48, which is neither drifted nor healthy",
+        "no hypothesis for NVDA judge disagreement is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.008727,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report indicates drift.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "Frontier judge scoring logic has drifted relative to flash judge evaluation.",
+                "subsystem": "judges",
+                "symptom": "NVDA judge disagreement"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report does not show drift.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "Sampled NVDA disagreement traces cite a contradicted chunk.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_from": "q1",
+                      "sample_size": 2,
+                      "tool": "get_trace_detail"
+                    },
+                    "signal": "chunk_contradicted"
+                  }
+                ],
+                "statement": "NVDA disagreement traces are driven by a contradicted context chunk returned during retrieval.",
+                "subsystem": "retrieval",
+                "symptom": "NVDA judge disagreement"
+              }
+            ]
+          },
+          "round": 1
+        },
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Drift report shows frontier judge is in degraded state.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "Disagreements are not driven by chunk NVDA-10K-0210 across all disagreeing traces.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{\"disagreement\": true, \"limit\": 20, \"ticker\": \"NVDA\"}",
+                      "listing_tool": "search_traces",
+                      "sample_from": "q1",
+                      "sample_size": 2,
+                      "tool": "get_trace_detail"
+                    },
+                    "signal": "chunk_contradicted",
+                    "subject": "NVDA-10K-0210"
+                  }
+                ],
+                "statement": "Frontier judge scoring logic has drifted relative to flash judge evaluation.",
+                "subsystem": "judges",
+                "symptom": "NVDA judge disagreement"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Frontier judge has not drifted overall; disagreement is localized to specific contradicted context.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "Chunk NVDA-10K-0210 is consistently cited as contradicting in sampled disagreeing traces.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{\"disagreement\": true, \"limit\": 20, \"ticker\": \"NVDA\"}",
+                      "listing_tool": "search_traces",
+                      "sample_from": "q1",
+                      "sample_size": 2,
+                      "tool": "get_trace_detail"
+                    },
+                    "signal": "chunk_contradicted",
+                    "subject": "NVDA-10K-0210"
+                  }
+                ],
+                "statement": "NVDA disagreement traces are driven by a contradicted context chunk returned during retrieval.",
+                "subsystem": "retrieval",
+                "symptom": "NVDA judge disagreement"
+              }
+            ]
+          },
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "NVDA"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "app_trace_id": "nv-01"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "nv-06"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [
+        "h1: dropped a chunk_contradicted prediction, a sampled query names one listing, not two",
+        "h2: dropped a chunk_contradicted prediction, a sampled query names one listing, not two"
+      ],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 4,
+      "total": 0.985,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    }
+  ],
+  "gemini": {
+    "calls": 12,
+    "cost_usd": 0.068113,
+    "tokens": {
+      "candidates": 5457,
+      "prompt": 38202,
+      "thoughts": 5066
+    }
+  },
+  "label": "day11-1 live gemini-planner:gemini-3.6-flash",
+  "planner": "gemini-planner:gemini-3.6-flash",
+  "planner_cost_usd": 0.068113,
+  "suite": {
+    "agent_version": "bounded-investigator-1+gemini-planner:gemini-3.6-flash",
+    "cases_fingerprint": "4ae7783773ea30af",
+    "harness_version": "known-answer-2",
+    "pass_threshold": 0.75,
+    "scoring_version": "scoring@6340f9cc35e1",
+    "suite_fingerprint": "e5e887fa1ae4a041",
+    "summary": {
+      "by_expected_outcome": {
+        "abstention": {
+          "cases": 3,
+          "passed": 3
+        },
+        "diagnosis": {
+          "cases": 6,
+          "passed": 5
+        }
+      },
+      "cases": 9,
+      "diagnostic": {
+        "fail": 1,
+        "incomplete": 0,
+        "not_applicable": 3,
+        "pass": 5
+      },
+      "failed": [
+        "retrieval-and-judge"
+      ],
+      "inference_calls_total": 12,
+      "mean_score": 0.7133,
+      "passed": 8,
+      "safety_passed": 8,
+      "tool_calls_total": 28
+    },
+    "tool_contract_version": "mcp-read-9@db064f578365"
+  }
+}

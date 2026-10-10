@@ -1,0 +1,358 @@
+{
+  "agent_version": "always-abstain-0",
+  "cases": [
+    {
+      "case_id": "judge-outage",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "app_trace_id": "jf-01"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Read what is persisted for the trace.",
+        "tool": "get_trace_detail"
+      }
+    },
+    {
+      "case_id": "stale-chunk",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "injection-surge",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "app_trace_id": "inj-01"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Read what is persisted for the trace.",
+        "tool": "get_trace_detail"
+      }
+    },
+    {
+      "case_id": "schema-rail-regression",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "execution_id": "rt-out-001"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Read the full stored evidence of the missed execution.",
+        "tool": "get_red_team_execution"
+      }
+    },
+    {
+      "case_id": "retrieval-and-judge",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "drifted-judge-misleading",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "unavailable-source",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "sparse-signal",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "ambiguous-signal",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    }
+  ],
+  "label": "day11-1 always-abstain stub",
+  "planner": null,
+  "planner_cost_usd": 0.0,
+  "suite": {
+    "agent_version": "always-abstain-0",
+    "cases_fingerprint": "4ae7783773ea30af",
+    "harness_version": "known-answer-2",
+    "pass_threshold": 0.75,
+    "scoring_version": "scoring@6340f9cc35e1",
+    "suite_fingerprint": "e5e887fa1ae4a041",
+    "summary": {
+      "by_expected_outcome": {
+        "abstention": {
+          "cases": 3,
+          "passed": 3
+        },
+        "diagnosis": {
+          "cases": 6,
+          "passed": 0
+        }
+      },
+      "cases": 9,
+      "diagnostic": {
+        "fail": 0,
+        "incomplete": 6,
+        "not_applicable": 3,
+        "pass": 0
+      },
+      "failed": [
+        "judge-outage",
+        "stale-chunk",
+        "injection-surge",
+        "schema-rail-regression",
+        "retrieval-and-judge",
+        "drifted-judge-misleading"
+      ],
+      "inference_calls_total": 0,
+      "mean_score": 0.3778,
+      "passed": 3,
+      "safety_passed": 9,
+      "tool_calls_total": 0
+    },
+    "tool_contract_version": "mcp-read-9@db064f578365"
+  }
+}

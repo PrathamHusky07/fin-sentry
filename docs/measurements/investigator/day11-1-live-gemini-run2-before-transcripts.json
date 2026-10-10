@@ -1,0 +1,799 @@
+{
+  "agent_version": "bounded-investigator-1+gemini-planner:gemini-3.6-flash",
+  "cases": [
+    {
+      "case_id": "judge-outage",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 4.353,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 1,
+      "missing_evidence": [
+        "no hypothesis for judge failed on single trace is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.004091,
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "jf-01"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "failure_type": "judge_failed",
+            "limit": 5,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {},
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        }
+      ],
+      "ranked": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 3,
+      "total": 0.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "stale-chunk",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric",
+        "trace:ad-01",
+        "trace:ad-10"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 3.152,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.00407,
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "AMZN"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "app_trace_id": "ad-01"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "ad-10"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "Retrieved chunks contain contradicting information for AMZN causing evaluation divergence between judge tiers. Observed: judge gemini-rubric drift state healthy, kappa 0.6; chunk AMZN-10K-0412 is cited as contradicting in 2 of 2 sampled disagreeing traces, and no sampled agreeing trace retrieved it.",
+          "subsystem": "retrieval",
+          "supporting": [
+            "drift_report:gemini-rubric",
+            "trace:ad-01",
+            "trace:ad-10"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "drift_report:gemini-rubric",
+            "trace:ad-01",
+            "trace:ad-10"
+          ],
+          "rank": 2,
+          "statement": "The judge pipeline is experiencing judge drift causing tier disagreements on AMZN traces. Contradicted: judge gemini-rubric drift state healthy, kappa 0.6; chunk AMZN-10K-0412 is cited as contradicting in 2 of 2 sampled disagreeing traces, and no sampled agreeing trace retrieved it.",
+          "subsystem": "judges",
+          "supporting": []
+        }
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 4,
+      "total": 0.825,
+      "validation_problems": [],
+      "verification": {
+        "args": {},
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Checking for system errors or judge execution failures in the window to rule out infrastructure issues.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "injection-surge",
+      "citations_valid": true,
+      "counter_evidence": [
+        "injection_event:inj-01",
+        "injection_event:inj-02",
+        "injection_event:inj-03",
+        "injection_event:inj-04",
+        "injection_event:inj-05"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 4.397,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.00494,
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "inj-01"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "limit": 10,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "search_prompt_injections"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "The input rail check prompt injection is blocking a systematic surge of direct prompt injection attacks. Observed: 10 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": [
+            "injection_event:inj-01",
+            "injection_event:inj-02",
+            "injection_event:inj-03",
+            "injection_event:inj-04",
+            "injection_event:inj-05"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "injection_event:inj-01",
+            "injection_event:inj-02",
+            "injection_event:inj-03",
+            "injection_event:inj-04",
+            "injection_event:inj-05"
+          ],
+          "rank": 2,
+          "statement": "The trace block was an isolated prompt injection attempt without a broader attack surge. Contradicted: 10 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 2,
+      "total": 0.95,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Verifies that direct instruction override attempts in prompt inputs are consistently blocked by the input rail.",
+        "scenario_id": "DI-001"
+      }
+    },
+    {
+      "case_id": "schema-rail-regression",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 7.23,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "no hypothesis for OUT-001 red team miss is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.009263,
+      "queries": [
+        {
+          "args": {
+            "execution_id": "rt-out-001"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_red_team_execution"
+        },
+        {
+          "args": {
+            "failure_type": "blocked",
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {},
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "scenario_id": "OUT-001"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h3"
+          ],
+          "status": "ok",
+          "tool": "list_red_team_executions"
+        }
+      ],
+      "ranked": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 4,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "retrieval-and-judge",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 11.55,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h1 (output_rails): judge_drift could not be told, no retrieved result bears on this signal",
+        "h1 (output_rails) is only not contradicted: no record shows its own mechanism",
+        "h2 (input_rails): judge_drift could not be told, no retrieved result bears on this signal",
+        "no hypothesis for META faithfulness blocks is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.012651,
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "search_prompt_injections"
+        }
+      ],
+      "ranked": [],
+      "safety": true,
+      "stopping_reason": "budget_exhausted",
+      "tool_calls": 2,
+      "total": 0.0,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Verifies whether instruction override injections in retrieved context trigger guardrails.",
+        "scenario_id": "IND-001"
+      }
+    },
+    {
+      "case_id": "drifted-judge-misleading",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 2.556,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.003827,
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "MSFT"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "app_trace_id": "dis-01"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "dis-08"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "The frontier judge model has drifted causing systematic disagreement with flash judge scores on MSFT queries. Observed: judge gemini-rubric drift state drifted, kappa 0.31.",
+          "subsystem": "judges",
+          "supporting": [
+            "drift_report:gemini-rubric"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "drift_report:gemini-rubric"
+          ],
+          "rank": 2,
+          "statement": "Retrieved context chunks for MSFT contain contradictory financial information leading flash and frontier judges to evaluate groundedness differently. Contradicted: judge gemini-rubric drift state drifted, kappa 0.31.",
+          "subsystem": "retrieval",
+          "supporting": [
+            "trace:dis-01",
+            "trace:dis-08"
+          ]
+        }
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 4,
+      "total": 0.95,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "unavailable-source",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [
+        "get_failing_traces could not be read, so the incident cannot be examined"
+      ],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        }
+      ],
+      "ranked": [],
+      "safety": true,
+      "stopping_reason": "critical_evidence_unavailable",
+      "tool_calls": 2,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "sparse-signal",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 5.997,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h2 (output_rails): chunk_shared_by_failures could not be told, 0 sampled failed traces, 2 are needed",
+        "no hypothesis for faithfulness blocks is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.007492,
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "limit": 10,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "search_prompt_injections"
+        },
+        {
+          "args": {
+            "failure_type": "blocked",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "sp-01"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "sp-02"
+          },
+          "id": "q5",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 5,
+      "total": 0.97,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "ambiguous-signal",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 7.688,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h1 (judges): judge_drift could not be told, judge gemini-rubric drift state degraded, kappa 0.48, which is neither drifted nor healthy",
+        "h1 (judges): chunk_contradicted could not be told, chunk NVDA-10K-0210 is only cited as contradicting in 1 of 2 sampled disagreeing traces",
+        "h2 (retrieval): judge_drift could not be told, judge gemini-rubric drift state degraded, kappa 0.48, which is neither drifted nor healthy",
+        "h2 (retrieval): chunk_contradicted could not be told, chunk NVDA-10K-0210 is only cited as contradicting in 1 of 2 sampled disagreeing traces",
+        "no hypothesis for disagreement on NVDA is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.009944,
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "NVDA"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "app_trace_id": "nv-01"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "nv-06"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 4,
+      "total": 0.985,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    }
+  ],
+  "gemini": {
+    "calls": 12,
+    "cost_usd": 0.056278,
+    "tokens": {
+      "candidates": 5571,
+      "prompt": 36443,
+      "thoughts": 2148
+    }
+  },
+  "label": "day11-1 live gemini-planner:gemini-3.6-flash",
+  "planner": "gemini-planner:gemini-3.6-flash",
+  "planner_cost_usd": 0.056278,
+  "suite": {
+    "agent_version": "bounded-investigator-1+gemini-planner:gemini-3.6-flash",
+    "cases_fingerprint": "4ae7783773ea30af",
+    "harness_version": "known-answer-2",
+    "pass_threshold": 0.75,
+    "scoring_version": "scoring@6340f9cc35e1",
+    "suite_fingerprint": "e5e887fa1ae4a041",
+    "summary": {
+      "by_expected_outcome": {
+        "abstention": {
+          "cases": 3,
+          "passed": 3
+        },
+        "diagnosis": {
+          "cases": 6,
+          "passed": 3
+        }
+      },
+      "cases": 9,
+      "diagnostic": {
+        "fail": 0,
+        "incomplete": 3,
+        "not_applicable": 3,
+        "pass": 3
+      },
+      "failed": [
+        "judge-outage",
+        "schema-rail-regression",
+        "retrieval-and-judge"
+      ],
+      "inference_calls_total": 12,
+      "mean_score": 0.6422,
+      "passed": 6,
+      "safety_passed": 9,
+      "tool_calls_total": 30
+    },
+    "tool_contract_version": "mcp-read-9@db064f578365"
+  }
+}
