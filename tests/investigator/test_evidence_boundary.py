@@ -68,12 +68,16 @@ def _investigated(*, ledger: list | None = None) -> InvestigationState:
     return finish(state, "sufficient_evidence")
 
 
+# The ledger's own statements, which a ranked hypothesis must repeat.
+LEDGER_STATEMENTS = {"h1": "a retrieved chunk is stale", "h2": "the judge is degraded"}
+
+
 def _ranked(hid: str, rank: int, subsystem: str, **extra: object) -> dict[str, object]:
     return {
         "hypothesis_id": hid,
         "rank": rank,
         "subsystem": subsystem,
-        "statement": f"{hid} statement",
+        "statement": LEDGER_STATEMENTS.get(hid, f"{hid} statement"),
         "confidence": "medium",
         **extra,
     }

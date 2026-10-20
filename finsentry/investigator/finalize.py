@@ -10,7 +10,7 @@ investigation ran, and the report carries the review's note on what it did and d
 from __future__ import annotations
 
 from finsentry.investigator.adapter import ToolResult
-from finsentry.investigator.citations import verification_problems
+from finsentry.investigator.citations import STATUS_ORDER, verification_problems
 from finsentry.investigator.contracts import (
     Claim,
     EvidenceAgainst,
@@ -33,7 +33,6 @@ SCENARIO_FOR: dict[Subsystem, str] = {
     "retrieval": "IND-001",
     "output_rails": "OUT-001",
 }
-STATUS_ORDER = {"supported": 0, "open": 1, "weakened": 2, "refuted": 3}
 REVIEW_LIMIT = (
     "The review checks a diagnosis against its own predictions and the counter-evidence that "
     "was retrieved. It does not prove the cause."

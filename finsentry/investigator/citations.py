@@ -20,7 +20,6 @@ once, and the ranking drawn from the ledger's hypotheses and the evidence attach
 
 from __future__ import annotations
 
-import inspect
 from dataclasses import dataclass
 
 from pydantic import ValidationError
@@ -33,8 +32,11 @@ from finsentry.investigator.contracts import (
 )
 from finsentry.investigator.policy import canonical_args
 from finsentry.investigator.reports import unexecuted_candidates
-from finsentry.investigator.tool_contract import McpReadTools
+from finsentry.investigator.tool_args import validate_tool_args
 from finsentry.redteam.registry import get_scenario
+
+# How well a status leaves a hypothesis standing. A ranking runs from best to worst.
+STATUS_ORDER = {"supported": 0, "open": 1, "weakened": 2, "refuted": 3}
 
 
 @dataclass(frozen=True)
@@ -79,10 +81,9 @@ def verification_problems(v: ProposedVerification, state: InvestigationState) ->
         return []
     if v.tool is None or v.args is None:
         return ["proposed read-only query has no tool or arguments"]
-    try:
-        inspect.signature(getattr(McpReadTools, v.tool)).bind(None, **v.args)
-    except TypeError as exc:
-        return [f"proposed read-only query is not a valid call to {v.tool}: {exc}"]
+    invalid = validate_tool_args(v.tool, v.args)
+    if invalid:
+        return [f"proposed read-only query is not a valid call to {v.tool}: {'; '.join(invalid)}"]
     key = canonical_args(v.args)
     if any(q.tool == v.tool and canonical_args(q.args) == key for q in state.executed_queries):
         return [f"proposed verification {v.tool} was already executed, so it is not a next step"]
@@ -142,6 +143,19 @@ def _ledger_problems(report: IncidentReport, state: InvestigationState) -> list[
                 f"ranks {ranked.hypothesis_id} under subsystem {ranked.subsystem}, "
                 f"the ledger has {entry.subsystem}"
             )
+        if ranked.statement != entry.statement:
+            problems.append(
+                f"ranks {ranked.hypothesis_id} with a statement other than the ledger's"
+            )
+        if ranked.confidence == "high" and not any(
+            other.symptom == entry.symptom and other.status == "refuted"
+            for other in ledger.values()
+            if other is not entry
+        ):
+            problems.append(
+                f"{ranked.hypothesis_id} has high confidence, but the ledger holds no rival for "
+                "the same symptom as refuted"
+            )
         for kind, cited, attached in (
             ("support", ranked.supporting, entry.supporting),
             ("contradiction", ranked.contradicting, entry.contradicting),
@@ -156,9 +170,21 @@ def _ledger_problems(report: IncidentReport, state: InvestigationState) -> list[
         problems += [
             f"omits ledger hypothesis {i} from the ranking" for i in ledger if i not in ranked_ids
         ]
-        top = min(report.ranked_hypotheses, key=lambda h: h.rank)
+        ordered = sorted(report.ranked_hypotheses, key=lambda h: h.rank)
+        top = ordered[0]
         if ledger.get(top.hypothesis_id) and ledger[top.hypothesis_id].status == "refuted":
             problems.append(f"top hypothesis {top.hypothesis_id} is refuted in the ledger")
+        elif ledger.get(top.hypothesis_id) and ledger[top.hypothesis_id].status != "supported":
+            problems.append(f"top hypothesis {top.hypothesis_id} is not supported in the ledger")
+        standing = [
+            STATUS_ORDER[ledger[h.hypothesis_id].status]
+            for h in ordered
+            if h.hypothesis_id in ledger
+        ]
+        if standing != sorted(standing):
+            problems.append(
+                "ranks a hypothesis the ledger holds as worse supported above a better one"
+            )
     return problems
 
 

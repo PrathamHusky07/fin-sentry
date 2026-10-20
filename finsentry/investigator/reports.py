@@ -16,6 +16,7 @@ from finsentry.investigator.contracts import (
     ToolName,
 )
 from finsentry.investigator.policy import canonical_args
+from finsentry.investigator.tool_args import validate_tool_args
 
 
 def _candidates(state: InvestigationState) -> list[ProposedVerification]:
@@ -85,9 +86,17 @@ def _candidates(state: InvestigationState) -> list[ProposedVerification]:
 
 
 def unexecuted_candidates(state: InvestigationState) -> list[ProposedVerification]:
-    """The candidate next steps this investigation has not already executed, in order."""
+    """The candidate next steps this investigation has not already executed, in order. A step
+    the tools would reject before a call (an execution id that is not a UUID) is not a next
+    step, so it is left out."""
     executed = {(q.tool, canonical_args(q.args)) for q in state.executed_queries}
-    return [c for c in _candidates(state) if (c.tool, canonical_args(c.args or {})) not in executed]
+    return [
+        c
+        for c in _candidates(state)
+        if (c.tool, canonical_args(c.args or {})) not in executed
+        and c.tool is not None
+        and not validate_tool_args(c.tool, c.args or {})
+    ]
 
 
 def default_verification(state: InvestigationState) -> ProposedVerification:

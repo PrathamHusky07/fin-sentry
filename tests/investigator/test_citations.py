@@ -49,7 +49,7 @@ def _diagnosis(**overrides: object) -> IncidentReport:
                 "hypothesis_id": "h1",
                 "rank": 1,
                 "subsystem": "retrieval",
-                "statement": "a chunk is stale",
+                "statement": "a retrieved chunk is stale",
                 "confidence": "medium",
                 "supporting": [REAL],
             }
@@ -203,6 +203,102 @@ def test_a_proposed_verification_must_be_a_real_unrun_precise_step() -> None:
         kind="read_only_query", tool="get_failing_traces", args={"limit": 5}, rationale="r"
     )
     assert any("already executed" in p for p in repeated)
+
+
+def test_a_proposed_read_only_query_is_held_to_the_full_argument_constraints() -> None:
+    """A signature that binds is not enough: the limit, identifier and type rules that would
+    reject the call before a real run reject the proposal too."""
+    state = _investigated()
+
+    def problems(tool: str, args: dict[str, object]) -> list[str]:
+        report = _diagnosis(
+            proposed_verification=ProposedVerification(
+                kind="read_only_query",
+                tool=tool,
+                args=args,
+                rationale="r",  # type: ignore[arg-type]
+            )
+        )
+        return [p for p in validate_report(report, state).problems if "valid call" in p]
+
+    assert problems("search_traces", {"limit": 0})
+    assert problems("search_traces", {"limit": 101})
+    assert problems("get_red_team_execution", {"execution_id": "not-a-uuid"})
+    assert problems("list_red_team_executions", {"scenario_id": "S" * 17})
+    assert problems("get_failing_traces", {"limit": "many"})
+    assert not problems("search_traces", {"limit": 20, "disagreement": True})
+
+
+# The validator enforces the report against the ledger itself, not against its builder.
+
+
+def _two_hypotheses(**second: object) -> InvestigationState:
+    rival = make_hypothesis("h2", symptom="incident", subsystem="judges", **second)
+    state = make_state(
+        hypotheses=[make_hypothesis("h1", supporting=[REAL], status="supported"), rival]
+    )
+    query = ExecutedQuery(
+        query_id="q1",
+        tool="get_failing_traces",
+        args={"limit": 5},
+        status="ok",
+        evidence=[EvidenceRef(kind="query_result", record_id="q1"), REAL],
+    )
+    return finish(record_query(state, query, 1.0), "sufficient_evidence")
+
+
+def _ranked(
+    hid: str, rank: int, subsystem: str, statement: str, confidence: str = "medium"
+) -> dict:  # type: ignore[type-arg]
+    return {
+        "hypothesis_id": hid,
+        "rank": rank,
+        "subsystem": subsystem,
+        "statement": statement,
+        "confidence": confidence,
+        "supporting": [REAL] if hid == "h1" else [],
+    }
+
+
+def _problems(state: InvestigationState, ranked: list[dict]) -> list[str]:  # type: ignore[type-arg]
+    report = _diagnosis(ranked_hypotheses=ranked)
+    return list(validate_report(report, state).problems)
+
+
+def test_a_ranked_statement_must_be_the_ledgers_statement() -> None:
+    state = _two_hypotheses()
+    rival_statement = "a retrieved chunk is stale"  # make_hypothesis's default statement
+    good = [
+        _ranked("h1", 1, "retrieval", "a retrieved chunk is stale"),
+        _ranked("h2", 2, "judges", rival_statement),
+    ]
+    assert _problems(state, good) == []
+    rewritten = [_ranked("h1", 1, "retrieval", "the model hallucinated"), good[1]]
+    assert any("other than the ledger" in p for p in _problems(state, rewritten))
+
+
+def test_a_ranking_must_not_put_a_worse_supported_hypothesis_first() -> None:
+    state = _two_hypotheses(status="weakened", contradicting=[REAL])
+    inverted = [
+        _ranked("h2", 1, "judges", "a retrieved chunk is stale"),
+        _ranked("h1", 2, "retrieval", "a retrieved chunk is stale"),
+    ]
+    problems = _problems(state, inverted)
+    assert any("worse supported" in p for p in problems)
+    assert any("not supported in the ledger" in p for p in problems)
+
+
+def test_high_confidence_needs_a_rival_the_ledger_holds_as_refuted() -> None:
+    def high(state: InvestigationState) -> list[str]:
+        ranked = [
+            _ranked("h1", 1, "retrieval", "a retrieved chunk is stale", "high"),
+            _ranked("h2", 2, "judges", "a retrieved chunk is stale"),
+        ]
+        return _problems(state, ranked)
+
+    assert any("high confidence" in p for p in high(_two_hypotheses()))
+    refuted = _two_hypotheses(status="refuted", contradicting=[REAL])
+    assert not any("high confidence" in p for p in high(refuted))
 
 
 def test_a_controlled_test_causal_claim_must_cite_a_red_team_execution() -> None:
