@@ -43,8 +43,10 @@ Return JSON for the schema you are given. Rules:
 - Every prediction names a signal, the tool that shows it, the arguments for that tool and
   expect: true when the hypothesis predicts the signal present, false when it predicts it
   absent. Predict what would make a rival wrong, not only what would make you right.
-- Choose queries whose results differ between your hypotheses. A query every hypothesis
-  predicts the same way is dropped.
+- Choose queries whose results differ between your hypotheses. A query is dropped unless at
+  least two hypotheses make a prediction about it and those predictions differ. A query only
+  one hypothesis names is dropped, and so is one every hypothesis predicts the same way. Give
+  a rival an explicit prediction (expect true or false) about each query that matters.
 - To read details of traces an earlier query listed, use get_trace_detail, leave
   app_trace_id out of args_json and set sample_from to that query id. The investigator picks
   traces spread across the list. Never invent a trace id or a chunk id.
