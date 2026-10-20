@@ -32,7 +32,7 @@ from finsentry.investigator.loop import (
     spread,
     start_investigation,
 )
-from finsentry.investigator.planning import Plan, PlanningError
+from finsentry.investigator.planning import Plan, PlanningError, PlanPrediction, QuerySpec
 from tests.investigator.helpers import make_hypothesis
 
 CASES = {c.case_id: c for c in all_cases()}
@@ -124,10 +124,12 @@ async def test_the_misleading_case_names_the_judge_and_records_the_agreeing_trac
 
 
 async def test_a_confident_diagnosis_needs_a_rival_refuted_by_a_record() -> None:
+    """The stale chunk's judge rival is refuted by a healthy drift reading. In the mixed case
+    the leaders' rivals are only weakened, with no record that refutes them."""
     stale = await investigate(CASES["stale-chunk"], PlannerDouble())
-    outage = await investigate(CASES["judge-outage"], PlannerDouble())
+    mixed = await investigate(CASES["retrieval-and-judge"], PlannerDouble())
     assert min(stale.report.ranked_hypotheses, key=lambda h: h.rank).confidence == "high"
-    assert min(outage.report.ranked_hypotheses, key=lambda h: h.rank).confidence != "high"
+    assert all(h.confidence != "high" for h in mixed.report.ranked_hypotheses)
 
 
 # It receives only the trigger, scope, window and tool results.
@@ -181,10 +183,17 @@ async def test_a_query_every_hypothesis_predicts_the_same_way_is_never_run() -> 
         "failures cluster",
         args={"time_window_minutes": 60, "failure_type": "any", "limit": 50},
     )
+    rival = prediction(
+        "get_failing_traces",
+        "judge_failures",
+        "no failures cluster",
+        expect=False,
+        args={"time_window_minutes": 60, "failure_type": "any", "limit": 50},
+    )
     plan = Plan(
         hypotheses=[
             hypothesis("h1", "x", "judges", "judges fail", same, other),
-            hypothesis("h2", "x", "retrieval", "retrieval fails", same),
+            hypothesis("h2", "x", "retrieval", "retrieval fails", same, rival),
         ]
     )
     result = await investigate(case, Scripted(plan))
@@ -239,7 +248,6 @@ def test_a_sample_is_spread_across_a_listing_not_taken_from_its_head() -> None:
 async def test_two_supported_rivals_force_a_second_look_then_an_abstention() -> None:
     case = CASES["judge-outage"]
     anyf = {"time_window_minutes": 60, "failure_type": "any", "limit": 50}
-    judged = {"time_window_minutes": 60, "failure_type": "judge_failed", "limit": 50}
     plan = Plan(
         hypotheses=[
             hypothesis(
@@ -254,7 +262,14 @@ async def test_two_supported_rivals_force_a_second_look_then_an_abstention() -> 
                 "failure",
                 "event_pipeline",
                 "events are lost",
-                prediction("get_failing_traces", "judge_failures", "failures cluster", args=judged),
+                prediction("get_failing_traces", "judge_failures", "failures cluster", args=anyf),
+                prediction(
+                    "get_failing_traces",
+                    "error_cluster",
+                    "no system errors",
+                    expect=False,
+                    args=anyf,
+                ),
             ),
         ]
     )
@@ -441,8 +456,9 @@ async def test_it_reaches_the_world_only_through_the_nine_read_tools() -> None:
 
 
 async def test_without_the_agreeing_trace_test_the_misleading_case_ends_in_abstention() -> None:
-    """A plan that samples only the disagreeing traces leaves the retrieval and judge
-    explanations both supported. The loop does not pick the symptom's subsystem. It abstains."""
+    """A plan that samples only the disagreeing traces finds a flagged chunk that fits both
+    the retrieval and the judge explanation. Neither is rejected and the loop does not pick the
+    symptom's subsystem. It abstains."""
     case = CASES["drifted-judge-misleading"]
     plan = Plan(
         hypotheses=[
@@ -457,8 +473,13 @@ async def test_without_the_agreeing_trace_test_the_misleading_case_ends_in_abste
                 "h2",
                 "tier_disagreement",
                 "judges",
-                "The frontier judge has drifted.",
-                prediction("get_drift_report", "judge_drift", "drifted"),
+                "The frontier judge flags a chunk it is wrong about.",
+                PlanPrediction(
+                    query=QuerySpec(tool="get_trace_detail", sample_from="q1"),
+                    signal="chunk_contradicted",
+                    subject="MSFT-10K-0301",
+                    description="the judge flags the chunk on disagreeing traces",
+                ),
             ),
         ]
     )

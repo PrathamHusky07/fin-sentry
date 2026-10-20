@@ -5,7 +5,9 @@ It exists to test the loop's orchestration (validation, query selection, the led
 adversarial review, the timeouts and the report) without a model. It reads only the digest
 the real planner would read, never a case's cause. It is not evidence of a model's diagnostic
 quality, and a scorecard row made with it says so. The playbooks below are the standard rival
-sets for each trigger, written the way a careful on-call engineer would list them.
+sets for each trigger, written the way a careful on-call engineer would list them. A query is
+only run when two hypotheses make explicit, different predictions about it (planning.py), so
+each playbook gives a rival the prediction that would make the other wrong.
 """
 
 from __future__ import annotations
@@ -136,6 +138,8 @@ def _failures(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[PlanHypo
 def _disagreement(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[PlanHypothesis]:
     ticker = d["incident"]["scope"].get("ticker")
     agreeing = {"disagreement": False, "limit": 20, **({"ticker": ticker} if ticker else {})}
+    sampled: dict[str, Any] = dict(sample_from=q1["query_id"], size=size)
+    peers: dict[str, Any] = dict(listing=("search_traces", agreeing), size=size)
     return [
         hypothesis(
             "h1",
@@ -146,23 +150,36 @@ def _disagreement(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[Plan
                 "get_trace_detail",
                 "chunk_contradicted",
                 "the chunk is flagged on disagreeing traces",
-                sample_from=q1["query_id"],
-                size=size,
+                **sampled,
             ),
             prediction(
                 "get_trace_detail",
                 "chunk_contradicted",
                 "no agreeing trace retrieved it",
-                listing=("search_traces", agreeing),
-                size=size,
+                **peers,
             ),
+            prediction("get_drift_report", "judge_drift", "the reading is healthy", expect=False),
         ),
         hypothesis(
             "h2",
             "tier_disagreement",
             "judges",
             "The frontier judge has drifted.",
-            prediction("get_drift_report", "judge_drift", "the drift reading is drifted"),
+            prediction("get_drift_report", "judge_drift", "the reading is drifted"),
+            prediction(
+                "get_trace_detail",
+                "chunk_contradicted",
+                "no one chunk explains the disagreement",
+                expect=False,
+                **sampled,
+            ),
+            prediction(
+                "get_trace_detail",
+                "chunk_contradicted",
+                "agreeing traces retrieved the chunk too",
+                expect=False,
+                **peers,
+            ),
         ),
     ]
 
@@ -238,6 +255,13 @@ def _single_trace(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[Plan
                 prediction(
                     "get_failing_traces", "error_cluster", "system errors cluster", args=anyf
                 ),
+                prediction(
+                    "get_judge_scores",
+                    "judge_failures",
+                    "this trace has no failed verdict",
+                    expect=False,
+                    args={"app_trace_id": ref},
+                ),
             ),
         ]
     if "injection" in (facts.get("block_rail") or ""):
@@ -271,6 +295,13 @@ def _single_trace(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[Plan
                     "rail_regression",
                     "an injection scenario now misses",
                     args=executions,
+                ),
+                prediction(
+                    "search_prompt_injections",
+                    "injection_surge",
+                    "few injection blocks, since attacks get through",
+                    expect=False,
+                    args={"time_window_minutes": window, "limit": 50},
                 ),
             ),
         ]

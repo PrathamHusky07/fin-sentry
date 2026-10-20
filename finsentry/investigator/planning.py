@@ -193,6 +193,17 @@ def _verification(draft: VerificationDraft | None) -> ProposedVerification | Non
         return None
 
 
+def _separated(
+    row: dict[str, frozenset[tuple[str, str | None, bool]]], ids: list[str]
+) -> list[str]:
+    """The hypotheses this query tells apart: those with an explicit prediction for it that
+    differs from another hypothesis's explicit prediction. A hypothesis with no prediction for
+    the query is untested by it and is neither compared nor counted as predicting the
+    opposite."""
+    named = [i for i in ids if i in row]
+    return sorted({i for i in named for j in named if i != j and row[i] != row[j]})
+
+
 def validate_plan(plan: Plan, state: InvestigationState) -> ValidatedPlan:
     """Keep the hypotheses and predictions the tool surface supports and the queries that
     separate hypotheses. Raises PlanningError when fewer than two hypotheses survive."""
@@ -268,25 +279,27 @@ def validate_plan(plan: Plan, state: InvestigationState) -> ValidatedPlan:
     ids = [h.hypothesis_id for h, _ in kept]
     ranked: list[tuple[int, int, str]] = []
     for order, (key, row) in enumerate(by_query.items()):
-        sets = {i: row.get(i, frozenset()) for i in ids}
-        apart = sorted({i for i in ids for j in ids if i != j and sets[i] != sets[j]})
+        apart = _separated(row, ids)
         if not apart:
-            notes.append(f"dropped {specs[key].tool}, every hypothesis predicts the same from it")
+            tool = specs[key].tool
+            named = [i for i in ids if i in row]
+            notes.append(
+                f"dropped {tool}, only {', '.join(named)} predicts anything from it"
+                if len(named) < 2
+                else f"dropped {tool}, every hypothesis that predicts from it predicts the same"
+            )
             continue
         ranked.append((-len(apart), order, key))
     queries: list[PlannedQuery] = []
     for _, _, key in sorted(ranked):
         spec = specs[key]
-        row = by_query[key]
-        sets = {i: row.get(i, frozenset()) for i in ids}
-        apart = sorted({i for i in ids for j in ids if i != j and sets[i] != sets[j]})
         queries.append(
             PlannedQuery(
                 spec.tool,
                 _args(spec) or {},
                 spec.sample_from,
                 spec.sample_size,
-                apart,
+                _separated(by_query[key], ids),
                 listing_of(spec),
                 spec.sample_class,
             )
