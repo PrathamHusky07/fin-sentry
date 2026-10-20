@@ -67,8 +67,9 @@ class InvestigationSummary(BaseModel):
     window: TimeWindow
     stopping_reason: str | None
     leading: LeadingHypothesis | None
-    hypotheses: int
-    queries: int
+    # None when the session stored no final state, which is not the same as none of them.
+    hypotheses: int | None
+    queries: int | None
     model_calls: int | None
     cost_usd: float | None
     error: str | None
@@ -101,7 +102,11 @@ def _stale(record: store.InvestigationRecord) -> bool:
     return record.status == "running" and datetime.now(UTC) - record.heartbeat_at > limit
 
 
-def _summary(record: store.InvestigationRecord) -> InvestigationSummary:
+def _summary(
+    record: store.InvestigationRecord, timeline: list[TimelineEntry] | None = None
+) -> InvestigationSummary:
+    """timeline, when the caller has it, supplies the query count of a session that stored no
+    final state, since each executed query is a timeline event."""
     request = record.request
     report = record.report
     top = (
@@ -137,8 +142,14 @@ def _summary(record: store.InvestigationRecord) -> InvestigationSummary:
         window=TimeWindow.model_validate(request["window"]),
         stopping_reason=record.stopping_reason,
         leading=leading,
-        hypotheses=len(record.state.hypotheses) if record.state else 0,
-        queries=len(record.state.executed_queries) if record.state else 0,
+        hypotheses=len(record.state.hypotheses) if record.state else None,
+        queries=(
+            len(record.state.executed_queries)
+            if record.state
+            else sum(1 for e in timeline if e.event.kind == "query")
+            if timeline is not None
+            else None
+        ),
         model_calls=record.usage.model.calls if record.usage else None,
         cost_usd=record.usage.model.cost_usd if record.usage else None,
         error=record.error,
@@ -150,7 +161,7 @@ def _detail(
     record: store.InvestigationRecord, timeline: list[TimelineEntry]
 ) -> InvestigationDetail:
     return InvestigationDetail(
-        **_summary(record).model_dump(),
+        **_summary(record, timeline).model_dump(),
         heartbeat_at=record.heartbeat_at,
         timeline=timeline,
         state=record.state,

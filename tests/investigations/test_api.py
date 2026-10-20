@@ -109,6 +109,19 @@ async def test_the_list_is_newest_first_and_labels_where_each_session_came_from(
     assert by_id[seeded["abstention"]]["leading"] is None
     assert by_id[seeded["failed"]]["status"] == "failed" and by_id[seeded["failed"]]["error"]
     assert by_id[seeded["interrupted"]]["status"] == "interrupted"
+    # A session that stored no final state does not claim zero queries or hypotheses.
+    assert by_id[seeded["interrupted"]]["queries"] is None
+    assert by_id[seeded["interrupted"]]["hypotheses"] is None
+
+
+async def test_a_detail_counts_the_queries_an_unfinished_session_made(
+    seeded: dict[str, str],
+) -> None:
+    async with _client(_read_only_deps()) as client:
+        interrupted = (await client.get(f"/ops/investigations/{seeded['interrupted']}")).json()
+        failed = (await client.get(f"/ops/investigations/{seeded['failed']}")).json()
+    assert interrupted["queries"] == 1 and interrupted["state"] is None
+    assert failed["queries"] == 1 and failed["state"] is not None
 
 
 async def test_the_list_filters_and_pages(seeded: dict[str, str]) -> None:
