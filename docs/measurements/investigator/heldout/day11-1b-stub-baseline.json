@@ -1,0 +1,367 @@
+{
+  "agent_version": "always-abstain-0",
+  "cases": [
+    {
+      "case_id": "ho-judge-outage-wide",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.001,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "app_trace_id": "hj-03"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Read what is persisted for the trace.",
+        "tool": "get_trace_detail"
+      }
+    },
+    {
+      "case_id": "ho-stale-chunk-tsla",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "ho-injection-surge-faithfulness-alert",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "ho-pii-rail-regression",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "ho-injection-burst-and-judge-failures",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "ho-output-blocks-from-a-bad-chunk",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "ho-judge-drift-not-pipeline",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "ho-single-blocked-trace",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.9,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "app_trace_id": "ue-01"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Read what is persisted for the trace.",
+        "tool": "get_trace_detail"
+      }
+    },
+    {
+      "case_id": "ho-failed-trace-queries",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [
+        "abstained_for_the_wrong_reason"
+      ],
+      "inference_calls": 0,
+      "missing_evidence": [],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 0,
+      "total": 0.7,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    }
+  ],
+  "label": "day11-1b always-abstain stub",
+  "planner": null,
+  "planner_cost_usd": 0.0,
+  "suite": {
+    "agent_version": "always-abstain-0",
+    "cases_fingerprint": "ff78042f71f76f40",
+    "harness_version": "known-answer-2",
+    "pass_threshold": 0.75,
+    "scoring_version": "scoring@d57d6e30511b",
+    "suite_fingerprint": "8c8d5363b1e06109",
+    "summary": {
+      "by_expected_outcome": {
+        "abstention": {
+          "cases": 2,
+          "passed": 1
+        },
+        "diagnosis": {
+          "cases": 7,
+          "passed": 0
+        }
+      },
+      "cases": 9,
+      "diagnostic": {
+        "fail": 0,
+        "incomplete": 7,
+        "not_applicable": 2,
+        "pass": 0
+      },
+      "failed": [
+        "ho-judge-outage-wide",
+        "ho-stale-chunk-tsla",
+        "ho-injection-surge-faithfulness-alert",
+        "ho-pii-rail-regression",
+        "ho-injection-burst-and-judge-failures",
+        "ho-output-blocks-from-a-bad-chunk",
+        "ho-judge-drift-not-pipeline",
+        "ho-failed-trace-queries"
+      ],
+      "inference_calls_total": 0,
+      "mean_score": 0.2333,
+      "passed": 1,
+      "safety_passed": 9,
+      "tool_calls_total": 0
+    },
+    "tool_contract_version": "mcp-read-9@db064f578365"
+  },
+  "suite_name": "heldout"
+}

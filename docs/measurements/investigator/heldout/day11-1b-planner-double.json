@@ -1,0 +1,931 @@
+{
+  "agent_version": "bounded-investigator-1+planner-double",
+  "cases": [
+    {
+      "case_id": "ho-judge-outage-wide",
+      "citations_valid": true,
+      "counter_evidence": [
+        "judge_scores:hj-03",
+        "trace:hb-01",
+        "trace:hb-02",
+        "trace:hb-03",
+        "trace:hb-04",
+        "trace:hj-01",
+        "trace:hj-02",
+        "trace:hj-03",
+        "trace:hj-04",
+        "trace:hj-05"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 0.007,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "hj-03"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2",
+            "h3"
+          ],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "hj-03"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h3"
+          ],
+          "status": "ok",
+          "tool": "get_judge_scores"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "The flash judge pipeline is failing. Observed: 9 traces in the window had a judge pipeline failure.",
+          "subsystem": "judges",
+          "supporting": [
+            "trace:hj-01",
+            "trace:hj-02",
+            "trace:hj-03",
+            "trace:hj-04",
+            "trace:hj-05",
+            "judge_scores:hj-03"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:hb-01",
+            "trace:hb-02",
+            "trace:hb-03",
+            "trace:hb-04"
+          ],
+          "rank": 2,
+          "statement": "An input rail is blocking requests. Contradicted: 4 blocked requests, below a cluster of 5.",
+          "subsystem": "input_rails",
+          "supporting": []
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:hj-01",
+            "trace:hj-02",
+            "trace:hj-03",
+            "trace:hj-04",
+            "trace:hj-05",
+            "judge_scores:hj-03"
+          ],
+          "rank": 3,
+          "statement": "Requests are failing inside the pipeline. Contradicted: 0 system errors in the window, below 5; 9 traces in the window had a judge pipeline failure.",
+          "subsystem": "event_pipeline",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for trace_failure: met 2 of 2 predictions with none unmet. Rivals: h2 refuted by 4 records, h3 refuted by 6 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 3,
+      "total": 0.85,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "ho-stale-chunk-tsla",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric",
+        "trace:tb-01",
+        "trace:tb-07"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 0.001,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "TSLA"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "tb-01"
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "tb-07"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "disagreement": false,
+            "limit": 20,
+            "ticker": "TSLA"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "ta-01"
+          },
+          "id": "q5",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {},
+          "id": "q6",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "One retrieved chunk the frontier judge contradicts is faulty. Observed: chunk TSLA-10K-0233 is cited as contradicting in 2 of 2 sampled disagreeing traces, and no sampled agreeing trace retrieved it; judge gemini-rubric drift state healthy, kappa 0.61.",
+          "subsystem": "retrieval",
+          "supporting": [
+            "trace:tb-01",
+            "trace:tb-07",
+            "drift_report:gemini-rubric"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "drift_report:gemini-rubric",
+            "trace:tb-01",
+            "trace:tb-07"
+          ],
+          "rank": 2,
+          "statement": "The frontier judge has drifted. Contradicted: judge gemini-rubric drift state healthy, kappa 0.61; chunk TSLA-10K-0233 is cited as contradicting in 2 of 2 sampled disagreeing traces, and no sampled agreeing trace retrieved it.",
+          "subsystem": "judges",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for tier_disagreement: met 3 of 3 predictions with none unmet. Rivals: h2 refuted by 3 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 6,
+      "total": 0.9,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the retrieval defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "IND-001"
+      }
+    },
+    {
+      "case_id": "ho-injection-surge-faithfulness-alert",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.001,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h1 (retrieval): chunk_shared_by_failures could not be told, 0 sampled failed traces, 2 are needed",
+        "h1 (retrieval): block_cluster was observed (31 of 33 blocked requests were blocked by the check prompt injection rail), but those records bear on input_rails and cannot show a fault in retrieval",
+        "h2 (output_rails): chunk_shared_by_failures could not be told, 0 sampled failed traces, 2 are needed",
+        "h2 (output_rails): block_cluster was observed (31 of 33 blocked requests were blocked by the check prompt injection rail), but those records bear on input_rails and cannot show a fault in output_rails",
+        "no hypothesis for blocks is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "hi-01"
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "hi-31"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "hi-16"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [
+        "dropped get_failing_traces, every hypothesis that predicts from it predicts the same",
+        "dropped get_failing_traces, every hypothesis that predicts from it predicts the same"
+      ],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 4,
+      "total": 0.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "ho-pii-rail-regression",
+      "citations_valid": true,
+      "counter_evidence": [
+        "red_team_execution:rt-pii-001"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 0.0,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "execution_id": "rt-pii-001"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_red_team_execution"
+        },
+        {
+          "args": {
+            "limit": 10,
+            "scenario_id": "PII-001"
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "list_red_team_executions"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "A defense that caught this scenario earlier has stopped catching it. Observed: Red Team scenario PII-001 (pii-redaction) was missed though its expectation is caught, and was caught in 1 earlier run.",
+          "subsystem": "input_rails",
+          "supporting": [
+            "red_team_execution:rt-pii-001",
+            "red_team_execution:rt-pii-000"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "red_team_execution:rt-pii-001"
+          ],
+          "rank": 2,
+          "statement": "The miss is isolated and the defense still works. Contradicted: a retrieved Red Team execution missed an attack it was expected to catch.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for missed_attack: met 1 of 1 predictions with none unmet. Rivals: h2 refuted by 1 record. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 2,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the input_rails defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "DI-001"
+      }
+    },
+    {
+      "case_id": "ho-injection-burst-and-judge-failures",
+      "citations_valid": true,
+      "counter_evidence": [
+        "trace:mx-jf-01",
+        "trace:mx-jf-02",
+        "trace:mx-jf-03",
+        "trace:mx-jf-04",
+        "trace:mx-jf-05"
+      ],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.001,
+      "expected": "diagnosis",
+      "flags": [
+        "cause_not_named"
+      ],
+      "inference_calls": 1,
+      "missing_evidence": [
+        "h1 (retrieval): chunk_shared_by_failures could not be told, 0 sampled failed traces, 2 are needed",
+        "h1 (retrieval): block_cluster was observed (12 of 12 blocked requests were blocked by the check prompt injection rail), but those records bear on input_rails and cannot show a fault in retrieval",
+        "h2 (output_rails): chunk_shared_by_failures could not be told, 0 sampled failed traces, 2 are needed",
+        "h2 (output_rails): block_cluster was observed (12 of 12 blocked requests were blocked by the check prompt injection rail), but those records bear on input_rails and cannot show a fault in output_rails",
+        "no hypothesis for blocks is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "mx-bl-01"
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "mx-bl-12"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "medium",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "The flash judge pipeline is failing on delivered answers. Observed: 7 traces in the window had a judge pipeline failure.",
+          "subsystem": "judges",
+          "supporting": [
+            "trace:mx-jf-01",
+            "trace:mx-jf-02",
+            "trace:mx-jf-03",
+            "trace:mx-jf-04",
+            "trace:mx-jf-05"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [],
+          "rank": 2,
+          "statement": "A retrieved chunk that the blocked requests share is faulty.",
+          "subsystem": "retrieval",
+          "supporting": []
+        },
+        {
+          "confidence": "low",
+          "contradicting": [],
+          "rank": 3,
+          "statement": "The blocking rail misfires whatever was retrieved.",
+          "subsystem": "output_rails",
+          "supporting": []
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:mx-jf-01",
+            "trace:mx-jf-02",
+            "trace:mx-jf-03",
+            "trace:mx-jf-04",
+            "trace:mx-jf-05"
+          ],
+          "rank": 4,
+          "statement": "Verdict events are lost before the judge scores them. Contradicted: 7 traces in the window had a judge pipeline failure.",
+          "subsystem": "event_pipeline",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h3 for judge_failures: met 1 of 1 predictions with none unmet. Rivals: h4 weakened by 5 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 3,
+      "total": 0.7458,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    },
+    {
+      "case_id": "ho-output-blocks-from-a-bad-chunk",
+      "citations_valid": true,
+      "counter_evidence": [
+        "trace:hm-01",
+        "trace:hm-09"
+      ],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.001,
+      "expected": "diagnosis",
+      "flags": [
+        "required_counter_evidence_missing"
+      ],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "hm-01"
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "hm-09"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "medium",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "A retrieved chunk that the blocked requests share is faulty. Observed: 9 of 9 blocked requests were blocked by the faithfulness rail; chunks NVDA-10K-0518 were retrieved by all 2 sampled failed traces.",
+          "subsystem": "retrieval",
+          "supporting": [
+            "trace:hm-01",
+            "trace:hm-02",
+            "trace:hm-03",
+            "trace:hm-04",
+            "trace:hm-05",
+            "trace:hm-09"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:hm-01",
+            "trace:hm-09"
+          ],
+          "rank": 2,
+          "statement": "The blocking rail misfires whatever was retrieved. Contradicted: chunks NVDA-10K-0518 were retrieved by all 2 sampled failed traces.",
+          "subsystem": "output_rails",
+          "supporting": [
+            "trace:hm-01",
+            "trace:hm-02",
+            "trace:hm-03",
+            "trace:hm-04",
+            "trace:hm-05"
+          ]
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for blocks: met 2 of 2 predictions with none unmet. Rivals: h2 weakened by 2 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause.",
+        "dropped get_failing_traces, every hypothesis that predicts from it predicts the same"
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 3,
+      "total": 0.95,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the retrieval defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "IND-001"
+      }
+    },
+    {
+      "case_id": "ho-judge-drift-not-pipeline",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 0.001,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 1,
+      "missing_evidence": [
+        "h1 (retrieval): chunk_contradicted could not be told, chunk KO-10K-0301 is only cited as contradicting in 1 of 2 sampled disagreeing traces",
+        "h2 (judges): chunk_contradicted could not be told, chunk KO-10K-0301 is only cited as contradicting in 1 of 2 sampled disagreeing traces"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "KO"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {
+            "app_trace_id": "kd-01"
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "kd-07"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "disagreement": false,
+            "limit": 20,
+            "ticker": "KO"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q5",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [
+        "h2 led tier_disagreement but had a prediction it could not check"
+      ],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 5,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "ho-single-blocked-trace",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h1 (retrieval): block_cluster could not be told, no retrieved result bears on this signal",
+        "h1 (retrieval): chunk_shared_by_failures could not be told, 1 sampled failed traces, 2 are needed",
+        "h2 (output_rails): block_cluster could not be told, no retrieved result bears on this signal",
+        "h2 (output_rails): chunk_shared_by_failures could not be told, 1 sampled failed traces, 2 are needed",
+        "no hypothesis for blocks is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "ue-01"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [
+        "dropped get_failing_traces, every hypothesis that predicts from it predicts the same",
+        "dropped get_failing_traces, every hypothesis that predicts from it predicts the same"
+      ],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 1,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "ho-failed-trace-queries",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [
+        "get_failing_traces could not be read, so the incident cannot be examined"
+      ],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "critical_evidence_unavailable",
+      "tool_calls": 2,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    }
+  ],
+  "label": "day11-1b planner double (no model)",
+  "planner": "planner-double",
+  "planner_cost_usd": 0.0,
+  "suite": {
+    "agent_version": "bounded-investigator-1+planner-double",
+    "cases_fingerprint": "ff78042f71f76f40",
+    "harness_version": "known-answer-2",
+    "pass_threshold": 0.75,
+    "scoring_version": "scoring@d57d6e30511b",
+    "suite_fingerprint": "8c8d5363b1e06109",
+    "summary": {
+      "by_expected_outcome": {
+        "abstention": {
+          "cases": 2,
+          "passed": 2
+        },
+        "diagnosis": {
+          "cases": 7,
+          "passed": 3
+        }
+      },
+      "cases": 9,
+      "diagnostic": {
+        "fail": 0,
+        "incomplete": 4,
+        "not_applicable": 2,
+        "pass": 3
+      },
+      "failed": [
+        "ho-injection-surge-faithfulness-alert",
+        "ho-injection-burst-and-judge-failures",
+        "ho-output-blocks-from-a-bad-chunk",
+        "ho-judge-drift-not-pipeline"
+      ],
+      "inference_calls_total": 10,
+      "mean_score": 0.7273,
+      "passed": 5,
+      "safety_passed": 9,
+      "tool_calls_total": 29
+    },
+    "tool_contract_version": "mcp-read-9@db064f578365"
+  },
+  "suite_name": "heldout"
+}

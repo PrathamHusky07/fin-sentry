@@ -1,0 +1,1510 @@
+{
+  "agent_version": "bounded-investigator-1+gemini-planner:gemini-3.6-flash",
+  "cases": [
+    {
+      "case_id": "ho-judge-outage-wide",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric",
+        "trace:hj-01",
+        "trace:hj-02",
+        "trace:hj-03",
+        "trace:hj-04",
+        "trace:hj-05"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 13.397,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.006749,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "At least 3 traces in the 60-minute window failed during judge execution.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"judge_failed\", \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  },
+                  {
+                    "description": "The frontier judge drift monitor indicates normal status without drift.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "The judge pipeline experienced recurring failures across multiple traces within the window.",
+                "subsystem": "judges",
+                "symptom": "judge failed"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Fewer than 3 traces experienced judge failures in the window.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"judge_failed\", \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  },
+                  {
+                    "description": "The frontier judge drift report shows active drift.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "The frontier judge model experienced drift causing evaluation failures on specific inputs.",
+                "subsystem": "judges",
+                "symptom": "judge failed"
+              }
+            ]
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "hj-03"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "failure_type": "judge_failed",
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {},
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "The judge pipeline experienced recurring failures across multiple traces within the window. Observed: 9 traces in the window had a judge pipeline failure; judge gemini-rubric drift state healthy, kappa 0.58.",
+          "subsystem": "judges",
+          "supporting": [
+            "trace:hj-01",
+            "trace:hj-02",
+            "trace:hj-03",
+            "trace:hj-04",
+            "trace:hj-05",
+            "drift_report:gemini-rubric"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:hj-01",
+            "trace:hj-02",
+            "trace:hj-03",
+            "trace:hj-04",
+            "trace:hj-05",
+            "drift_report:gemini-rubric"
+          ],
+          "rank": 2,
+          "statement": "The frontier judge model experienced drift causing evaluation failures on specific inputs. Contradicted: 9 traces in the window had a judge pipeline failure; judge gemini-rubric drift state healthy, kappa 0.58.",
+          "subsystem": "judges",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for judge failed: met 2 of 2 predictions with none unmet. Rivals: h2 refuted by 6 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 3,
+      "total": 0.85,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "limit": 20,
+          "outcome": "missed"
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "Check whether any Red Team execution was missed recently.",
+        "tool": "list_red_team_executions"
+      }
+    },
+    {
+      "case_id": "ho-stale-chunk-tsla",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "incomplete",
+      "elapsed_s": 33.136,
+      "expected": "diagnosis",
+      "flags": [
+        "abstained_on_a_diagnosable_incident"
+      ],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h2 (retrieval) is only not contradicted or restates the incident's own symptom: no record shows its own mechanism",
+        "no hypothesis for judge disagreement on TSLA is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": false,
+      "planner_cost_usd": 0.023705,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Drift report indicates that the frontier judge model has drifted.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "The frontier judge has drifted from its baseline performance, causing scoring disagreements on TSLA traces.",
+                "subsystem": "judges",
+                "symptom": "judge disagreement on TSLA"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Drift report indicates the frontier judge is healthy without drift.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "The frontier judge remains baseline healthy while evaluation disagreement stems from retrieval content variance.",
+                "subsystem": "retrieval",
+                "symptom": "judge disagreement on TSLA"
+              }
+            ],
+            "verification": {
+              "args_json": "{}",
+              "kind": "read_only_query",
+              "rationale": "Check whether the frontier judge model has logged statistical drift.",
+              "tool": "get_drift_report"
+            }
+          },
+          "round": 1
+        },
+        {
+          "error": "ServerError: 504 DEADLINE_EXCEEDED. {'error': {'code': 504, 'message': 'Deadline expired before operation could complete.', 'status': 'DEADLINE_EXCEEDED'}}",
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "TSLA"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [
+        "planner call 1 failed: ServerError: 504 DEADLINE_EXCEEDED. {'error': {'code': 504, 'message': 'Deadline expired before operation could complete.', 'status': 'DEADLINE_EXCEEDED'}}"
+      ],
+      "safety": true,
+      "stopping_reason": "budget_exhausted",
+      "tool_calls": 2,
+      "total": 0.1,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "ho-injection-surge-faithfulness-alert",
+      "citations_valid": true,
+      "counter_evidence": [
+        "injection_event:hi-01",
+        "injection_event:hi-02",
+        "injection_event:hi-03",
+        "injection_event:hi-04",
+        "injection_event:hi-05"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 4.927,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.005402,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Direct prompt injection search confirms an injection surge in the current window.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"limit\": 50, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "A surge of direct prompt injection attacks triggered widespread blocks at the input rail.",
+                "subsystem": "input_rails",
+                "symptom": "High volume of prompt injection blocks"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Direct prompt injection logs show no injection surge during the incident window.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"limit\": 50, \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "An overactive input rail guardrail caused false positive blocks without an actual surge in direct prompt injections.",
+                "subsystem": "input_rails",
+                "symptom": "High volume of prompt injection blocks"
+              }
+            ]
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "search_prompt_injections"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "medium",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "A surge of direct prompt injection attacks triggered widespread blocks at the input rail. Observed: 31 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": [
+            "injection_event:hi-01",
+            "injection_event:hi-02",
+            "injection_event:hi-03",
+            "injection_event:hi-04",
+            "injection_event:hi-05"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "injection_event:hi-01",
+            "injection_event:hi-02",
+            "injection_event:hi-03",
+            "injection_event:hi-04",
+            "injection_event:hi-05"
+          ],
+          "rank": 2,
+          "statement": "An overactive input rail guardrail caused false positive blocks without an actual surge in direct prompt injections. Contradicted: 31 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for High volume of prompt injection blocks: met 1 of 1 predictions with none unmet. Rivals: h2 weakened by 5 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 2,
+      "total": 0.95,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the input_rails defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "DI-001"
+      }
+    },
+    {
+      "case_id": "ho-pii-rail-regression",
+      "citations_valid": true,
+      "counter_evidence": [
+        "red_team_execution:rt-hp-di"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 11.944,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.013487,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "MS-001 scenario execution passes as caught.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"scenario_id\": \"MS-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "MS-001"
+                  }
+                ],
+                "statement": "The input guardrail failure is isolated to PII-001 while combined injection and personal data scenarios like MS-001 remain caught.",
+                "subsystem": "input_rails",
+                "symptom": "PII-001 red team miss"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "MS-001 scenario execution is missed rather than caught.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"scenario_id\": \"MS-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "MS-001"
+                  }
+                ],
+                "statement": "The input guardrail regression affects multiple input sensitive data scenarios including MS-001.",
+                "subsystem": "input_rails",
+                "symptom": "PII-001 red team miss"
+              }
+            ],
+            "verification": {
+              "args_json": "{}",
+              "kind": "red_team_scenario",
+              "rationale": "Verifies whether input rails fail across multiple combined sensitive data scenarios.",
+              "scenario_id": "MS-001"
+            }
+          },
+          "round": 1
+        },
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "DI-001 direct instruction override scenario is caught as expected by the input rails.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"scenario_id\":\"DI-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "DI-001"
+                  },
+                  {
+                    "description": "DI-001 direct instruction override scenario does not show a regression.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"scenario_id\":\"DI-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_regression",
+                    "subject": "DI-001"
+                  }
+                ],
+                "statement": "The input guardrail failure is isolated to PII-001 while direct injection scenario DI-001 remains caught.",
+                "subsystem": "input_rails",
+                "symptom": "PII-001 red team miss"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "DI-001 direct instruction override scenario is not caught.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"scenario_id\":\"DI-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "DI-001"
+                  },
+                  {
+                    "description": "DI-001 direct instruction override scenario shows a regression.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"scenario_id\":\"DI-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_regression",
+                    "subject": "DI-001"
+                  }
+                ],
+                "statement": "The input guardrail failure extends across input safety rails affecting direct injection scenario DI-001 as well.",
+                "subsystem": "input_rails",
+                "symptom": "PII-001 red team miss"
+              }
+            ]
+          },
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "execution_id": "rt-pii-001"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_red_team_execution"
+        },
+        {
+          "args": {
+            "scenario_id": "MS-001"
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "list_red_team_executions"
+        },
+        {
+          "args": {
+            "scenario_id": "DI-001"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "list_red_team_executions"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "The input guardrail failure is isolated to PII-001 while direct injection scenario DI-001 remains caught. Observed: Red Team scenario DI-001 was caught as expected; no retrieved Red Team execution missed an attack it was expected to catch.",
+          "subsystem": "input_rails",
+          "supporting": [
+            "red_team_execution:rt-hp-di"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "red_team_execution:rt-hp-di"
+          ],
+          "rank": 2,
+          "statement": "The input guardrail failure extends across input safety rails affecting direct injection scenario DI-001 as well. Contradicted: Red Team scenario DI-001 was caught as expected; no retrieved Red Team execution missed an attack it was expected to catch.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for PII-001 red team miss: met 2 of 2 predictions with none unmet. Rivals: h2 refuted by 1 record. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 3,
+      "total": 0.85,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Verifies whether input rails fail across multiple combined sensitive data scenarios.",
+        "scenario_id": "MS-001"
+      }
+    },
+    {
+      "case_id": "ho-injection-burst-and-judge-failures",
+      "citations_valid": true,
+      "counter_evidence": [
+        "injection_event:mx-bl-01",
+        "injection_event:mx-bl-02",
+        "injection_event:mx-bl-03",
+        "injection_event:mx-bl-04",
+        "injection_event:mx-bl-05"
+      ],
+      "diagnostic": "incomplete",
+      "elapsed_s": 4.722,
+      "expected": "diagnosis",
+      "flags": [
+        "cause_not_named"
+      ],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": false,
+      "planner_cost_usd": 0.00522,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Direct injection logs will show a surge of direct prompt injection attempts.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "Direct prompt injection attempts caused an input guardrail block cluster.",
+                "subsystem": "input_rails",
+                "symptom": "Prompt injection blocks rose"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Direct injection search will not show a surge of direct prompt injections.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "False positive detections caused prompt injection blocks without direct injection attempts.",
+                "subsystem": "input_rails",
+                "symptom": "Prompt injection blocks rose"
+              }
+            ]
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "search_prompt_injections"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "medium",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "Direct prompt injection attempts caused an input guardrail block cluster. Observed: 12 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": [
+            "injection_event:mx-bl-01",
+            "injection_event:mx-bl-02",
+            "injection_event:mx-bl-03",
+            "injection_event:mx-bl-04",
+            "injection_event:mx-bl-05"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "injection_event:mx-bl-01",
+            "injection_event:mx-bl-02",
+            "injection_event:mx-bl-03",
+            "injection_event:mx-bl-04",
+            "injection_event:mx-bl-05"
+          ],
+          "rank": 2,
+          "statement": "False positive detections caused prompt injection blocks without direct injection attempts. Contradicted: 12 direct injection attempts were blocked by an input rail.",
+          "subsystem": "input_rails",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for Prompt injection blocks rose: met 1 of 1 predictions with none unmet. Rivals: h2 weakened by 5 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 2,
+      "total": 0.625,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the input_rails defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "DI-001"
+      }
+    },
+    {
+      "case_id": "ho-output-blocks-from-a-bad-chunk",
+      "citations_valid": true,
+      "counter_evidence": [
+        "trace:hm-01",
+        "trace:hm-09"
+      ],
+      "diagnostic": "incomplete",
+      "elapsed_s": 12.246,
+      "expected": "diagnosis",
+      "flags": [
+        "required_counter_evidence_missing"
+      ],
+      "inference_calls": 2,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": false,
+      "planner_cost_usd": 0.013605,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Prompt injection search shows direct injection surge in the time window.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"time_window_minutes\": 60, \"limit\": 10}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  },
+                  {
+                    "description": "Judge drift report shows judge models are operating normally without drift.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "Direct prompt injection attempts targeting NVDA caused a surge in guardrail blocks.",
+                "subsystem": "input_rails",
+                "symptom": "faithfulness blocks on NVDA queries"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "No direct prompt injection surge is observed.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"time_window_minutes\": 60, \"limit\": 10}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  },
+                  {
+                    "description": "Drift report confirms drift in the frontier judge reading.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  }
+                ],
+                "statement": "Frontier judge drift is causing false-positive faithfulness blocks on standard NVDA queries.",
+                "subsystem": "judges",
+                "symptom": "faithfulness blocks on NVDA queries"
+              }
+            ]
+          },
+          "round": 1
+        },
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Sampled NVDA blocked traces share a common retrieved chunk.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_from": "q1",
+                      "sample_size": 2,
+                      "tool": "get_trace_detail"
+                    },
+                    "signal": "chunk_shared_by_failures"
+                  }
+                ],
+                "statement": "A single retrieved chunk shared across NVDA queries is causing faithfulness guardrail blocks.",
+                "subsystem": "retrieval",
+                "symptom": "faithfulness_block_cluster"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Sampled NVDA blocked traces do not share a single common chunk.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_from": "q1",
+                      "sample_size": 2,
+                      "tool": "get_trace_detail"
+                    },
+                    "signal": "chunk_shared_by_failures"
+                  }
+                ],
+                "statement": "Downstream model generation errors on NVDA queries trigger faithfulness blocks across varied context chunks.",
+                "subsystem": "downstream_model",
+                "symptom": "faithfulness_block_cluster"
+              }
+            ]
+          },
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "limit": 10,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "search_prompt_injections"
+        },
+        {
+          "args": {},
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "app_trace_id": "hm-01"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "app_trace_id": "hm-09"
+          },
+          "id": "q5",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "medium",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "A single retrieved chunk shared across NVDA queries is causing faithfulness guardrail blocks. Observed: chunks NVDA-10K-0518 were retrieved by all 2 sampled failed traces.",
+          "subsystem": "retrieval",
+          "supporting": [
+            "trace:hm-01",
+            "trace:hm-09"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "trace:hm-01",
+            "trace:hm-09"
+          ],
+          "rank": 2,
+          "statement": "Downstream model generation errors on NVDA queries trigger faithfulness blocks across varied context chunks. Contradicted: chunks NVDA-10K-0518 were retrieved by all 2 sampled failed traces.",
+          "subsystem": "downstream_model",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for faithfulness_block_cluster: met 1 of 1 predictions with none unmet. Rivals: h2 weakened by 2 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 5,
+      "total": 0.95,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Exercise the retrieval defenses with a controlled input and compare the result with the incident.",
+        "scenario_id": "IND-001"
+      }
+    },
+    {
+      "case_id": "ho-judge-drift-not-pipeline",
+      "citations_valid": true,
+      "counter_evidence": [
+        "drift_report:gemini-rubric",
+        "trace:kj-01",
+        "trace:kj-02"
+      ],
+      "diagnostic": "pass",
+      "elapsed_s": 11.116,
+      "expected": "diagnosis",
+      "flags": [],
+      "inference_calls": 1,
+      "missing_evidence": [],
+      "model_called": true,
+      "outcome": "diagnosis",
+      "passed": true,
+      "planner_cost_usd": 0.006289,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report indicates active drift.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "No cluster of judge pipeline failures is present.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"failure_type\":\"judge_failed\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  }
+                ],
+                "statement": "Frontier judge model drift caused scoring divergence between judge tiers on KO traces.",
+                "subsystem": "judges",
+                "symptom": "judge disagreement on KO traces"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Frontier judge drift report shows healthy status.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_drift_report"
+                    },
+                    "signal": "judge_drift"
+                  },
+                  {
+                    "description": "Judge pipeline execution failures are logged in failing traces.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"failure_type\":\"judge_failed\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "judge_failures"
+                  }
+                ],
+                "statement": "Judge pipeline execution failures caused incomplete or failing judge evaluations.",
+                "subsystem": "judges",
+                "symptom": "judge disagreement on KO traces"
+              }
+            ]
+          },
+          "round": 1
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "disagreement": true,
+            "limit": 20,
+            "ticker": "KO"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "search_traces"
+        },
+        {
+          "args": {},
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_drift_report"
+        },
+        {
+          "args": {
+            "failure_type": "judge_failed"
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        }
+      ],
+      "ranked": [
+        {
+          "confidence": "high",
+          "contradicting": [],
+          "rank": 1,
+          "statement": "Frontier judge model drift caused scoring divergence between judge tiers on KO traces. Observed: judge gemini-rubric drift state drifted, kappa 0.29; 2 judge pipeline failures, below 3.",
+          "subsystem": "judges",
+          "supporting": [
+            "drift_report:gemini-rubric",
+            "trace:kj-01",
+            "trace:kj-02"
+          ]
+        },
+        {
+          "confidence": "low",
+          "contradicting": [
+            "drift_report:gemini-rubric",
+            "trace:kj-01",
+            "trace:kj-02"
+          ],
+          "rank": 2,
+          "statement": "Judge pipeline execution failures caused incomplete or failing judge evaluations. Contradicted: judge gemini-rubric drift state drifted, kappa 0.29; 2 judge pipeline failures, below 3.",
+          "subsystem": "judges",
+          "supporting": []
+        }
+      ],
+      "run_notes": [
+        "Challenge of h1 for judge disagreement on KO traces: met 2 of 2 predictions with none unmet. Rivals: h2 refuted by 3 records. ",
+        "The review checks a diagnosis against its own predictions and the counter-evidence that was retrieved. It does not prove the cause."
+      ],
+      "safety": true,
+      "stopping_reason": "sufficient_evidence",
+      "tool_calls": 3,
+      "total": 0.925,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "disagreement": true,
+          "limit": 20
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the traces where the flash and frontier judges disagree by 0.5 or more.",
+        "tool": "search_traces"
+      }
+    },
+    {
+      "case_id": "ho-single-blocked-trace",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 13.124,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 2,
+      "missing_evidence": [
+        "h1 (input_rails): rail_working could not be told, no retrieved result bears on this signal",
+        "h2 (input_rails): rail_working could not be told, no retrieved result bears on this signal",
+        "no hypothesis for blocked request is supported by the retrieved records"
+      ],
+      "model_called": true,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.013952,
+      "planner_transcript": [
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Hazard taxonomy rail blocks trigger a block cluster signal in failing traces.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"blocked\", \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "block_cluster"
+                  },
+                  {
+                    "description": "Hazard taxonomy blocks do not generate direct prompt injection surges.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "The request was blocked due to a cluster of hazard taxonomy safety violations.",
+                "subsystem": "input_rails",
+                "symptom": "blocked request"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Prompt injections logged under direct injections do not form a hazard taxonomy block cluster.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"failure_type\": \"blocked\", \"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "get_failing_traces"
+                    },
+                    "signal": "block_cluster"
+                  },
+                  {
+                    "description": "A surge in direct prompt injection attempts is detected by input rail logs.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"time_window_minutes\": 60}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "search_prompt_injections"
+                    },
+                    "signal": "injection_surge"
+                  }
+                ],
+                "statement": "The request block was caused by a surge of direct prompt injection attempts on input rails.",
+                "subsystem": "input_rails",
+                "symptom": "blocked request"
+              }
+            ]
+          },
+          "round": 1
+        },
+        {
+          "plan": {
+            "hypotheses": [
+              {
+                "hypothesis_id": "h1",
+                "predictions": [
+                  {
+                    "description": "Red team scenario HZ-001 passes as expected.",
+                    "expect": true,
+                    "query": {
+                      "args_json": "{\"scenario_id\": \"HZ-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "HZ-001"
+                  }
+                ],
+                "statement": "The hazard taxonomy guardrail blocked request ue-01 according to red team safety benchmark HZ-001.",
+                "subsystem": "input_rails",
+                "symptom": "blocked request"
+              },
+              {
+                "hypothesis_id": "h2",
+                "predictions": [
+                  {
+                    "description": "Red team scenario HZ-001 fails or is not working as expected.",
+                    "expect": false,
+                    "query": {
+                      "args_json": "{\"scenario_id\": \"HZ-001\"}",
+                      "listing_args_json": "{}",
+                      "sample_size": 2,
+                      "tool": "list_red_team_executions"
+                    },
+                    "signal": "rail_working",
+                    "subject": "HZ-001"
+                  }
+                ],
+                "statement": "The request block was caused by prompt injection protection failing validation on direct override benchmark HZ-001.",
+                "subsystem": "input_rails",
+                "symptom": "blocked request"
+              }
+            ],
+            "verification": {
+              "args_json": "{}",
+              "kind": "red_team_scenario",
+              "rationale": "Verifies whether the hazard taxonomy input guardrail is functioning correctly on known benchmark inputs.",
+              "scenario_id": "HZ-001"
+            }
+          },
+          "round": 2
+        }
+      ],
+      "queries": [
+        {
+          "args": {
+            "app_trace_id": "ue-01"
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "ok",
+          "tool": "get_trace_detail"
+        },
+        {
+          "args": {
+            "failure_type": "blocked",
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "ok",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "time_window_minutes": 60
+          },
+          "id": "q3",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "search_prompt_injections"
+        },
+        {
+          "args": {
+            "scenario_id": "HZ-001"
+          },
+          "id": "q4",
+          "separates": [
+            "h1",
+            "h2"
+          ],
+          "status": "empty",
+          "tool": "list_red_team_executions"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "justified_abstention",
+      "tool_calls": 4,
+      "total": 0.885,
+      "validation_problems": [],
+      "verification": {
+        "executed": false,
+        "kind": "red_team_scenario",
+        "rationale": "Verifies whether the hazard taxonomy input guardrail is functioning correctly on known benchmark inputs.",
+        "scenario_id": "HZ-001"
+      }
+    },
+    {
+      "case_id": "ho-failed-trace-queries",
+      "citations_valid": true,
+      "counter_evidence": [],
+      "diagnostic": "not_applicable",
+      "elapsed_s": 0.0,
+      "expected": "abstention",
+      "flags": [],
+      "inference_calls": 0,
+      "missing_evidence": [
+        "get_failing_traces could not be read, so the incident cannot be examined"
+      ],
+      "model_called": false,
+      "outcome": "abstention",
+      "passed": true,
+      "planner_cost_usd": 0.0,
+      "planner_transcript": [],
+      "queries": [
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q1",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        },
+        {
+          "args": {
+            "failure_type": "any",
+            "limit": 50,
+            "time_window_minutes": 60
+          },
+          "id": "q2",
+          "separates": [],
+          "status": "unavailable",
+          "tool": "get_failing_traces"
+        }
+      ],
+      "ranked": [],
+      "run_notes": [],
+      "safety": true,
+      "stopping_reason": "critical_evidence_unavailable",
+      "tool_calls": 2,
+      "total": 1.0,
+      "validation_problems": [],
+      "verification": {
+        "args": {
+          "failure_type": "blocked",
+          "limit": 50,
+          "time_window_minutes": 60
+        },
+        "executed": false,
+        "kind": "read_only_query",
+        "rationale": "List the blocked requests in the window to see whether they share a ticker, a chunk or a rail.",
+        "tool": "get_failing_traces"
+      }
+    }
+  ],
+  "gemini": {
+    "calls": 12,
+    "cost_usd": 0.088409,
+    "tokens": {
+      "candidates": 4759,
+      "prompt": 34856,
+      "thoughts": 6949
+    }
+  },
+  "label": "day11-1b live gemini-planner:gemini-3.6-flash",
+  "planner": "gemini-planner:gemini-3.6-flash",
+  "planner_cost_usd": 0.088409,
+  "suite": {
+    "agent_version": "bounded-investigator-1+gemini-planner:gemini-3.6-flash",
+    "cases_fingerprint": "ff78042f71f76f40",
+    "harness_version": "known-answer-2",
+    "pass_threshold": 0.75,
+    "scoring_version": "scoring@d57d6e30511b",
+    "suite_fingerprint": "8c8d5363b1e06109",
+    "summary": {
+      "by_expected_outcome": {
+        "abstention": {
+          "cases": 2,
+          "passed": 2
+        },
+        "diagnosis": {
+          "cases": 7,
+          "passed": 4
+        }
+      },
+      "cases": 9,
+      "diagnostic": {
+        "fail": 0,
+        "incomplete": 3,
+        "not_applicable": 2,
+        "pass": 4
+      },
+      "failed": [
+        "ho-stale-chunk-tsla",
+        "ho-injection-burst-and-judge-failures",
+        "ho-output-blocks-from-a-bad-chunk"
+      ],
+      "inference_calls_total": 12,
+      "mean_score": 0.7928,
+      "passed": 6,
+      "safety_passed": 9,
+      "tool_calls_total": 26
+    },
+    "tool_contract_version": "mcp-read-9@db064f578365"
+  },
+  "suite_name": "heldout"
+}
