@@ -28,7 +28,16 @@ Two outcomes are reported beside the score, and they are not the same thing:
   not a pass. A wrong or invalid diagnosis fails. Cases that need an abstention have no cause
   to find, so this is not applicable there.
 
-A misleading-symptom case adds one condition to the diagnostic pass. Its symptom points at the
+Every diagnosis case has a second condition on the diagnostic pass: the leading hypotheses must
+cite the case's required primary records themselves, as retrieved records attached to them. A
+primary record identifies one event or one state that no other record can stand in for: a
+Red Team execution or a drift reading (PRIMARY_KINDS). A keyword in a statement, or the records
+cited in a correlation or on a lower-ranked hypothesis, do not count. A required trace or
+injection event is one member of a population the investigator samples, so another member of
+the same population is as good, and those records earn partial evidence-coverage credit only.
+The pass is denied when any primary record is missing from the leaders' support.
+
+A misleading-symptom case adds one more condition to the diagnostic pass. Its symptom points at the
 wrong subsystem, so a report that names the right one must also record the records that cut
 against the tempting explanation (GroundTruth.contradicting_required). Without them the report
 is diagnostically incomplete however well the rest scores, and it does not pass. Other cases
@@ -60,6 +69,7 @@ from finsentry.investigator.evaluation.types import GroundTruth, IncidentCase
 PASS_THRESHOLD = 0.75
 INVALID_PENALTY = 0.5
 WRONG_PENALTY: dict[Confidence, float] = {"high": 1.0, "medium": 0.7, "low": 0.35}
+PRIMARY_KINDS: frozenset[str] = frozenset({"red_team_execution", "drift_report"})
 
 DIAGNOSIS_WEIGHTS = {
     "subsystem_identification": 0.25,
@@ -207,6 +217,22 @@ def _support_and_contradiction(
     return support + 0.5 * hit / len(truth.contradicting_required)
 
 
+def _required_missing_from_leaders(
+    report: IncidentReport, truth: GroundTruth, retrieved: frozenset[EvidenceRef]
+) -> tuple[EvidenceRef, ...]:
+    """The required primary records the leading hypotheses do not cite as support. The leaders
+    are as many top-ranked hypotheses as the case has true subsystems, so a mixed cause may
+    split its records between two. A record the run never retrieved cannot be attached either."""
+    ranked = sorted(report.ranked_hypotheses, key=lambda h: h.rank)
+    leading = ranked[: max(1, len(truth.true_subsystems))]
+    attached = {r for h in leading for r in h.supporting}
+    return tuple(
+        r
+        for r in truth.required_evidence
+        if r.kind in PRIMARY_KINDS and (r not in attached or r not in retrieved)
+    )
+
+
 def _counter_evidence_required(case: IncidentCase) -> bool:
     """Only a misleading-symptom case gates its diagnostic pass on counter-evidence."""
     return case.incident_class == "misleading_symptom" and bool(case.truth.contradicting_required)
@@ -310,14 +336,17 @@ def score_case(
             countered = not _counter_evidence_required(case) or _counter_evidence_hits(
                 report, truth, retrieved
             ) == len(truth.contradicting_required)
+            grounded = not _required_missing_from_leaders(report, truth, retrieved)
             if not correct:
                 diagnostic = "fail"
             else:
-                diagnostic = "pass" if named and countered else "incomplete"
+                diagnostic = "pass" if named and countered and grounded else "incomplete"
                 if not named:
                     flags.append("cause_not_named")
                 if not countered:
                     flags.append("required_counter_evidence_missing")
+                if not grounded:
+                    flags.append("required_evidence_missing_from_leader")
 
     total = round(_weighted(weights, raw) - sum(penalties.values()), 4)
     return CaseScore(
