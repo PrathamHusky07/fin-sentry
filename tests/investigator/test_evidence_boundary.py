@@ -125,6 +125,7 @@ def test_the_reference_report_is_valid() -> None:
             ]
         },
         {"correlations": [{"statement": "consistent with a shared chunk", "evidence": [QUERY]}]},
+        {"observations": [{"statement": "blocks rose on one rail", "evidence": [QUERY]}]},
         {
             "evidence_against": [
                 {"hypothesis_id": "h2", "statement": "cuts against", "evidence": [QUERY]}
@@ -136,7 +137,14 @@ def test_the_reference_report_is_valid() -> None:
             ]
         },
     ],
-    ids=["supporting", "contradicting", "correlation", "evidence_against", "causal_claim"],
+    ids=[
+        "supporting",
+        "contradicting",
+        "correlation",
+        "observation",
+        "evidence_against",
+        "causal_claim",
+    ],
 )
 def test_a_query_result_ref_cannot_back_a_material_claim(overrides: dict[str, object]) -> None:
     result = validate_report(_diagnosis(**overrides), _investigated())

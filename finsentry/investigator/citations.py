@@ -100,6 +100,7 @@ def _material_evidence_problems(report: IncidentReport) -> list[str]:
     for h in report.ranked_hypotheses:
         groups.append((f"hypothesis {h.hypothesis_id} support", h.supporting))
         groups.append((f"hypothesis {h.hypothesis_id} contradiction", h.contradicting))
+    groups += [("an observation", c.evidence) for c in report.observations]
     groups += [("a correlation", c.evidence) for c in report.correlations]
     groups += [("a causal claim", c.evidence) for c in report.causal_claims]
     groups += [("evidence against", a.evidence) for a in report.evidence_against]
