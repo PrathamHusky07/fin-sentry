@@ -1,0 +1,60 @@
+{
+  "cases": [
+    {
+      "case_id": "ho-judge-outage-wide",
+      "expected_outcome": "diagnosis",
+      "fingerprint": "4dfde186736b02ef",
+      "incident_class": "judge_degradation"
+    },
+    {
+      "case_id": "ho-stale-chunk-tsla",
+      "expected_outcome": "diagnosis",
+      "fingerprint": "4620cd118b94b4d9",
+      "incident_class": "bad_retrieval_chunk"
+    },
+    {
+      "case_id": "ho-injection-surge-faithfulness-alert",
+      "expected_outcome": "diagnosis",
+      "fingerprint": "59e0002fbfbb80e4",
+      "incident_class": "injection_surge"
+    },
+    {
+      "case_id": "ho-pii-rail-regression",
+      "expected_outcome": "diagnosis",
+      "fingerprint": "96f441f0bd93941a",
+      "incident_class": "guardrail_regression"
+    },
+    {
+      "case_id": "ho-injection-burst-and-judge-failures",
+      "expected_outcome": "diagnosis",
+      "fingerprint": "07b4392a3d039d61",
+      "incident_class": "mixed_multi_subsystem"
+    },
+    {
+      "case_id": "ho-output-blocks-from-a-bad-chunk",
+      "expected_outcome": "diagnosis",
+      "fingerprint": "e4541b58e2c58053",
+      "incident_class": "misleading_symptom"
+    },
+    {
+      "case_id": "ho-judge-drift-not-pipeline",
+      "expected_outcome": "diagnosis",
+      "fingerprint": "47569ad97bdf8446",
+      "incident_class": "judge_degradation"
+    },
+    {
+      "case_id": "ho-single-blocked-trace",
+      "expected_outcome": "abstention",
+      "fingerprint": "40828d924e1aae2b",
+      "incident_class": "insufficient_evidence"
+    },
+    {
+      "case_id": "ho-failed-trace-queries",
+      "expected_outcome": "abstention",
+      "fingerprint": "968e226f9e28c6c5",
+      "incident_class": "insufficient_evidence"
+    }
+  ],
+  "note": "Frozen before any investigator ran on these cases. Editing a case changes its fingerprint and fails tests/investigator/test_heldout_cases.py. Results are recorded separately, after the run, in this directory.",
+  "suite": "heldout"
+}

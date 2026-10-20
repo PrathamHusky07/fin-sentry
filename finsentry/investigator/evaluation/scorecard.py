@@ -2,6 +2,10 @@
 
     python -m finsentry.investigator.evaluation.scorecard --label day11-1
     python -m finsentry.investigator.evaluation.scorecard --label day11-1 --live
+    python -m finsentry.investigator.evaluation.scorecard --label day11-1b --suite heldout --live
+
+--suite heldout runs the frozen held-out cases (cases_heldout.py) and writes under
+docs/measurements/investigator/heldout/, apart from the tuned regression suite.
 
 Three runs are recorded, because they answer different questions. The always-abstain stub
 shows the suite discriminates. The planner double shows the loop's orchestration and contracts
@@ -23,9 +27,11 @@ from typing import Any
 from finsentry.investigator.adapter import ReadOnlyAdapter
 from finsentry.investigator.contracts import InvestigationResult, InvestigationState
 from finsentry.investigator.evaluation.cases import all_cases
+from finsentry.investigator.evaluation.cases_heldout import heldout_cases
 from finsentry.investigator.evaluation.planner_double import PlannerDouble
 from finsentry.investigator.evaluation.replay import ReplayPlanner
 from finsentry.investigator.evaluation.runner import SuiteResult, run_suite
+from finsentry.investigator.evaluation.types import IncidentCase
 from finsentry.investigator.gemini_planner import GeminiPlanner
 from finsentry.investigator.loop import BoundedInvestigator, Clock, InvestigationFailedError
 from finsentry.investigator.planning import Plan, Planner
@@ -163,18 +169,24 @@ def _case_row(score: Any, rec: Recording) -> dict[str, Any]:
     return row
 
 
+def suite_cases(name: str) -> list[IncidentCase]:
+    return heldout_cases() if name == "heldout" else all_cases()
+
+
 async def run(
     label: str,
     investigator: Any,
     planner: Planner | None,
     only: list[str] | None,
     log: PlannerLog | None = None,
+    suite_name: str = "regression",
 ) -> dict[str, Any]:
     rec = Recording(investigator, planner, log)
-    cases = [c for c in all_cases() if not only or c.case_id in only]
+    cases = [c for c in suite_cases(suite_name) if not only or c.case_id in only]
     suite: SuiteResult = await run_suite(rec, cases)
     return {
         "label": label,
+        "suite_name": suite_name,
         "agent_version": suite.agent_version,
         "planner": planner.name if planner else None,
         "planner_cost_usd": round(planner.cost_usd, 6) if planner else 0.0,
@@ -187,8 +199,13 @@ def to_markdown(runs: list[dict[str, Any]]) -> str:
     out = ["# Investigator scorecard", ""]
     for r in runs:
         s = r["suite"]["summary"]
+        tag = (
+            " (frozen held-out set, not the tuned regression suite)"
+            if r.get("suite_name") == "heldout"
+            else ""
+        )
         out += [
-            f"## {r['label']}",
+            f"## {r['label']}{tag}",
             "",
             f"Agent `{r['agent_version']}`, scoring `{r['suite']['scoring_version']}`, "
             f"suite `{r['suite']['suite_fingerprint']}`, planner cost ${r['planner_cost_usd']}.",
@@ -234,13 +251,24 @@ async def main_async(args: argparse.Namespace) -> None:
         await replay_async(args)
         return
     only = args.only or None
+    suite_name = args.suite
     runs = [
-        await run(f"{args.label} always-abstain stub", AlwaysAbstainInvestigator(), None, only),
+        await run(
+            f"{args.label} always-abstain stub",
+            AlwaysAbstainInvestigator(),
+            None,
+            only,
+            suite_name=suite_name,
+        ),
     ]
     double = PlannerDouble()
     runs.append(
         await run(
-            f"{args.label} planner double (no model)", BoundedInvestigator(double), double, only
+            f"{args.label} planner double (no model)",
+            BoundedInvestigator(double),
+            double,
+            only,
+            suite_name=suite_name,
         )
     )
     if args.live:
@@ -248,7 +276,12 @@ async def main_async(args: argparse.Namespace) -> None:
         logged = PlannerLog(live)
         runs.append(
             await run(
-                f"{args.label} live {live.name}", BoundedInvestigator(logged), live, only, logged
+                f"{args.label} live {live.name}",
+                BoundedInvestigator(logged),
+                live,
+                only,
+                logged,
+                suite_name,
             )
         )
         runs[-1]["gemini"] = {
@@ -256,14 +289,15 @@ async def main_async(args: argparse.Namespace) -> None:
             "tokens": live.tokens,
             "cost_usd": round(live.cost_usd, 6),
         }
-    OUTPUT.mkdir(parents=True, exist_ok=True)
+    out = OUTPUT / "heldout" if suite_name == "heldout" else OUTPUT
+    out.mkdir(parents=True, exist_ok=True)
     names = ["stub-baseline", "planner-double", "live-gemini"]
     for run_, name in zip(runs, names, strict=False):
-        (OUTPUT / f"{args.label}-{name}.json").write_text(
+        (out / f"{args.label}-{name}.json").write_text(
             json.dumps(run_, indent=2, sort_keys=True) + "\n"
         )
     shown = [*runs, *(json.loads(Path(p).read_text()) for p in args.include)]
-    (OUTPUT / f"{args.label}-scorecard.md").write_text(to_markdown(shown))
+    (out / f"{args.label}-scorecard.md").write_text(to_markdown(shown))
     print(to_markdown(shown))
 
 
@@ -272,6 +306,7 @@ def main() -> None:
     parser.add_argument("--label", required=True)
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--cost-cap", type=float, default=0.25)
+    parser.add_argument("--suite", choices=["regression", "heldout"], default="regression")
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--replay", help="a recorded live scorecard JSON whose plans to replay")
     parser.add_argument(
