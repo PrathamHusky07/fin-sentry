@@ -1,5 +1,176 @@
 # Build Log
 
+## 2026-10-20 (evening): Day 11.2 evidence gaps closed, durable sessions, incident API, Investigations page
+
+Model: Sonnet 5.5, no escalation. No frozen tool result schema, guardrail rail or tool name changed, and the
+investigator still has exactly the nine read-only MCP tools. No new or mutating tool, no autonomous subagent, no
+separate LLM critic, no agent framework, no new store. The Red Team Console was inspected and not changed. Nothing was
+pushed. Session start: branch `main`, HEAD and `origin/main` both `9b0bdbc`.
+
+Baseline before any change: `.venv/bin/python -m pytest -q -p no:cacheprovider` gave 1337 passed and 2 failed. One is the
+known `tests/dashboard/test_trace_list_sql_live.py` failure. Its error is
+`assert '96bca4b5-f707-4a93-b421-2674032849b5' in set()`, the missing AMZN trace in RisingWave, which matches the
+earlier cause. The other, `tests/redteam/test_api.py::test_one_execution_returns_its_evidence_and_expected_apart`
+(`KeyError: 'run'`), passed alone and in three reruns of its directory. It did not recur in the next three full runs. It
+is an unexplained intermittent failure, not a fix, and it needs watching. At the final commit the same command gives
+1427 passed and the one known failure.
+
+### Phase A: the evidence gaps, each with a failing test first
+
+1. A diagnostic pass needs the leaders to cite the required primary records (`4c38d06`). A keyword in a statement, or the
+   records cited in a correlation or on a lower-ranked hypothesis, no longer count. Primary means a record that no sample
+   can replace: a Red Team execution or a drift reading (`PRIMARY_KINDS` in the scorer). A required trace is one member
+   of a population the investigator samples, so it earns partial coverage credit only. The first version required every
+   listed record, and the planner double then failed two tuned cases because it cited a different sampled trace of the
+   right population. That showed the rule was too strict, and it was narrowed. Seven adversarial tests failed first
+   (one record missing, the DI-001 execution substituted, an unrelated execution, keyword only, records cited only in a
+   correlation). The case definitions and the frozen manifest are untouched, and no held-out case was re-scored.
+2. A prediction is judged by the query it names (`17e6b6e`). `PredictedObservation` carries a `query_key`. The loop
+   records which executed queries each key covers, and the ledger and the report builder read only those. Seven loop
+   tests failed first: two endpoints, two time windows, two Red Team scenarios, two sampled populations. A prediction about
+   a query that never ran is unknown and is not borrowed from another. Two signals that compare sampled populations
+   (`chunk_contradicted`, `chunk_shared_by_failures`) read the sampled groups one hypothesis names for them together, and
+   every other signal reads its one query. Replaying the recorded tuned run 5 reproduces its recorded result exactly. The
+   planner double had a `judge_failures` prediction on a single judge-scores read, which cannot show a window-level
+   signal, so its playbook was corrected. The planner prompt gained one sentence saying predictions are checked against
+   the query they name.
+3. An observation backed only by a `query_result` ref is invalid (`dfe4e9f`). One parametrized case failed first.
+4. Strict planner budget reservation (`272f591`). Before a request starts, the planner reserves its worst case (the
+   prompt at 3 characters per token, the full 4096 output tokens and the 1024 thinking budget, at the platform's rates in
+   `cost_governance`) and refuses it when spent plus that would pass the planner's cap or the session's. Actual usage then
+   replaces the reservation. A shared `CostBudget` ledger holds the session cap of $0.10, so a new planner instance does
+   not reset it, and each cap holds without the other. The worst case is about $0.021 for a small digest. The existing
+   no-overlap and timeout guards are unchanged. One existing test encoded the old after-the-fact cap and was rewritten.
+   The ledger lives in one process and is not shared between gateway replicas.
+
+DAO exception hierarchy, read from source: `RisingWaveUnavailableError` (no pool) and `RisingWaveQueryError` (a query
+raised on a live pool) are both direct subclasses of `Exception` and are unrelated to each other. `read_rows` and
+`read_row` turn only the first into an empty result.
+
+### Phase B: durable sessions
+
+Persistence gate: passed. The application's store is the Postgres `finsentry` database (`DATABASE_URL`), with numbered SQL
+migrations run by `finsentry/db/migrate.py`, short-lived psycopg connections called through `asyncio.to_thread`, a partial
+unique index that allows one running row, and a stale-row reclaim at gateway start. That is the Red Team store's pattern,
+and the session store follows it. Migration 007 adds `investigations` and `investigation_events` (`e4f6a0e`).
+
+A session row holds the incident id, the request (trigger, scope, window), status (running, completed, failed,
+interrupted), origin (live or fixture), planner, outcome, stopping reason, the final state (ledger, executed queries,
+usage), the report, usage with the model spend and a per-call log, the error and the timestamps. The timeline is one event
+per query, planning round, ledger update and stop, stored as the loop runs. Rules held by the store and tests:
+
+- One running session at a time, enforced by the database. An identical start while one runs returns the running session.
+  A different start gets a 409 with the running id.
+- Every update is guarded by `status = 'running'`, so a late writer cannot replace an ended session.
+- A refresh or a restart reopens the stored session. Nothing on the read path starts a run or calls the planner.
+- An abstention is a completed outcome. Failed and interrupted are explicit. A session is not resumable, because resume
+  is not implemented, and the page says so. A heartbeat older than 5 minutes is reclaimed as interrupted at the next
+  start or at gateway startup, and a graceful shutdown ends a running session as interrupted.
+
+Fixture sessions come from `python -m finsentry.investigator.evaluation.seed --replace`. They run known-answer case worlds
+through the same service, recorder and store with the planner double, are stored with `origin = 'fixture'`, and the page
+says "Fixture replay" on each. Six are in the dev database. None is a model outcome.
+
+### Phase C: the API (`a1bb153`, `d5ec79c`)
+
+`POST /ops/investigations` (validated request: trigger kind, a reference id where the trigger needs one and it must pass the
+tool's own argument check, optional endpoint and ticker, a window of 1 to 1440 minutes), `GET /ops/investigations`
+(status filter, paging) and `GET /ops/investigations/{id}`. Responses are typed. A start refuses with 503 and stores no
+row when no model is configured or the store is down. The start route cannot choose a fixture origin. The GET-never-runs
+proof is a planner and a tool session that fail the test if touched, with row, event and heartbeat counts that do not
+move. A count the session did not store is null and not zero. 51 tests cover the store, the lifecycle and the API.
+
+### Phase D: the page and the architecture section
+
+The existing `/investigations` is the trace workspace, so the new page sits at `/investigations/incidents` and
+`/investigations/incidents/[id]`, with an Executions and Incidents switch on both. The detail page reads, in order: the
+incident header (trigger, scope, window, status, origin, timestamps), the outcome (a best-supported hypothesis that is
+labelled not proven, an abstention shown as a complete result, or a failed or interrupted state with only what was kept),
+the ranked competing hypotheses with their supporting and contradicting records and each prediction's result and the
+queries that judged it, the execution timeline, the evidence explorer (every claim next to its exact records, with the
+facts the tool returned when it read them), what was not established, and the budget and model spend. Uncertainty states
+are distinct: a verified empty ("Ran, matched nothing"), an empty that could not be verified, an unavailable source ("Could
+not run"), a rejected call, and a prediction that could not be checked, each with its own border and wording. A solid border
+says something about the platform and a dashed one says nothing. A record links to its page only for a live session.
+
+Architecture: a fifth layer, "Incident investigator", at `#incident-investigator`. The diagram is a control-flow state
+machine (trigger, open, plan, execute, assess, validate, diagnosis or abstention), with the evidence boundary as the
+dominant line, the model on its far side, the one loop from assess back to plan, the nine read-only tools, and four dashed
+exits that all end in an abstention. It is `web/components/arch/investigator-loop.tsx` and it maps to `loop.py`
+(open, plan, execute, reassess, diagnose or abstain), `planning.py` (the plan contract and validation), `policy.py`
+(admission, ceilings and stop order), `signals.py` and `ledger.py` (evaluators, ledger, review), `citations.py` (report
+validation), `mcp_client.py` and `adapter.py` (the nine tools), and `store.py` and `service.py` (the session).
+
+Skills. Found and read: visualization-strategy-and-critique, data-visualization, frontend-app-builder (read for scope, not
+followed: it is for new or redesigned apps), frontend-testing-debugging, testing-data-visualizations, d3-data-visualization
+(not applicable, no D3), vercel-react-best-practices and web-design-guidelines (both in the user skills folder),
+eval-engineering (used for the oracle versus fixture split in Phase A). Missing: frontend-design and
+uml-and-software-architecture-visualization, which visualization-strategy-and-critique names but which is not installed, and
+its shared reference files are absent too. Nothing was installed. The skill's required step of generating large-screen and
+mobile concept images before implementing could not be done, because no image generation tool exists here. The diagram was
+instead designed against the existing four diagrams and the project's own SVG primitives (no new library), and checked in
+the browser. Applied: the visualization skill's one-dominant-question and direct-label rules, mobile as a sibling target
+(the outline replaces the diagram below `lg`), and the testing skill's rule to test behavior and not pixels. The
+Playwright browser tool failed to connect (`npx` is not on the tool's PATH), so the local Playwright binary was used.
+The Vercel React rules were applied by reading and by keeping the pages Server Components where nothing needs state, which
+here means the two route files. The web-design-guidelines skill fetches its rules from a URL and was not run.
+
+### Verification
+
+- Backend: ruff, ruff format on the changed files and `mypy finsentry/` clean. pytest 1427 passed and the one known
+  failure, `.venv/bin/python -m pytest -q -p no:cacheprovider`, at `beb83fb` plus two small frontend edits.
+- Frontend: tsc and eslint clean, prettier clean on the changed files, Vitest 110 passed (94 before). Production build
+  passed with the dev server stopped, and it was restarted afterwards (200 on :3000).
+- Playwright against the real gateway and stored sessions: 117 passed and 11 failed. All 11 depend on trace `96bca4b5`,
+  which the live API now reports as `found: false`: the Overview, the Investigations drawer and disagreement lens, the
+  stage anchors and the trace-detail specs. They fail for the same reason as the pytest failure and not because of this
+  slice. The 13 incidents specs and 12 architecture specs pass, including 375, 768 and 1440 widths with no horizontal
+  overflow, no target under 44px and no console error, and a refresh that sends no POST and adds no session.
+- States verified from fixtures: a diagnosis, a justified abstention, an unavailable source, a failed run, an interrupted
+  run. One state was verified from a live run: a session started through the real API against the real stack (MCP over
+  stdio, Gemini, then stored). It was a single-trace trigger on the Oct 9 blocked trace, with a 1440-minute window. Both
+  failing-trace and injection queries matched nothing, so it abstained when the model-call ceiling was reached. That is a
+  valid outcome and it says nothing about diagnostic quality.
+
+### Spend
+
+This session: $0.008509 of the $0.10 cap, from the stored usage of one live investigation (2 calls, 6,746 input and 920
+output tokens, both metered). No other live call was made, and the 10D flash comparison and repeated tuning were not run.
+The earlier session recorded at most $0.0884 on the same account, and that is not part of this figure.
+
+### Red Team Console: shortcomings for Day 12 (inspected, not changed)
+
+1. One long page: summary tiles, run bar, ten scenarios in nine groups and a 25-row execution table in one scroll, about
+   4,800px at 1440 and 9,200px at 375, with no jump rail like the architecture and incident pages now have.
+2. The summary is five equal tiles. Three of them read 0 and carry as much weight as the one finding (the known gap).
+3. Re-runs dominate the execution table. Twenty-odd near-identical OUT-001 rows hide that nothing changed, and there is no
+   per-scenario trend or "caught before, missed now" marker, which is exactly the signal the investigator's regression
+   trigger looks for.
+4. A missed or differing execution offers no way to open an incident investigation on it. The `red_team_miss` trigger
+   exists in the API and the new start form and is not offered from the row.
+5. "Run selected (0)" depends on a small checkbox with no explanation, while the per-row run button is the real path.
+6. Many metadata lines are under 16px at 375 (77 text elements under 15.5px), against the mobile text rule.
+7. A caught result that "differs from expectation" (PII-001 version 1) reads in the same neutral style as a match.
+8. The judge-assisted run button does not state its model cost beside it.
+
+### Found and not fixed
+
+- The architecture page and the landing still say the MCP server has five read tools. It registers nine. The new section
+  states the nine and notes the four added later. Correcting the older copy and the interface hub diagram is Day 12 work.
+- `docs/measurements/investigator/docs-measurements-investigator.zip`, an untracked file present at session start, is no
+  longer on disk. No command run in this session deletes files and the cause is unknown. `tests/mcp/tools/tests-mcp-tools.zip`
+  is still there and untracked.
+- A stale frontier consumer from 11 days ago (pid 99435) is running alongside the current one. It was not touched.
+- The gateway on :8000 and the Next dev server on :3000 were each restarted by this session so the new routes and a clean
+  build were live. The two consumers, the dashboard on :8081 and Docker were not touched.
+
+### Day 12 handoff
+
+Red Team Console redesign from the list above. Correct the five-tool copy. A decision on whether to rerun
+`ho-stale-chunk-tsla` alone, and whether `REQUEST_TIMEOUT_S` should rise now that the per-call log records latency and
+error class. Watch the intermittent Red Team API test. Reseed the fixture sessions after any contract change with
+`python -m finsentry.investigator.evaluation.seed --replace`.
+
 ## 2026-10-20: Day 11.1b evidence integrity and a held-out baseline
 
 Model: Sonnet 5.5, no escalation. No frozen tool result schema, guardrail rail or tool name changed, and the

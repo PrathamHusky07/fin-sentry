@@ -67,7 +67,7 @@ test.describe("Incident investigations", () => {
     const rows = page.locator("main ul li.row-reveal");
     await expect(rows.first()).toBeVisible();
     expect(await rows.count()).toBeGreaterThanOrEqual(5);
-    await expect(rows.first().getByText("Fixture replay")).toBeVisible();
+    await expect(rows.getByText("Fixture replay").first()).toBeVisible();
 
     await page.getByRole("button", { name: "Failed" }).click();
     await expect(rows).toHaveCount(
@@ -230,6 +230,23 @@ test.describe("Incident investigations", () => {
       page.getByText("It was not resumed.", { exact: false }).first(),
     ).toBeVisible();
     await expect(page.locator("#budget")).toContainText("No usage was stored");
+  });
+
+  test("a live session names the platform and the planner and prices its model calls", async ({
+    page,
+    request,
+  }) => {
+    const live = (await sessions(request)).find((r) => r.origin === "live");
+    test.skip(
+      !live,
+      "No live session is stored. Start one from the page to run this check.",
+    );
+    if (!live) return;
+    await page.goto(`/investigations/incidents/${live.investigation_id}`);
+    await expect(page.getByText("Live platform").first()).toBeVisible();
+    await expect(page.getByText("Fixture replay")).toHaveCount(0);
+    await expect(page.locator("#budget")).toContainText("estimate, not a bill");
+    await expect(page.locator("#budget")).toContainText("Model calls");
   });
 
   test("an unknown id says nothing is stored under it", async ({ page }) => {

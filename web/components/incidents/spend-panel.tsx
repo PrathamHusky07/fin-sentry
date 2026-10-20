@@ -126,7 +126,7 @@ export function SpendPanel({ detail: d }: { detail: Detail }) {
                       <td className="tabular-metric py-2 pr-3">{c.round}</td>
                       <td className="py-2 pr-3">
                         {c.outcome === "ok"
-                          ? "Returned a plan"
+                          ? "Model replied"
                           : `Failed: ${c.error_class ?? "unknown"}`}
                       </td>
                       <td className="tabular-metric py-2 pr-3">
