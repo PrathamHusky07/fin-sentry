@@ -10,6 +10,7 @@ import {
   type InvestigationsFilterState,
 } from "@/components/investigations-filters";
 import { InvestigationsTable } from "@/components/investigations-table";
+import { ViewSwitch } from "@/components/incidents/view-switch";
 import { PageHeader } from "@/components/page-header";
 import { TraceDrilldown } from "@/components/trace-drilldown";
 import { GATEWAY_URL } from "@/lib/config";
@@ -175,7 +176,11 @@ export function Investigations() {
   return (
     <div className="ctx ctx-forensic flex-1">
       <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-8 sm:py-16">
-        <PageHeader eyebrow="Forensic workspace" title="Investigations">
+        <PageHeader
+          eyebrow="Forensic workspace"
+          title="Investigations"
+          aside={<ViewSwitch current="executions" />}
+        >
           One row per persisted execution. Nothing here is grouped, sampled or
           deduplicated. Open a row for the evidence behind it.
         </PageHeader>
