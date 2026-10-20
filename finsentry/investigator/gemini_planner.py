@@ -3,8 +3,15 @@ The live planner: one Gemini call per planning round, structured output, hard co
 
 It is the only place the investigator spends money. Each call returns a Plan that the loop
 validates before using any of it. Spend is counted from the response's own usage metadata at
-the platform's published rates (rails/output/cost_governance.py), and the planner refuses a
-call once its running total reaches the cap, so a bad prompt loop cannot run up a bill.
+the platform's published rates (rails/output/cost_governance.py).
+
+Strict reservation. Before a request starts, the planner reserves its worst case, which is every
+input token the text could hold plus the whole output and thinking allowance, and refuses the
+request when spent plus that worst case would pass the planner's cap or the session's. Actual
+usage then replaces the reservation. Two caps apply and neither depends on the other: the
+planner's own, and the session ledger shared by every planner in the process, so a new planner
+instance does not reset the session. The ledger lives in one process and is not shared between
+replicas or restarts, the limit CostBudget already documents.
 
 Timeouts. The SDK call is synchronous and runs in a worker thread, so cancelling the awaiting
 coroutine (the loop's asyncio.wait_for) stops the wait and does not stop the request. The only
@@ -38,11 +45,22 @@ from finsentry.rails.output.cost_governance import CostBudget
 
 log = logging.getLogger(__name__)
 
-DEFAULT_COST_CAP_USD = 0.25  # half of the session cap, so an estimate that is off still holds
+DEFAULT_COST_CAP_USD = 0.25
+SESSION_COST_CAP_USD = 0.10  # the Day 11.2 session cap across every planner in this process
 MAX_OUTPUT_TOKENS = 4096
 THINKING_BUDGET = 1024  # thinking tokens are billed as output, so they are bounded too
 REQUEST_TIMEOUT_S = 30.0  # below the loop's 45 s model timeout
 CHARS_PER_TOKEN = 3  # a pessimistic ratio, so an estimate from text errs high
+
+
+_SESSION = CostBudget(
+    per_run_ceiling_usd=SESSION_COST_CAP_USD, per_day_ceiling_usd=SESSION_COST_CAP_USD
+)
+
+
+def session_ledger() -> CostBudget:
+    """The one ledger every planner built by from_env charges."""
+    return _SESSION
 
 
 def system_prompt() -> str:
@@ -50,6 +68,13 @@ def system_prompt() -> str:
     (HTTP 400), so it is given in the prompt and the reply is validated here instead."""
     schema = json.dumps(Plan.model_json_schema(), separators=(",", ":"))
     return f"{SYSTEM_PROMPT}\nThe JSON must match this JSON schema exactly:\n{schema}\n"
+
+
+def worst_case_cost_usd(digest: str) -> float:
+    """The most one request can cost: the prompt at a pessimistic characters-per-token ratio,
+    the whole output allowance and the whole thinking budget, all at the platform's rates."""
+    prompt = (len(system_prompt()) + len(digest)) // CHARS_PER_TOKEN + 1
+    return CostBudget.estimate_call_cost(prompt, MAX_OUTPUT_TOKENS, THINKING_BUDGET)
 
 
 class GeminiPlanner:
@@ -62,10 +87,12 @@ class GeminiPlanner:
         *,
         cost_cap_usd: float = DEFAULT_COST_CAP_USD,
         request_timeout_s: float = REQUEST_TIMEOUT_S,
+        ledger: CostBudget | None = None,
     ) -> None:
         self._client = client
         self._model = model
         self._cap = cost_cap_usd
+        self._ledger = ledger
         self._request_timeout_s = request_timeout_s
         self._idle = threading.Event()
         self._idle.set()  # cleared while a request is in its worker thread
@@ -76,7 +103,9 @@ class GeminiPlanner:
         self.name = f"gemini-planner:{model}"
 
     @classmethod
-    def from_env(cls, *, cost_cap_usd: float = DEFAULT_COST_CAP_USD) -> GeminiPlanner:
+    def from_env(
+        cls, *, cost_cap_usd: float = DEFAULT_COST_CAP_USD, ledger: CostBudget | None = None
+    ) -> GeminiPlanner:
         from dotenv import load_dotenv
         from google import genai
 
@@ -93,7 +122,7 @@ class GeminiPlanner:
             client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         else:
             raise PlanningError(f"GEMINI_MODE is {mode!r}, so there is no model to call")
-        return cls(client, model, cost_cap_usd=cost_cap_usd)
+        return cls(client, model, cost_cap_usd=cost_cap_usd, ledger=ledger or session_ledger())
 
     def _call(self, digest: str) -> Any:
         from google.genai import types
@@ -117,19 +146,41 @@ class GeminiPlanner:
         finally:
             self._idle.set()
 
+    def _charge(self, prompt: int, candidates: int, thoughts: int) -> None:
+        """Replace the reservation with what the call cost, here and on the session ledger."""
+        self.cost_usd += CostBudget.estimate_call_cost(prompt, candidates, thoughts)
+        if self._ledger is not None:
+            self._ledger.record_call(prompt, candidates, thoughts)
+
     def _charge_unmetered(self, digest: str) -> None:
         """Charge a call that may have run with no usage to read: every input token the text
         could hold, and the whole output allowance."""
         prompt = (len(system_prompt()) + len(digest)) // CHARS_PER_TOKEN
         self.calls += 1
         self.unmetered_calls += 1
-        self.cost_usd += CostBudget.estimate_call_cost(prompt, MAX_OUTPUT_TOKENS, 0)
+        self._charge(prompt, MAX_OUTPUT_TOKENS, 0)
+
+    def _reserve(self, digest: str) -> None:
+        """Refuse the request unless its worst case fits under both caps."""
+        worst = worst_case_cost_usd(digest)
+        if self.cost_usd + worst > self._cap:
+            raise PlanningError(
+                f"the planner's cost cap of ${self._cap:.2f} would be breached: "
+                f"${self.cost_usd:.4f} spent and up to ${worst:.4f} for this request"
+            )
+        if self._ledger is not None:
+            allowed, reason = self._ledger.can_proceed_cumulative(worst)
+            if not allowed:
+                spent = self._ledger.report()["run_total_usd"]
+                raise PlanningError(
+                    f"the session cost cap would be breached ({reason}): ${spent:.4f} spent in "
+                    f"this session and up to ${worst:.4f} for this request"
+                )
 
     async def plan(self, digest: str, *, round_no: int) -> Plan:
-        if self.cost_usd >= self._cap:
-            raise PlanningError(f"the planner's cost cap of ${self._cap:.2f} is reached")
         if not self._idle.is_set():
             raise PlanningError("an earlier model request is still running, so none is started")
+        self._reserve(digest)
         self._idle.clear()
         try:
             response = await asyncio.to_thread(self._call_in_thread, digest)
@@ -144,7 +195,7 @@ class GeminiPlanner:
         self.tokens["prompt"] += prompt
         self.tokens["candidates"] += candidates
         self.tokens["thoughts"] += thoughts
-        self.cost_usd += CostBudget.estimate_call_cost(prompt, candidates, thoughts)
+        self._charge(prompt, candidates, thoughts)
         text = response.text or ""
         try:
             return Plan.model_validate_json(text)

@@ -12,8 +12,14 @@ from finsentry.investigator.evaluation.planner_double import (
     hypothesis,
     prediction,
 )
-from finsentry.investigator.gemini_planner import GeminiPlanner
+from finsentry.investigator.gemini_planner import (
+    SESSION_COST_CAP_USD,
+    GeminiPlanner,
+    session_ledger,
+    worst_case_cost_usd,
+)
 from finsentry.investigator.planning import Plan, PlanningError
+from finsentry.rails.output.cost_governance import CostBudget
 
 PLAN = Plan(
     hypotheses=[
@@ -68,7 +74,9 @@ async def test_a_reply_that_is_not_a_plan_is_a_planning_error_but_still_costs() 
 
 async def test_a_planner_at_its_cost_cap_makes_no_further_call() -> None:
     client = FakeClient(PLAN.model_dump_json())
-    planner = GeminiPlanner(client, "gemini-test", cost_cap_usd=0.005)
+    first_worst = worst_case_cost_usd("digest")
+    # Room for one call's worst case and a little more, so the second call is the one refused.
+    planner = GeminiPlanner(client, "gemini-test", cost_cap_usd=first_worst + 0.004)
     await planner.plan("digest", round_no=1)
     with pytest.raises(PlanningError, match="cost cap"):
         await planner.plan("digest", round_no=2)
@@ -143,3 +151,109 @@ async def test_a_wait_that_is_cancelled_charges_the_call_and_blocks_an_overlappi
         await asyncio.sleep(0.01)
     assert await planner.plan("digest", round_no=1) == PLAN
     assert client.started == 2
+
+
+# Strict reservation: the worst case of the next call is checked against what is left before the
+# call starts, and the actual usage is reconciled after.
+
+
+async def test_a_call_whose_worst_case_would_breach_the_cap_never_starts() -> None:
+    client = FakeClient(PLAN.model_dump_json())
+    # The reply would cost $0.006, under this cap, but the worst case of the call is far above it.
+    planner = GeminiPlanner(client, "gemini-test", cost_cap_usd=0.01)
+    with pytest.raises(PlanningError, match="cost cap"):
+        await planner.plan("digest", round_no=1)
+    assert client.calls == [] and planner.cost_usd == 0 and planner.calls == 0
+
+
+async def test_the_reservation_covers_the_prompt_the_output_allowance_and_thinking() -> None:
+    from finsentry.investigator.gemini_planner import (
+        MAX_OUTPUT_TOKENS,
+        THINKING_BUDGET,
+        system_prompt,
+    )
+
+    digest = "x" * 9000
+    prompt_tokens = (len(system_prompt()) + len(digest)) // 3
+    floor = CostBudget.estimate_call_cost(prompt_tokens, MAX_OUTPUT_TOKENS, THINKING_BUDGET)
+    assert worst_case_cost_usd(digest) >= floor
+    assert worst_case_cost_usd(digest) > worst_case_cost_usd("short")
+
+
+async def test_the_cap_is_a_boundary_on_spent_plus_the_next_worst_case() -> None:
+    client = FakeClient(PLAN.model_dump_json())
+    actual = CostBudget.estimate_call_cost(3000, 800, 200)
+    worst = worst_case_cost_usd("digest")
+    just_short = GeminiPlanner(client, "gemini-test", cost_cap_usd=actual + worst - 0.0001)
+    await just_short.plan("digest", round_no=1)  # nothing spent yet, so the first call fits
+    with pytest.raises(PlanningError, match="cost cap"):
+        await just_short.plan("digest", round_no=2)
+    enough = GeminiPlanner(client, "gemini-test", cost_cap_usd=actual + worst + 0.0001)
+    await enough.plan("digest", round_no=1)
+    await enough.plan("digest", round_no=2)
+    assert enough.cost_usd == pytest.approx(2 * actual)
+
+
+async def test_the_reservation_is_reconciled_to_actual_usage_after_each_call() -> None:
+    planner = GeminiPlanner(FakeClient(PLAN.model_dump_json()), "gemini-test")
+    await planner.plan("digest", round_no=1)
+    assert planner.cost_usd == pytest.approx(CostBudget.estimate_call_cost(3000, 800, 200))
+    assert planner.cost_usd < worst_case_cost_usd("digest")
+
+
+# The session cap is shared by every planner in the process and holds on its own.
+
+
+async def test_a_second_planner_cannot_reset_the_session_cap() -> None:
+    # Room for one call's worst case (about $0.021) and not for a second one after $0.006 spent.
+    ledger = CostBudget(per_run_ceiling_usd=0.025, per_day_ceiling_usd=0.025)
+    client = FakeClient(PLAN.model_dump_json())
+    first = GeminiPlanner(client, "gemini-test", ledger=ledger)
+    await first.plan("digest", round_no=1)
+    second = GeminiPlanner(client, "gemini-test", ledger=ledger)  # a fresh instance, a fresh cap
+    with pytest.raises(PlanningError, match="session"):
+        await second.plan("digest", round_no=1)
+    assert len(client.calls) == 1, "the second planner never reached the SDK"
+
+
+async def test_the_session_cap_holds_even_when_the_planner_cap_is_generous() -> None:
+    ledger = CostBudget(per_run_ceiling_usd=0.01, per_day_ceiling_usd=0.01)
+    client = FakeClient(PLAN.model_dump_json())
+    planner = GeminiPlanner(client, "gemini-test", cost_cap_usd=5.0, ledger=ledger)
+    with pytest.raises(PlanningError, match="session"):
+        await planner.plan("digest", round_no=1)  # the worst case alone is above $0.01
+    assert client.calls == []
+
+
+async def test_the_planner_cap_holds_even_when_the_session_has_room() -> None:
+    ledger = CostBudget(per_run_ceiling_usd=100.0, per_day_ceiling_usd=100.0)
+    client = FakeClient(PLAN.model_dump_json())
+    planner = GeminiPlanner(client, "gemini-test", cost_cap_usd=0.01, ledger=ledger)
+    with pytest.raises(PlanningError, match="planner's cost cap"):
+        await planner.plan("digest", round_no=1)
+    assert client.calls == []
+
+
+async def test_a_call_charged_at_an_estimate_counts_against_the_session_too() -> None:
+    class Raises:
+        models = SimpleNamespace(generate_content=lambda **_: (_ for _ in ()).throw(OSError("x")))
+
+    ledger = CostBudget(per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    planner = GeminiPlanner(Raises(), "gemini-test", ledger=ledger)
+    with pytest.raises(OSError):
+        await planner.plan("digest", round_no=1)
+    assert ledger.report()["run_total_usd"] == pytest.approx(planner.cost_usd, abs=1e-6)
+    assert ledger.report()["call_count"] == 1
+
+
+async def test_a_metered_call_is_charged_to_the_session_at_its_actual_usage() -> None:
+    ledger = CostBudget(per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    planner = GeminiPlanner(FakeClient(PLAN.model_dump_json()), "gemini-test", ledger=ledger)
+    await planner.plan("digest", round_no=1)
+    assert ledger.report()["run_total_usd"] == pytest.approx(planner.cost_usd, abs=1e-6)
+
+
+def test_the_process_session_ledger_is_one_object_with_the_session_cap() -> None:
+    assert session_ledger() is session_ledger()
+    assert SESSION_COST_CAP_USD == 0.10
+    assert session_ledger().report()["ceilings"]["per_run_usd"] == SESSION_COST_CAP_USD
