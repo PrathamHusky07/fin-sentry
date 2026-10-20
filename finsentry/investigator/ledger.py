@@ -15,6 +15,12 @@ leader met its own predictions, had none unmet or unknown, and that no rival for
 symptom is also supported. It cannot prove a hypothesis true. It checks that a diagnosis
 agrees with its own predictions and with the counter-evidence that was retrieved, and the
 report says no more than that.
+
+assess() also checks, conservatively, that the records behind a present signal can bear on the
+subsystem the hypothesis names (Observation.subsystems). A chunk finding cannot show a fault in
+the output rails however well it is cited, so that prediction is set aside and recorded as
+rejected. A finding that fits several subsystems supports every hypothesis it fits, and the
+review then finds two supported rivals and names neither.
 """
 
 from __future__ import annotations
@@ -71,6 +77,8 @@ class PredictionOutcome:
 class Assessment:
     hypothesis_id: str
     outcomes: tuple[PredictionOutcome, ...]
+    # Predictions set aside because their records cannot bear on the hypothesis's subsystem.
+    rejected: tuple[str, ...] = ()
 
     def count(self, state: str) -> int:
         return sum(1 for o in self.outcomes if o.state == state)
@@ -100,12 +108,20 @@ def assess(
         supporting: list[EvidenceRef] = []
         contradicting: list[EvidenceRef] = []
         outcomes: list[PredictionOutcome] = []
+        rejected: list[str] = []
         met_notes: list[str] = []
         unmet_notes: list[str] = []
         for p in h.predicted_observations:
             if p.signal is None:
                 continue
             obs = evaluate(p.signal, p.subject, results)
+            if p.expect and obs.observed and obs.subsystems and h.subsystem not in obs.subsystems:
+                fits = ", ".join(sorted(obs.subsystems))
+                rejected.append(
+                    f"{p.signal} was observed ({obs.detail}), but those records bear on {fits} "
+                    f"and cannot show a fault in {h.subsystem}"
+                )
+                continue
             outcome = PredictionOutcome(
                 p.signal, p.expect, obs.observed, obs.detail, p.signal in symptom_signals
             )
@@ -117,7 +133,7 @@ def assess(
                 contradicting += list(obs.against if p.expect else obs.support)
                 unmet_notes.append(obs.detail)
         supporting, contradicting = _dedupe(supporting), _dedupe(contradicting)
-        a = Assessment(h.hypothesis_id, tuple(outcomes))
+        a = Assessment(h.hypothesis_id, tuple(outcomes), tuple(dict.fromkeys(rejected)))
         assessments[h.hypothesis_id] = a
         # A hypothesis is supported only when it predicted a signal to be present, the signal
         # was seen, and the signal is not just the incident's own symptom. Predictions of
@@ -168,6 +184,7 @@ def _unknowns(h: Hypothesis, a: Assessment) -> list[str]:
         for o in a.outcomes
         if o.state == "unknown"
     ]
+    lines += [f"{h.hypothesis_id} ({h.subsystem}): {why}" for why in a.rejected]
     if h.status == "open" and a.count("met") and not a.shows_own_mechanism:
         lines.append(
             f"{h.hypothesis_id} ({h.subsystem}) is only not contradicted or restates the "
