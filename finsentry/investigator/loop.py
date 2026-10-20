@@ -65,6 +65,16 @@ from finsentry.investigator.policy import (
     with_elapsed,
 )
 from finsentry.investigator.reports import abstention_report
+from finsentry.investigator.timeline import (
+    EventRecorder,
+    PlanFailed,
+    QueryRun,
+    Stopped,
+    TimelineEvent,
+    assessed_event,
+    describe_records,
+    plan_event,
+)
 from finsentry.mcp.tools.traces import GetFailingTracesResult
 
 Clock = Callable[[], float]
@@ -164,9 +174,15 @@ class BoundedInvestigator:
     """Investigates one incident within its budgets, then reports a diagnosis or abstains."""
 
     def __init__(
-        self, planner: Planner, *, tool_timeout_s: float = 20.0, model_timeout_s: float = 45.0
+        self,
+        planner: Planner,
+        *,
+        tool_timeout_s: float = 20.0,
+        model_timeout_s: float = 45.0,
+        recorder: EventRecorder | None = None,
     ) -> None:
         self.planner = planner
+        self.recorder = recorder
         self.tool_timeout_s = tool_timeout_s
         self.model_timeout_s = model_timeout_s
         self.agent_version = f"bounded-investigator-1+{planner.name}"
@@ -201,6 +217,11 @@ class _Run:
         self.sampled: dict[str, set[str]] = {}  # sampled group key -> the queries that filled it
         self.notes: list[str] = []
         self.cut_short = False  # a ceiling or a failure stopped work the run had planned
+        self.rounds_assessed = 0
+
+    def _emit(self, event: TimelineEvent) -> None:
+        if self.owner.recorder is not None:
+            self.owner.recorder.emit(event, self.clock() - self.t0)
 
     # time and admission
 
@@ -256,6 +277,20 @@ class _Run:
             self.clock() - self.t0,
         )
         self.results.append(result)
+        self._emit(
+            QueryRun(
+                query_id=query_id,
+                tool=tool,
+                args=args,
+                status=result.status,
+                error=result.error,
+                separates=separates,
+                retry_justification=why,
+                empty_unverified=result.empty_unverified,
+                elapsed_s=result.elapsed_s,
+                records=describe_records(result),
+            )
+        )
         return result
 
     # the investigation
@@ -328,12 +363,16 @@ class _Run:
                     self.owner.planner.plan(digest, round_no=round_no),
                     self._cap(self.owner.model_timeout_s),
                 )
-                return validate_plan(plan, self.state)
+                validated = validate_plan(plan, self.state)
+                self._emit(plan_event(round_no, self.owner.planner.name, validated))
+                return validated
             except TimeoutError:
                 self.notes.append(f"planner call {attempt + 1} timed out")
+                self._emit(PlanFailed(round=round_no, attempt=attempt + 1, error="timed out"))
             except Exception as exc:
                 detail = f"{type(exc).__name__}: {exc}"
                 self.notes.append(f"planner call {attempt + 1} failed: {detail}")
+                self._emit(PlanFailed(round=round_no, attempt=attempt + 1, error=detail[:300]))
                 rejection = f"\n\nYour previous reply was rejected ({detail}). Reply again."
         self.cut_short = True
         return None
@@ -440,9 +479,12 @@ class _Run:
         if not self._record(ledger):
             return self._abstain("no hypothesis round was available", forced=True)
         unverified = any(r.empty_unverified for r in self.results)
-        return review(
+        decided = review(
             self.ledger, self.assessments, can_continue=can_continue, unverified_empties=unverified
         )
+        self.rounds_assessed += 1
+        self._emit(assessed_event(self.rounds_assessed, self.ledger, self.assessments, decided))
+        return decided
 
     # the ending
 
@@ -463,6 +505,8 @@ class _Run:
         validation = validate_report(report, stopped)
         if validation.valid:
             self.state = stopped
+            why = outcome.notes[0].strip() if outcome.notes else "a leader met its predictions"
+            self._emit(Stopped(stopping_reason=reason, outcome="diagnosis", why=why))
             return InvestigationResult(report=report, state=stopped)
         self.notes.append(
             "the diagnosis report failed validation: " + "; ".join(validation.problems)
@@ -488,4 +532,12 @@ class _Run:
             raise InvestigationFailedError(
                 f"the abstention report is invalid: {validation.problems}", self.state
             )
+        why = note or "; ".join(self.state.unresolved_questions[:2])
+        self._emit(
+            Stopped(
+                stopping_reason=reason,
+                outcome="abstention",
+                why=why or "the retrieved records did not support a root cause",
+            )
+        )
         return InvestigationResult(report=report, state=self.state)
