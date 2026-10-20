@@ -45,6 +45,11 @@ from finsentry.gateway.metrics_client import (
 )
 from finsentry.gateway.metrics_poller import MetricsPoller
 from finsentry.gateway.rails import InputRailsAdapter
+from finsentry.investigator import store as investigation_store
+from finsentry.investigator.api import build_router as build_investigation_router
+from finsentry.investigator.gemini_planner import GeminiPlanner
+from finsentry.investigator.mcp_client import connect_read_tools
+from finsentry.investigator.service import InvestigationDeps, stop_active
 from finsentry.observability.tracing import configure_tracer_provider, get_tracer, set_app_trace_id
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
@@ -252,8 +257,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         except Exception:
             log.warning("red team stale-run reclaim failed", exc_info=True)
 
+    # A session whose process stopped keeps a stale heartbeat and would block the next one.
+    # Only sessions quiet for the stale limit are reclaimed, so a replica starting up does not
+    # end one that another replica is running. Non-fatal: migration 007 may not be applied.
+    if _DATABASE_URL:
+        try:
+            await asyncio.to_thread(investigation_store.reclaim_stale, _DATABASE_URL)
+        except Exception:
+            log.warning("investigation stale-session reclaim failed", exc_info=True)
+
     yield
 
+    # A session this process was running ends as interrupted, so it is not left reading as live.
+    await stop_active(_investigation_deps)
     await _metrics_poller.stop()
     await _metrics_http_client.aclose()
     await _rag_event_producer.stop()
@@ -289,6 +305,16 @@ def _redteam_deps() -> RedTeamDeps:
 
 
 app.include_router(build_redteam_router(_redteam_deps))
+
+# The only code that can start an investigation. It reads the platform through the nine
+# read-only MCP tools and calls the model through the planner, which refuses a request that is
+# not configured (GEMINI_MODE unset) or whose worst-case cost would pass the session cap.
+_investigation_deps = InvestigationDeps(
+    database_url=_DATABASE_URL,
+    planner_factory=GeminiPlanner.from_env,
+    tool_session=connect_read_tools,
+)
+app.include_router(build_investigation_router(lambda: _investigation_deps))
 
 
 # ---------------------------------------------------------------------------
