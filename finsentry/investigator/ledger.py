@@ -2,13 +2,16 @@
 The hypothesis ledger: how retrieved results move a hypothesis, and the deterministic
 adversarial review that decides whether a leader may be reported.
 
-assess() recomputes every hypothesis from scratch over all results, so the ledger is a pure
-function of what was retrieved. A prediction is met when the evaluator saw what the hypothesis
-expected, unmet when it saw the opposite, and unknown when the results cannot tell. Only
-records back a status: a hypothesis is supported by records that show its predictions, and
-refuted or weakened by records that show the opposite. An unmet prediction with no record
-behind it (a query that matched nothing) keeps the hypothesis open and is kept on the
-assessment so the review can see it.
+assess() recomputes every hypothesis from scratch, so the ledger is a pure function of what was
+retrieved. Each prediction is judged by the results of the query it names (its query_key),
+looked up in `scopes`, and by nothing else: another endpoint, time window, scenario or sampled
+population cannot satisfy or contradict it, and a query that never ran leaves it unknown.
+
+A prediction is met when the evaluator saw what the hypothesis expected, unmet when it saw the
+opposite, and unknown when the results cannot tell. Only records back a status: a hypothesis is
+supported by records that show its predictions, and refuted or weakened by records that show
+the opposite. An unmet prediction with no record behind it (a query that matched nothing)
+keeps the hypothesis open and is kept on the assessment so the review can see it.
 
 review() challenges the leading hypothesis before anything is reported. It checks that the
 leader met its own predictions, had none unmet or unknown, and that no rival for the same
@@ -34,10 +37,11 @@ from finsentry.investigator.contracts import (
     Confidence,
     EvidenceRef,
     Hypothesis,
+    PredictedObservation,
     Signal,
     TriggerKind,
 )
-from finsentry.investigator.signals import evaluate
+from finsentry.investigator.signals import POOLED_SIGNALS, Observation, evaluate
 
 MAX_DETAILS = 2
 
@@ -58,6 +62,42 @@ def clean(text: str) -> str:
     return " ".join(text.replace("—", ". ").replace("–", "-").split())
 
 
+# The query ids each query_key covers: the executed queries that made the same call, and for a
+# sampled group the traces the loop took from its listing.
+Scopes = dict[str, frozenset[str]]
+
+
+def covered_queries(
+    h: Hypothesis, p: PredictedObservation, scopes: Scopes | None
+) -> frozenset[str] | None:
+    """The executed queries a prediction is judged by. None means every result, for a
+    prediction that names no query or when no scopes were given. A prediction about a query
+    that never ran is judged by nothing, so it is unknown. A pooled signal also reads the
+    sampled groups the same hypothesis names for it with the same subject and polarity."""
+    if scopes is None or p.query_key is None:
+        return None
+    keys = {p.query_key}
+    if p.signal in POOLED_SIGNALS:
+        keys |= {
+            q.query_key
+            for q in h.predicted_observations
+            if q.query_key and (q.signal, q.subject, q.expect) == (p.signal, p.subject, p.expect)
+        }
+    return frozenset().union(*(scopes.get(k, frozenset()) for k in keys))
+
+
+def observe(
+    h: Hypothesis, p: PredictedObservation, results: list[ToolResult], scopes: Scopes | None
+) -> Observation | None:
+    """What the signal shows over the results this prediction concerns. None when it has no
+    signal."""
+    if p.signal is None:
+        return None
+    covered = covered_queries(h, p, scopes)
+    visible = results if covered is None else [r for r in results if r.query_id in covered]
+    return evaluate(p.signal, p.subject, visible)
+
+
 @dataclass(frozen=True)
 class PredictionOutcome:
     signal: str
@@ -65,6 +105,11 @@ class PredictionOutcome:
     observed: bool | None
     detail: str
     restates_trigger: bool = False
+    tool: str = ""
+    description: str = ""
+    subject: str | None = None
+    # The executed queries whose results this prediction was judged by.
+    query_ids: tuple[str, ...] = ()
 
     @property
     def state(self) -> Literal["met", "unmet", "unknown"]:
@@ -98,10 +143,12 @@ def assess(
     plan: list[Hypothesis],
     results: list[ToolResult],
     symptom_signals: frozenset[Signal] = frozenset(),
+    scopes: Scopes | None = None,
 ) -> tuple[list[Hypothesis], dict[str, Assessment]]:
     """The ledger as the results leave it, and each hypothesis's per-prediction outcomes.
     plan holds the hypotheses as proposed, so a statement is never extended twice.
-    symptom_signals are the signals the trigger already stated."""
+    symptom_signals are the signals the trigger already stated. scopes say which executed
+    queries each prediction's query_key covers, and the loop always passes them."""
     updated: list[Hypothesis] = []
     assessments: dict[str, Assessment] = {}
     for h in plan:
@@ -112,9 +159,9 @@ def assess(
         met_notes: list[str] = []
         unmet_notes: list[str] = []
         for p in h.predicted_observations:
-            if p.signal is None:
+            obs = observe(h, p, results, scopes)
+            if obs is None or p.signal is None:
                 continue
-            obs = evaluate(p.signal, p.subject, results)
             if p.expect and obs.observed and obs.subsystems and h.subsystem not in obs.subsystems:
                 fits = ", ".join(sorted(obs.subsystems))
                 rejected.append(
@@ -122,8 +169,19 @@ def assess(
                     f"and cannot show a fault in {h.subsystem}"
                 )
                 continue
+            covered = covered_queries(h, p, scopes)
             outcome = PredictionOutcome(
-                p.signal, p.expect, obs.observed, obs.detail, p.signal in symptom_signals
+                p.signal,
+                p.expect,
+                obs.observed,
+                obs.detail,
+                p.signal in symptom_signals,
+                p.tool,
+                p.description,
+                p.subject,
+                tuple(
+                    sorted(r.query_id for r in results if covered is None or r.query_id in covered)
+                ),
             )
             outcomes.append(outcome)
             if outcome.state == "met":

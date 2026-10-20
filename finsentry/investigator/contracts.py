@@ -170,13 +170,18 @@ class PredictedObservation(_Frozen):
     """What would be seen, and from which tool, if the hypothesis were true. When signal is
     set, code can check it: expect says whether the hypothesis predicts the signal present
     or absent, and subject narrows it (a chunk id, a rail). Without a signal the prediction
-    is prose only and is never counted as met or unmet."""
+    is prose only and is never counted as met or unmet. query_key ties it to the query it
+    concerns, so another endpoint, window, scenario or sampled population cannot answer it."""
 
     tool: ToolName
     description: str = Field(min_length=1)
     signal: Signal | None = None
     expect: bool = True
     subject: str | None = None
+    # The query, or sampled group of queries, this prediction concerns (planning.query_key).
+    # The ledger judges the prediction by that query's own results only. None means the
+    # prediction names no query and reads every retrieved result.
+    query_key: str | None = None
 
 
 class Hypothesis(_Mutable):

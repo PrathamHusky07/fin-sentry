@@ -36,8 +36,21 @@ from finsentry.investigator.contracts import (
 )
 from finsentry.investigator.digest import build_digest
 from finsentry.investigator.finalize import build_diagnosis, choose_verification
-from finsentry.investigator.ledger import SYMPTOM_SIGNALS, Assessment, Review, assess, review
-from finsentry.investigator.planning import PlannedQuery, Planner, ValidatedPlan, validate_plan
+from finsentry.investigator.ledger import (
+    SYMPTOM_SIGNALS,
+    Assessment,
+    Review,
+    Scopes,
+    assess,
+    review,
+)
+from finsentry.investigator.planning import (
+    PlannedQuery,
+    Planner,
+    ValidatedPlan,
+    query_key,
+    validate_plan,
+)
 from finsentry.investigator.policy import (
     PolicyViolationError,
     admit_inference,
@@ -185,6 +198,7 @@ class _Run:
         self.ledger: list[Hypothesis] = []  # as the results leave them
         self.assessments: dict[str, Assessment] = {}
         self.draft: ProposedVerification | None = None
+        self.sampled: dict[str, set[str]] = {}  # sampled group key -> the queries that filled it
         self.notes: list[str] = []
         self.cut_short = False  # a ceiling or a failure stopped work the run had planned
 
@@ -339,12 +353,22 @@ class _Run:
         until the budget says stop. A query that reads sampled traces first runs, or reuses,
         the listing the sample is taken from."""
         for q in queries:
+            if await self._run_planned(q):
+                return
+
+    async def _run_planned(self, q: PlannedQuery) -> bool:
+        """Run one planned query, or the sample it expands to. True when the budget refused
+        it and the rest of the plan should not run. A sampled group is recorded under its key
+        whatever happens, so a prediction about it reads exactly the traces taken for it."""
+        argsets: list[dict[str, object]] = []
+        try:
             source = q.sample_from
             if q.listing is not None:
                 source, refused = await self._listing(*q.listing, q.separates)
                 if refused:
-                    return
-            for args in self._expand(q, source):
+                    return True
+            argsets = self._expand(q, source)
+            for args in argsets:
                 self._tick()
                 admission = admit_query(self.state, q.tool, args)
                 if admission.allowed:
@@ -352,7 +376,27 @@ class _Run:
                 elif "identical" not in admission.reason:
                     self.cut_short = True
                     self.notes.append(f"{q.tool} not run: {admission.reason}")
-                    return
+                    return True
+            return False
+        finally:
+            if q.sample_from is not None or q.listing is not None:
+                wanted = {canonical_args(a) for a in argsets}
+                self.sampled.setdefault(q.key, set()).update(
+                    e.query_id
+                    for e in self.state.executed_queries
+                    if e.tool == q.tool and canonical_args(e.args) in wanted
+                )
+
+    def scopes(self) -> Scopes:
+        """The queries each prediction key covers. A plain query is every executed call with
+        that tool and arguments, the opening query included. A sampled group is the traces
+        taken for it."""
+        found: dict[str, set[str]] = {}
+        for e in self.state.executed_queries:
+            found.setdefault(query_key(e.tool, e.args), set()).add(e.query_id)
+        for key, ids in self.sampled.items():
+            found.setdefault(key, set()).update(ids)
+        return {key: frozenset(ids) for key, ids in found.items()}
 
     async def _listing(
         self, tool: ToolName, args: dict[str, object], separates: list[str]
@@ -391,7 +435,7 @@ class _Run:
 
     def _reassess(self, *, can_continue: bool) -> Review | InvestigationResult:
         ledger, self.assessments = assess(
-            self.proposed, self.results, SYMPTOM_SIGNALS[self.state.trigger.kind]
+            self.proposed, self.results, SYMPTOM_SIGNALS[self.state.trigger.kind], self.scopes()
         )
         if not self._record(ledger):
             return self._abstain("no hypothesis round was available", forced=True)
@@ -407,7 +451,14 @@ class _Run:
         reason = decide_stop(self.state, evidence_sufficient=True) or "sufficient_evidence"
         stopped = finish(self.state, reason)
         report = build_diagnosis(
-            stopped, self.ledger, self.assessments, outcome, self.results, self.draft, self.notes
+            stopped,
+            self.ledger,
+            self.assessments,
+            outcome,
+            self.results,
+            self.draft,
+            self.notes,
+            self.scopes(),
         )
         validation = validate_report(report, stopped)
         if validation.valid:

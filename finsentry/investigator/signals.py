@@ -59,6 +59,13 @@ SIGNAL_TOOLS: dict[Signal, tuple[ToolName, ...]] = {
     "error_cluster": ("get_failing_traces",),
 }
 
+# Signals that compare sampled populations of traces with each other: chunk_contradicted sets the
+# disagreeing sample against the agreeing one, and chunk_shared_by_failures reads every failed
+# sample at once. A hypothesis that names one of them for several sampled groups, with the same
+# subject and polarity, is asking one comparison, so those groups are read together. Every
+# other signal is read from the one query its prediction names.
+POOLED_SIGNALS: frozenset[Signal] = frozenset({"chunk_contradicted", "chunk_shared_by_failures"})
+
 
 # The stage each rail belongs to, by the name the rail reports and by the Colang flow name the
 # gateway persists as block_rail. tests/investigator/test_evidence_integrity.py checks that every

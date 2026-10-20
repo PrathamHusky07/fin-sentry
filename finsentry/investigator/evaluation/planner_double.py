@@ -218,7 +218,7 @@ def _red_team_miss(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[Pla
 
 
 def _single_trace(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[PlanHypothesis]:
-    facts, ref = q1["facts"], d["incident"]["reference_id"]
+    facts = q1["facts"]
     window = d["incident"]["window_minutes"]
     if facts.get("judge_state") == "judge_failed":
         anyf = {"time_window_minutes": window, "failure_type": "any", "limit": 50}
@@ -230,12 +230,6 @@ def _single_trace(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[Plan
                 "The flash judge pipeline is failing.",
                 prediction(
                     "get_failing_traces", "judge_failures", "judge failures cluster", args=anyf
-                ),
-                prediction(
-                    "get_judge_scores",
-                    "judge_failures",
-                    "this trace's verdict failed",
-                    args={"app_trace_id": ref},
                 ),
             ),
             hypothesis(
@@ -256,11 +250,11 @@ def _single_trace(d: dict[str, Any], q1: dict[str, Any], size: int) -> list[Plan
                     "get_failing_traces", "error_cluster", "system errors cluster", args=anyf
                 ),
                 prediction(
-                    "get_judge_scores",
+                    "get_failing_traces",
                     "judge_failures",
-                    "this trace has no failed verdict",
+                    "no cluster of judge failures",
                     expect=False,
-                    args={"app_trace_id": ref},
+                    args=anyf,
                 ),
             ),
         ]

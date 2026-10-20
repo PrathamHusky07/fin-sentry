@@ -22,9 +22,8 @@ from finsentry.investigator.contracts import (
     StoppingReason,
     Subsystem,
 )
-from finsentry.investigator.ledger import Assessment, Review
+from finsentry.investigator.ledger import Assessment, Review, Scopes, observe
 from finsentry.investigator.reports import default_verification
-from finsentry.investigator.signals import evaluate
 from finsentry.redteam.registry import get_scenario
 
 # The Red Team scenario that exercises the layer a subsystem names, when one exists.
@@ -92,6 +91,7 @@ def build_diagnosis(
     results: list[ToolResult],
     verification: ProposedVerification | None,
     notes: list[str],
+    scopes: Scopes | None = None,
 ) -> IncidentReport:
     ordered = _rank(ledger, review)
     ranked = [
@@ -110,7 +110,7 @@ def build_diagnosis(
     observations: list[Claim] = []
     for h in leaders:
         for p in h.predicted_observations:
-            obs = evaluate(p.signal, p.subject, results) if p.signal else None
+            obs = observe(h, p, results, scopes)
             records = list(obs.support if obs and p.expect else obs.against if obs else [])
             if obs and obs.observed == p.expect and records:
                 observations.append(Claim(statement=obs.detail, evidence=records))

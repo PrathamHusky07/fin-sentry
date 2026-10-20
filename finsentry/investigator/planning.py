@@ -114,6 +114,7 @@ class PlannedQuery:
     separates: list[str]
     listing: tuple[ToolName, dict[str, object]] | None = None
     sample_class: str | None = None
+    key: str = ""
 
 
 @dataclass
@@ -134,6 +135,36 @@ def _json_object(text: str) -> dict[str, object] | None:
 
 def _args(spec: QuerySpec) -> dict[str, object] | None:
     return _json_object(spec.args_json)
+
+
+def query_key(
+    tool: str,
+    args: dict[str, object],
+    *,
+    sample_from: str | None = None,
+    sample_size: int = 0,
+    sample_class: str | None = None,
+    listing: tuple[str, dict[str, object]] | None = None,
+) -> str:
+    """The name of the query a prediction concerns. A plain query is its tool and arguments, so
+    the same call already made (the opening query) is the same query. A sampled query is the
+    group of traces taken from one listing, so two samples of the same tool are two groups."""
+    base = f"{tool}|{canonical_args(args)}"
+    if sample_from is None and listing is None:
+        return base
+    source = f"{listing[0]}|{canonical_args(listing[1])}" if listing else sample_from
+    return f"{base}|sample:{source}|{sample_size}|{sample_class}"
+
+
+def _spec_key(spec: QuerySpec) -> str:
+    return query_key(
+        spec.tool,
+        _args(spec) or {},
+        sample_from=spec.sample_from,
+        sample_size=spec.sample_size,
+        sample_class=spec.sample_class,
+        listing=listing_of(spec),
+    )
 
 
 def listing_of(spec: QuerySpec) -> tuple[ToolName, dict[str, object]] | None:
@@ -246,6 +277,7 @@ def validate_plan(plan: Plan, state: InvestigationState) -> ValidatedPlan:
                     signal=p.signal,
                     expect=p.expect,
                     subject=p.subject,
+                    query_key=_spec_key(p.query),
                 )
                 for p in preds
             ],
@@ -258,18 +290,7 @@ def validate_plan(plan: Plan, state: InvestigationState) -> ValidatedPlan:
     for h, preds in kept:
         for p in preds:
             q = p.query
-            listing = listing_of(q)
-            key = "|".join(
-                [
-                    q.tool,
-                    canonical_args(_args(q) or {}),
-                    str(q.sample_from),
-                    str(q.sample_size),
-                    str(q.sample_class),
-                    listing[0] if listing else "",
-                    canonical_args(listing[1]) if listing else "",
-                ]
-            )
+            key = _spec_key(q)
             specs[key] = p.query
             row = by_query.setdefault(key, {})
             row[h.hypothesis_id] = row.get(h.hypothesis_id, frozenset()) | {
@@ -302,6 +323,7 @@ def validate_plan(plan: Plan, state: InvestigationState) -> ValidatedPlan:
                 _separated(by_query[key], ids),
                 listing_of(spec),
                 spec.sample_class,
+                key,
             )
         )
     return ValidatedPlan(hypotheses, queries, _verification(plan.verification), notes)

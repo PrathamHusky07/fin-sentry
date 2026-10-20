@@ -53,6 +53,8 @@ Return JSON for the schema you are given. Rules:
 - A prediction can name a subject: a Red Team scenario id for rail_regression and
   rail_working, a chunk id for chunk_contradicted. Set it whenever your statement is about
   one scenario or one chunk, because without it the signal reads every retrieved record.
+- Code checks a prediction only against the results of the query it names, never against
+  another query's results, so name the query that can show the signal.
 - Your statement may say only what your predictions can check. Do not claim a wider failure
   or a cause your predictions never test.
 - A query already listed in executed_queries has run. Naming it again in a prediction is
