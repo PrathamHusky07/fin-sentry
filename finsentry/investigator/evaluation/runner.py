@@ -75,7 +75,7 @@ async def run_case(
     is not a result, is scored as a failure with its error and spend kept. It never aborts the
     suite."""
     world = FixtureWorld(case.world)
-    adapter = ReadOnlyAdapter(world, failure_probe=lambda: world.failed_query_count)
+    adapter = ReadOnlyAdapter(world)
     state = start_investigation(f"inc-{case.case_id}", case.trigger, case.window, scope=case.scope)
     try:
         result: InvestigationResult = await investigator.investigate(state, adapter, clock)

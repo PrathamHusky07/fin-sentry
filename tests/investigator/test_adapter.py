@@ -143,5 +143,6 @@ async def test_a_tool_outside_the_nine_cannot_be_called() -> None:
     assert tools.calls == []
 
 
-def test_the_known_gaps_include_the_silent_empty_on_a_failed_query() -> None:
-    assert any("failed SQL query" in g.detail for g in KNOWN_TOOL_GAPS)
+def test_the_known_gaps_state_how_a_failed_query_is_reported() -> None:
+    gap = next(g for g in KNOWN_TOOL_GAPS if "failed SQL query" in g.detail)
+    assert "unavailable" in gap.detail

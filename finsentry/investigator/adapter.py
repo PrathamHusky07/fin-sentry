@@ -8,9 +8,11 @@ with "the tool ran and found nothing".
 How each tool signals unavailability, from the code in finsentry/mcp/tools:
 
 - get_failing_traces, explain_guardrail_decision, get_judge_scores and
-  search_prompt_injections read through fetch_all/fetch_one, which return [] or None when
-  RisingWave is offline. They set risingwave_connected=False in that case, and that flag is
-  the only signal. An empty list with the flag False is unavailable, not empty.
+  search_prompt_injections read through finsentry.mcp.state.read_rows/read_row. A query that
+  fails on a live pool raises there, and the raise is unavailable here. An offline pool still
+  returns an empty result with risingwave_connected=False, and that flag is the signal: an
+  empty list with the flag False is unavailable, not empty. Before Day 11.1b these four
+  returned an empty result for a failed query, and over stdio nothing told it from no rows.
 - search_traces and get_trace_detail raise when RisingWave fails, and the dashboard
   response carries the same flag. A raise is unavailable.
 - the Red Team tools raise ValueError("DATABASE_URL is not configured ...") when the store is
@@ -19,23 +21,18 @@ How each tool signals unavailability, from the code in finsentry/mcp/tools:
 - get_drift_report reads files. A missing health reading is empty, because the file is the
   source of truth and its absence is a fact about the platform.
 
-Known gap, closed only where it can be: a SQL error on a connected pool returns [] with
-risingwave_connected=True through the four fetch_all tools. The published tool results do not
-say a query failed, and they are not changed here. The DAO does count failures
-(failed_query_count). When the adapter shares a process with the DAO, it is given that count
-as a failure_probe and a call during which the count rose is unavailable, whatever the
-tool returned. Over the stdio server the count is in another process, so the adapter cannot
-tell a failed query from no rows. It then returns "empty" with empty_unverified set, and the
-investigator treats that as a missing answer and never as a clean signal. Closing this fully
-over stdio needs the four tools to raise on a failed query, as search_traces does, which is
-a behavior change to a published tool and has not been authorized.
+Residual limitation. A tools object says it raises on a failed query by setting
+failed_query_raises True (the MCP client and the fixture world do). One that does not say so
+may be a server that predates the fix, so an empty result from those four tools is returned
+with empty_unverified set, and the investigator treats it as a missing answer and never as a
+clean signal. The MCP SDK also hides a tool's error message, so an unavailable result does
+not say why the call failed.
 """
 
 from __future__ import annotations
 
 import inspect
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,9 +58,9 @@ KNOWN_TOOL_GAPS: tuple[DataGap, ...] = (
         source="get_failing_traces, explain_guardrail_decision, get_judge_scores, "
         "search_prompt_injections",
         kind="ambiguous",
-        detail="A failed SQL query on a connected pool returns an empty result with "
-        "risingwave_connected true. It is detected only in a process that shares the DAO, so "
-        "over the stdio server an empty result from these tools cannot be told from a failure.",
+        detail="A failed SQL query on a connected pool raises and reads as unavailable. The "
+        "server's error message is hidden by the MCP SDK, so the cause is not reported, and "
+        "an empty result is trusted as no rows only over a client that declares this.",
     ),
     DataGap(
         source="search_prompt_injections",
@@ -93,7 +90,7 @@ KNOWN_TOOL_GAPS: tuple[DataGap, ...] = (
 
 _STORE_NOT_CONFIGURED = "is not configured"
 
-# The tools that read through fetch_all, where a failed query and no rows look the same.
+# The tools that read rows, which used to return an empty result for a failed query.
 FETCH_ALL_TOOLS: frozenset[str] = frozenset(
     {
         "get_failing_traces",
@@ -116,7 +113,7 @@ class ToolResult:
     payload: object | None
     error: str | None
     elapsed_s: float
-    # Empty from a fetch_all tool with no failure signal, so it may be a failed query.
+    # Empty from a row-reading tool whose transport does not say it raises on a failed query.
     empty_unverified: bool = False
 
 
@@ -188,15 +185,11 @@ class ReadOnlyAdapter:
     """Calls the nine read tools and nothing else. It holds no write path and no other
     attribute of the tool object is reachable through it.
 
-    failure_probe returns the DAO's failed_query_count and is given only when the tools run
-    in this process. calls_made counts every call that reached the tools, so a runner can
-    still report spend after the investigator raised."""
+    calls_made counts every call that reached the tools, so a runner can still report spend
+    after the investigator raised."""
 
-    def __init__(
-        self, tools: McpReadTools, *, failure_probe: Callable[[], int] | None = None
-    ) -> None:
+    def __init__(self, tools: McpReadTools) -> None:
         self._tools = tools
-        self._probe = failure_probe
         self.calls_made = 0
 
     async def call(self, tool: str, query_id: str, **args: Any) -> ToolResult:
@@ -209,7 +202,6 @@ class ReadOnlyAdapter:
         except TypeError as exc:  # an unknown or missing argument is the caller's mistake
             return self._failure(query_id, name, args, "rejected", exc, started)
         self.calls_made += 1
-        failures_before = self._probe() if self._probe else 0
         try:
             payload = await getattr(self._tools, name)(**args)
         except ValueError as exc:
@@ -220,13 +212,11 @@ class ReadOnlyAdapter:
         except Exception as exc:
             return self._failure(query_id, name, args, "unavailable", exc, started)
         status, evidence, error = interpret(name, payload, query_id)
-        unverified = False
-        if name in FETCH_ALL_TOOLS and status in ("ok", "empty"):
-            if self._probe is None:
-                unverified = status == "empty"
-            elif self._probe() > failures_before:
-                status, evidence = "unavailable", []
-                error = "a RisingWave query failed during this call, so its result is not trusted"
+        unverified = (
+            name in FETCH_ALL_TOOLS
+            and status == "empty"
+            and not getattr(self._tools, "failed_query_raises", False)
+        )
         return ToolResult(
             query_id,
             name,

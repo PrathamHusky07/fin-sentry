@@ -55,7 +55,7 @@ async def test_get_failing_traces_merges_rag_event_and_judge_failures(monkeypatc
         calls.append("judge_verdicts")
         return judge_rows
 
-    monkeypatch.setattr(dao, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(dao, "query_all", fake_fetch_all)
 
     result = await get_failing_traces(failure_type="any", limit=10)
 
@@ -110,7 +110,7 @@ async def test_get_failing_traces_classifies_real_d7_blocked_request_as_judge_sk
     async def fake_fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         return rag_rows if "FROM rag_events" in sql else judge_rows
 
-    monkeypatch.setattr(dao, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(dao, "query_all", fake_fetch_all)
 
     result = await get_failing_traces(failure_type="any", limit=10)
 
@@ -143,7 +143,7 @@ async def test_get_failing_traces_classifies_gemini_calls_gt_zero_as_pipeline_fa
     async def fake_fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         return [] if "FROM rag_events" in sql else judge_rows
 
-    monkeypatch.setattr(dao, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(dao, "query_all", fake_fetch_all)
 
     result = await get_failing_traces(failure_type="judge_failed", limit=10)
 
@@ -173,7 +173,7 @@ async def test_get_failing_traces_score_below_flags_match_not_failure(monkeypatc
             return complete_rows
         return []
 
-    monkeypatch.setattr(dao, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(dao, "query_all", fake_fetch_all)
 
     result = await get_failing_traces(failure_type="any", limit=10, score_below=0.7)
 
@@ -200,7 +200,7 @@ async def test_get_failing_traces_score_below_none_leaves_behavior_unchanged(
         calls.append(sql)
         return []
 
-    monkeypatch.setattr(dao, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(dao, "query_all", fake_fetch_all)
 
     result = await get_failing_traces(failure_type="any", limit=10, score_below=None)
 
@@ -214,7 +214,7 @@ async def test_get_failing_traces_score_below_none_leaves_behavior_unchanged(
 async def test_get_failing_traces_blocked_only_skips_judge_query(monkeypatch: Any) -> None:
     _connect()
     fetch_all = AsyncMock(return_value=[])
-    monkeypatch.setattr(dao, "fetch_all", fetch_all)
+    monkeypatch.setattr(dao, "query_all", fetch_all)
 
     await get_failing_traces(failure_type="blocked", limit=5)
 
@@ -227,7 +227,7 @@ async def test_get_failing_traces_blocked_only_skips_judge_query(monkeypatch: An
 async def test_get_failing_traces_offline_returns_empty_not_error(monkeypatch: Any) -> None:
     # dao._pool is None (default) -- fetch_all/fetch_one short-circuit to []/None
     # for real; this test exercises the tool's own handling of that result.
-    monkeypatch.setattr(dao, "fetch_all", AsyncMock(return_value=[]))
+    monkeypatch.setattr(dao, "query_all", AsyncMock(return_value=[]))
 
     result = await get_failing_traces()
 
@@ -258,7 +258,7 @@ async def test_explain_guardrail_decision_found_returns_persisted_snapshot(
         "block_rail": "check prompt injection",
         "output_rail_trace_snapshot": {},
     }
-    monkeypatch.setattr(dao, "fetch_one", AsyncMock(return_value=row))
+    monkeypatch.setattr(dao, "query_one", AsyncMock(return_value=row))
 
     result = await explain_guardrail_decision("t1")
 
@@ -270,7 +270,7 @@ async def test_explain_guardrail_decision_found_returns_persisted_snapshot(
 
 async def test_explain_guardrail_decision_not_found(monkeypatch: Any) -> None:
     _connect()
-    monkeypatch.setattr(dao, "fetch_one", AsyncMock(return_value=None))
+    monkeypatch.setattr(dao, "query_one", AsyncMock(return_value=None))
 
     result = await explain_guardrail_decision("nonexistent")
 
@@ -280,7 +280,7 @@ async def test_explain_guardrail_decision_not_found(monkeypatch: Any) -> None:
 
 
 async def test_explain_guardrail_decision_offline(monkeypatch: Any) -> None:
-    monkeypatch.setattr(dao, "fetch_one", AsyncMock(return_value=None))
+    monkeypatch.setattr(dao, "query_one", AsyncMock(return_value=None))
 
     result = await explain_guardrail_decision("t1")
 

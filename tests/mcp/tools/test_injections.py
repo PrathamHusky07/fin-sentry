@@ -36,7 +36,7 @@ async def test_search_prompt_injections_counts_by_rail(monkeypatch: Any) -> None
         },
     ]
     fetch_all = AsyncMock(return_value=rows)
-    monkeypatch.setattr(dao, "fetch_all", fetch_all)
+    monkeypatch.setattr(dao, "query_all", fetch_all)
 
     result = await search_prompt_injections(time_window_minutes=60, limit=50)
 
@@ -53,7 +53,7 @@ async def test_search_prompt_injections_counts_by_rail(monkeypatch: Any) -> None
 
 
 async def test_search_prompt_injections_offline_returns_empty(monkeypatch: Any) -> None:
-    monkeypatch.setattr(dao, "fetch_all", AsyncMock(return_value=[]))
+    monkeypatch.setattr(dao, "query_all", AsyncMock(return_value=[]))
 
     result = await search_prompt_injections()
 

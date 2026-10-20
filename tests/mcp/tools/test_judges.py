@@ -57,7 +57,7 @@ async def test_get_judge_scores_maps_flash_and_frontier_rows(monkeypatch: Any) -
             "evaluation_latency_ms": 800,
         },
     ]
-    monkeypatch.setattr(dao, "fetch_all", AsyncMock(return_value=rows))
+    monkeypatch.setattr(dao, "query_all", AsyncMock(return_value=rows))
 
     result = await get_judge_scores("t1")
 
@@ -71,7 +71,7 @@ async def test_get_judge_scores_maps_flash_and_frontier_rows(monkeypatch: Any) -
 
 
 async def test_get_judge_scores_offline_returns_empty(monkeypatch: Any) -> None:
-    monkeypatch.setattr(dao, "fetch_all", AsyncMock(return_value=[]))
+    monkeypatch.setattr(dao, "query_all", AsyncMock(return_value=[]))
 
     result = await get_judge_scores("t1")
 

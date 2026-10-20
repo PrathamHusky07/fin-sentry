@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from finsentry.mcp._util import iso, validate_limit
-from finsentry.mcp.state import dao
+from finsentry.mcp.state import dao, read_rows
 
 _DIRECT_INJECTION_RAILS = ["check prompt injection"]
 
@@ -66,7 +66,7 @@ async def search_prompt_injections(
     validate_limit(limit)
     # LIMIT must be a const expression in RisingWave's streaming query
     # planner -- see finsentry/mcp/tools/traces.py for the same fix.
-    rows = await dao.fetch_all(
+    rows = await read_rows(
         f"""
         SELECT app_trace_id, endpoint, block_rail, block_reason, timestamp_utc
         FROM rag_events

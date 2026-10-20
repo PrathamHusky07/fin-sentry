@@ -5,12 +5,13 @@ distinguishes them, both land in the same source. Scoped to judge_verdicts
 only (explicit Day 7 scope decision): no rag_frontier_verdicts ensemble
 enrichment in this tool.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from finsentry.mcp._util import iso
-from finsentry.mcp.state import dao
+from finsentry.mcp.state import dao, read_rows
 
 
 @dataclass
@@ -46,7 +47,7 @@ async def get_judge_scores(app_trace_id: str) -> GetJudgeScoresResult:
     frontier-tier scores and statuses, token usage, and cost, in arrival
     order. Source: judge_verdicts (judge_tier field distinguishes flash
     vs frontier -- both tiers emit to the same event stream)."""
-    rows = await dao.fetch_all(
+    rows = await read_rows(
         """
         SELECT judge_tier, judge_model, status, timestamp_utc,
                faithfulness_score, faithfulness_status,

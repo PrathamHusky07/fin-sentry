@@ -67,16 +67,13 @@ async def investigate(
     *,
     world: FixtureWorld | None = None,
     budgets: Budgets | None = None,
-    probe: bool = True,
     **investigator: Any,
 ) -> InvestigationResult:
     world = world or FixtureWorld(case.world)
     state = start_investigation(
         f"inc-{case.case_id}", case.trigger, case.window, scope=case.scope, budgets=budgets
     )
-    adapter = ReadOnlyAdapter(
-        world, failure_probe=(lambda: world.failed_query_count) if probe else None
-    )
+    adapter = ReadOnlyAdapter(world)
     return await BoundedInvestigator(planner, **investigator).investigate(
         state, adapter, time.monotonic
     )
@@ -330,21 +327,22 @@ async def test_a_diagnosis_that_fails_validation_becomes_an_abstention(
 # An empty result that may be a failed query is not a clean signal.
 
 
-@pytest.mark.parametrize("probe", [True, False])
-async def test_a_failed_injection_search_is_never_read_as_no_surge(probe: bool) -> None:
+@pytest.mark.parametrize("raises", [True, False])
+async def test_a_failed_injection_search_is_never_read_as_no_surge(raises: bool) -> None:
     base = CASES["injection-surge"]
     world = FixtureWorld(
         WorldData(
             **{**base.world.__dict__, "failing_queries": frozenset({"search_prompt_injections"})}
-        )
+        ),
+        failed_query_raises=raises,
     )
-    result = await investigate(base, PlannerDouble(), world=world, probe=probe)
+    result = await investigate(base, PlannerDouble(), world=world)
     assert result.report.outcome == "abstention", (
         "the surge cannot be established without the search"
     )
     search = next(q for q in result.state.executed_queries if q.tool == "search_prompt_injections")
     assert (search.status, search.empty_unverified) == (
-        ("unavailable", False) if probe else ("empty", True)
+        ("unavailable", False) if raises else ("empty", True)
     )
     assert any(
         "search_prompt_injections" in m or "injection_surge" in m

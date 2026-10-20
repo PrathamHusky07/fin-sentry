@@ -63,7 +63,7 @@ def _server(*extra: Any, annotate: bool = True) -> MCPServer:
 @asynccontextmanager
 async def _adapter(server: MCPServer | None = None) -> AsyncIterator[ReadOnlyAdapter]:
     async with connect_read_tools(server or _server()) as tools:
-        yield ReadOnlyAdapter(tools, failure_probe=lambda: dao.failed_query_count)
+        yield ReadOnlyAdapter(tools)
 
 
 @pytest.fixture(autouse=True)
@@ -160,7 +160,7 @@ async def test_an_offline_source_is_unavailable(monkeypatch: pytest.MonkeyPatch)
     _no_evidence(result)
 
 
-async def test_a_failed_query_on_a_connected_pool_is_unavailable_in_process(
+async def test_a_failed_query_on_a_connected_pool_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fails(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -171,18 +171,6 @@ async def test_a_failed_query_on_a_connected_pool_is_unavailable_in_process(
         result = await adapter.call("get_judge_scores", "q1", app_trace_id="t1")
     assert result.status == "unavailable" and result.error is not None
     _no_evidence(result)
-
-
-async def test_without_the_dao_signal_the_same_failure_is_an_unverified_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fails(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-        raise RisingWaveQueryError("RisingWave query failed")
-
-    monkeypatch.setattr(dao, "query_all", fails)
-    async with connect_read_tools(_server()) as tools:
-        result = await ReadOnlyAdapter(tools).call("get_judge_scores", "q1", app_trace_id="t1")
-    assert result.status == "empty" and result.empty_unverified is True
 
 
 async def test_an_unset_red_team_store_is_unavailable() -> None:

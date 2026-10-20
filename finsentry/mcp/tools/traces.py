@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from finsentry.mcp._util import iso, validate_limit
-from finsentry.mcp.state import dao
+from finsentry.mcp.state import dao, read_row, read_rows
 
 FailureType = Literal["blocked", "error", "judge_failed", "any"]
 
@@ -108,7 +108,7 @@ async def _fetch_rag_event_failures(
     # or expression that can be evaluated to an integer after LIMIT, but
     # found non-const expression"). limit is already int-typed by this
     # tool's own input schema, so inlining it is safe.
-    rows = await dao.fetch_all(
+    rows = await read_rows(
         f"""
         SELECT app_trace_id, status, endpoint, ticker, timestamp_utc,
                block_reason, block_rail, error_kind, error_detail
@@ -146,7 +146,7 @@ async def _fetch_judge_failures(
         conditions.append("r.endpoint = %s")
         params.append(endpoint)
 
-    rows = await dao.fetch_all(
+    rows = await read_rows(
         f"""
         SELECT j.app_trace_id, j.status, r.endpoint, r.ticker, j.timestamp_utc,
                j.total_gemini_calls
@@ -192,7 +192,7 @@ async def _fetch_score_filtered_rows(
         conditions.append("r.endpoint = %s")
         params.append(endpoint)
 
-    rows = await dao.fetch_all(
+    rows = await read_rows(
         f"""
         SELECT j.app_trace_id, j.status, r.endpoint, r.ticker, j.timestamp_utc,
                j.answer_relevance_score, j.context_relevance_score
@@ -338,7 +338,7 @@ async def explain_guardrail_decision(app_trace_id: str) -> GuardrailDecisionSnap
     persisted and is not indexed by app_trace_id, so it cannot be
     reconstructed for a past request from a separate process.
     """
-    row = await dao.fetch_one(
+    row = await read_row(
         """
         SELECT app_trace_id, status, endpoint, timestamp_utc, input_rail_status,
                block_reason, block_rail, output_rail_trace_snapshot

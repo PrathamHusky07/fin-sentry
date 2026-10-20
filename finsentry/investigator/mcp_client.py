@@ -90,7 +90,14 @@ def _first_text(result: Any) -> str:
 
 
 class McpToolClient:
-    """McpReadTools over a live MCP session. Build one with connect_read_tools."""
+    """McpReadTools over a live MCP session. Build one with connect_read_tools.
+
+    failed_query_raises is True because the four row-reading tools raise when a query fails on
+    a live pool, which reaches this client as a failed call. The adapter therefore trusts an
+    empty result from them as no rows. test_stdio_failed_query.py proves it over the real
+    stdio server."""
+
+    failed_query_raises = True
 
     def __init__(self, client: Client, *, call_timeout_s: float = 30.0) -> None:
         self._client = client
