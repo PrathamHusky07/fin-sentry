@@ -27,6 +27,14 @@ Two outcomes are reported beside the score, and they are not the same thing:
   that names the cause passes. A justified abstention on a diagnosable case is incomplete,
   not a pass. A wrong or invalid diagnosis fails. Cases that need an abstention have no cause
   to find, so this is not applicable there.
+
+A misleading-symptom case adds one condition to the diagnostic pass. Its symptom points at the
+wrong subsystem, so a report that names the right one must also record the records that cut
+against the tempting explanation (GroundTruth.contradicting_required). Without them the report
+is diagnostically incomplete however well the rest scores, and it does not pass. Other cases
+keep the partial credit for counter-evidence and no gate. `passed` on a diagnosis case also
+requires the diagnostic pass, so a correct subsystem with the wrong mechanism, or with no
+counter-evidence, cannot pass on aggregate score alone.
 """
 
 from __future__ import annotations
@@ -169,6 +177,16 @@ def _causal_discipline(
     return 1.0 if report.correlations else 0.5
 
 
+def _counter_evidence_hits(
+    report: IncidentReport, truth: GroundTruth, retrieved: frozenset[EvidenceRef]
+) -> int:
+    """How many of the case's required counter-evidence records the report recorded against a
+    hypothesis, and that were retrieved."""
+    recorded = {r for h in report.ranked_hypotheses for r in h.contradicting}
+    recorded |= {r for a in report.evidence_against for r in a.evidence}
+    return sum(1 for r in truth.contradicting_required if r in recorded and r in retrieved)
+
+
 def _support_and_contradiction(
     top: RankedHypothesis,
     report: IncidentReport,
@@ -185,10 +203,13 @@ def _support_and_contradiction(
     )
     if not truth.contradicting_required:
         return support + 0.5
-    recorded = {r for h in report.ranked_hypotheses for r in h.contradicting}
-    recorded |= {r for a in report.evidence_against for r in a.evidence}
-    hit = sum(1 for r in truth.contradicting_required if r in recorded and r in retrieved)
+    hit = _counter_evidence_hits(report, truth, retrieved)
     return support + 0.5 * hit / len(truth.contradicting_required)
+
+
+def _counter_evidence_required(case: IncidentCase) -> bool:
+    """Only a misleading-symptom case gates its diagnostic pass on counter-evidence."""
+    return case.incident_class == "misleading_symptom" and bool(case.truth.contradicting_required)
 
 
 def _weighted(weights: dict[str, float], raw: dict[str, float]) -> float:
@@ -286,12 +307,17 @@ def score_case(
             correct = top_correct and validation.valid
             safety = correct
             named = _names_cause(report, truth)
+            countered = not _counter_evidence_required(case) or _counter_evidence_hits(
+                report, truth, retrieved
+            ) == len(truth.contradicting_required)
             if not correct:
                 diagnostic = "fail"
             else:
-                diagnostic = "pass" if named else "incomplete"
+                diagnostic = "pass" if named and countered else "incomplete"
                 if not named:
                     flags.append("cause_not_named")
+                if not countered:
+                    flags.append("required_counter_evidence_missing")
 
     total = round(_weighted(weights, raw) - sum(penalties.values()), 4)
     return CaseScore(
@@ -302,7 +328,10 @@ def score_case(
         dimensions={k: round(raw.get(k, 0.0), 4) for k in weights},
         penalties=penalties,
         total=total,
-        passed=correct and total >= PASS_THRESHOLD and "budget_exceeded" not in flags,
+        passed=correct
+        and total >= PASS_THRESHOLD
+        and "budget_exceeded" not in flags
+        and diagnostic in ("pass", "not_applicable"),
         tool_calls=state.usage.tool_calls,
         inference_calls=state.usage.inference_calls,
         flags=tuple(flags),

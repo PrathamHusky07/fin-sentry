@@ -7,10 +7,10 @@ import pytest
 
 from finsentry.investigator.adapter import ReadOnlyAdapter
 from finsentry.investigator.citations import validate_report
-from finsentry.investigator.contracts import InvestigationResult
+from finsentry.investigator.contracts import EvidenceRef, InvestigationResult
 from finsentry.investigator.evaluation.cases import MISLEADING_CASE_ID, all_cases
 from finsentry.investigator.evaluation.runner import run_case, run_suite
-from finsentry.investigator.evaluation.scorer import CaseScore, score_case
+from finsentry.investigator.evaluation.scorer import PASS_THRESHOLD, CaseScore, score_case
 from finsentry.investigator.evaluation.types import IncidentCase
 from finsentry.investigator.evaluation.world import FixtureWorld
 from finsentry.investigator.loop import start_investigation
@@ -119,3 +119,80 @@ async def test_the_suite_reports_safety_and_diagnostic_counts_separately() -> No
     assert summary["safety_passed"] == 9
     assert summary["diagnostic"] == {"pass": 0, "incomplete": 6, "fail": 0, "not_applicable": 3}
     assert summary["passed"] == 3
+
+
+# The misleading case's required counter-evidence is a condition of the diagnostic pass.
+
+
+async def _oracle(case: IncidentCase) -> InvestigationResult:
+    state = start_investigation("inc-x", case.trigger, case.window, scope=case.scope)
+    return await ScriptedInvestigator(case, "oracle").investigate(
+        state, ReadOnlyAdapter(FixtureWorld(case.world)), lambda: 0.0
+    )
+
+
+def _rescored(
+    case: IncidentCase, result: InvestigationResult, **report_changes: object
+) -> CaseScore:
+    report = result.report.model_copy(update=report_changes)
+    changed = InvestigationResult(report=report, state=result.state)
+    return score_case(case, changed, validate_report(report, changed.state))
+
+
+def _without(refs: list[EvidenceRef], drop: set[EvidenceRef]) -> list[EvidenceRef]:
+    return [r for r in refs if r not in drop]
+
+
+async def test_a_fluent_cited_diagnosis_without_the_agreeing_traces_is_not_a_diagnostic_pass() -> (
+    None
+):
+    result = await _oracle(MISLEADING)
+    drop = {r for h in result.report.ranked_hypotheses for r in h.contradicting}
+    drop |= {r for a in result.report.evidence_against for r in a.evidence}
+    assert set(MISLEADING.truth.contradicting_required) <= drop, "the oracle records them"
+    ranked = [
+        h.model_copy(update={"contradicting": _without(h.contradicting, drop)})
+        for h in result.report.ranked_hypotheses
+    ]
+    score = _rescored(MISLEADING, result, ranked_hypotheses=ranked, evidence_against=[])
+    assert score.total >= PASS_THRESHOLD, "the aggregate alone would have passed it"
+    assert score.safety_pass is True, "it names the right subsystem and says nothing false"
+    assert score.diagnostic == "incomplete" and not score.passed
+    assert "required_counter_evidence_missing" in score.flags
+
+
+async def test_recording_the_agreeing_traces_restores_the_diagnostic_pass() -> None:
+    score = await _score(MISLEADING, "oracle")
+    assert score.diagnostic == "pass" and "required_counter_evidence_missing" not in score.flags
+
+
+@pytest.mark.parametrize(
+    "case", [c for c in DIAGNOSIS if c is not MISLEADING], ids=lambda c: c.case_id
+)
+async def test_the_rule_is_the_misleading_cases_and_changes_no_other_case(
+    case: IncidentCase,
+) -> None:
+    score = await _score(case, "oracle")
+    assert "required_counter_evidence_missing" not in score.flags
+
+
+async def test_a_right_subsystem_with_the_wrong_mechanism_is_not_a_diagnostic_pass() -> None:
+    """Judges is the right subsystem, but the statement blames the tempting chunk and never
+    names the frontier judge that drifted. That is the symptom's story, not the cause."""
+    result = await _oracle(MISLEADING)
+    wrong = "A stale retrieved chunk, MSFT-10K-0301, makes the answers unfaithful."
+    ranked = [
+        h.model_copy(update={"statement": wrong}) if h.subsystem == "judges" else h
+        for h in result.report.ranked_hypotheses
+    ]
+    ledger = [
+        h.model_copy(update={"statement": wrong}) if h.subsystem == "judges" else h
+        for h in result.state.hypotheses
+    ]
+    degraded = InvestigationResult(
+        report=result.report.model_copy(update={"ranked_hypotheses": ranked}),
+        state=result.state.model_copy(update={"hypotheses": ledger}),
+    )
+    score = score_case(MISLEADING, degraded, validate_report(degraded.report, degraded.state))
+    assert score.diagnostic == "incomplete" and not score.passed
+    assert "cause_not_named" in score.flags
