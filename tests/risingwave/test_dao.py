@@ -67,11 +67,9 @@ class _FakePool:
         return _FakeConnection(self._cursor)
 
 
-def test_risingwave_dsn_uses_defaults(monkeypatch: object) -> None:
-    import os
-
+def test_risingwave_dsn_uses_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in ("RISINGWAVE_HOST", "RISINGWAVE_PORT", "RISINGWAVE_USER", "RISINGWAVE_DB"):
-        os.environ.pop(key, None)
+        monkeypatch.delenv(key, raising=False)
     assert risingwave_dsn() == "postgresql://root@localhost:4566/dev"
 
 

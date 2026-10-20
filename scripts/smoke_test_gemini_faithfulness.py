@@ -167,7 +167,7 @@ async def main() -> None:
     total_thoughts = int(usage_a["thoughts_tok"]) + int(usage_b["thoughts_tok"])
 
     # Full budget report from the shared rail instance
-    cost_report = rail._budget.report()
+    cost_report = rail.process_cost_report()
     print("\n=== TOTAL USAGE ===")
     print(f"  Total Gemini calls:     {total_calls}")
     print(f"  Total input tokens:     {total_in}")
