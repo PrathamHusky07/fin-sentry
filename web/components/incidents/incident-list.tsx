@@ -198,7 +198,17 @@ export function IncidentList() {
         <PageHeader
           eyebrow="Which incident was examined, and what did the investigator find?"
           title="Incident investigations"
-          aside={<ViewSwitch current="incidents" />}
+          aside={
+            <div className="flex flex-col items-start gap-1 lg:items-end">
+              <ViewSwitch current="incidents" />
+              <Link
+                href="/architecture#incident-investigator"
+                className="text-accent hover:text-text-primary inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+              >
+                How the investigator works
+              </Link>
+            </div>
+          }
         >
           Each row is one stored session of the reliability investigator on one
           incident: what triggered it, which hypotheses competed, and whether it

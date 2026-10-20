@@ -283,13 +283,21 @@ export function Label({
 
 /** The key that makes the arrows mean something. Pointing at or focusing an
  * entry lights every edge of that kind in the diagram above it. */
-export function ArchLegend({ items }: { items: EdgeStyle[] }) {
+export function ArchLegend({
+  items,
+  captions,
+}: {
+  items: EdgeStyle[];
+  /** Wording for a diagram whose arrows mean something other than the request path's. */
+  captions?: Partial<Record<EdgeStyle, string>>;
+}) {
   const model = useDiagramModel();
   const text: Record<EdgeStyle, string> = {
     sync: "Synchronous call, the user waits",
     async: "Asynchronous hand-off",
     read: "Read of persisted data",
     muted: "Not built or not connected",
+    ...captions,
   };
   return (
     <ul className="mt-4 flex flex-wrap items-center gap-2">

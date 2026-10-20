@@ -21,7 +21,8 @@ export interface Layer {
     | "request-path"
     | "evaluation-plane"
     | "event-infrastructure"
-    | "operational-interface";
+    | "operational-interface"
+    | "incident-investigator";
   name: string;
   question: string;
   intro: string;
@@ -277,6 +278,74 @@ export const LAYERS: Layer[] = [
       {
         term: "Why the Red Team tool is not registered",
         body: "The registry and the route run today. The MCP tool that would let an agent start scenarios is deliberately unregistered, because starting a run changes stored state and the read tools change nothing.",
+      },
+    ],
+  },
+  {
+    id: "incident-investigator",
+    name: "Incident investigator",
+    question: "How does the platform examine an incident without guessing?",
+    intro:
+      "When something goes wrong, a bounded investigator looks at the stored evidence. A model proposes competing hypotheses and the queries that would tell them apart. Code runs the queries, decides whether the records support each hypothesis, and reports only what it can cite. If the records do not support a cause, it says so.",
+    outline: [
+      {
+        caption: "One investigation, run by code inside fixed budgets",
+        steps: [
+          {
+            label: "Trigger",
+            sub: "an incident, its scope and a time window",
+          },
+          {
+            label: "Open",
+            sub: "one read of the source the investigation cannot do without. If it is down twice, or matched nothing, the investigation abstains.",
+          },
+          {
+            label: "Plan",
+            sub: "the model proposes two to four rival hypotheses with predictions. Validation keeps only queries that tell two hypotheses apart.",
+          },
+          {
+            label: "Execute",
+            sub: "the queries run through nine read-only tools, each under a call ceiling and a deadline",
+          },
+          {
+            label: "Assess",
+            sub: "deterministic evaluators read each prediction against the results of the query it names, and a review challenges the leader",
+          },
+          {
+            label: "Continue or stop",
+            sub: "one more planning round when budget remains and the evidence did not settle it, otherwise the review decides",
+          },
+          {
+            label: "Validate",
+            sub: "every cited record must be one a query returned, or the diagnosis becomes an abstention",
+          },
+          {
+            label: "Diagnosis or abstention",
+            sub: "both are stored as a durable session that the Investigations page reopens without running anything",
+          },
+        ],
+      },
+    ],
+    reasons: [
+      {
+        term: "Why the model only proposes",
+        body: "A model is good at listing what could be wrong and poor at being trusted about what is true. It is asked for hypotheses and predictions as structured fields. Code checks every prediction against records, so a fluent but wrong explanation cannot become a finding.",
+      },
+      {
+        term: "Why the evidence boundary is a hard line",
+        body: "Nothing the model writes is evidence. A claim can cite only a record that one of the investigation's own queries returned, a record that a query ran is not evidence for anything, and a controlled Red Team test can show how a defense behaves but never what caused an incident.",
+      },
+      {
+        term: "Why it can abstain",
+        body: "An investigation that must name a cause will sometimes name a wrong one. This one stops with a stated reason when a critical source is down, when the budget is spent, or when the records support no hypothesis, and that abstention is a valid, stored result.",
+      },
+      {
+        term: "Why every prediction is tied to its query",
+        body: "A prediction about one endpoint, time window or Red Team scenario is judged by that query's records only. Another query of the same tool cannot satisfy or contradict it, and a prediction whose query never ran stays unknown.",
+      },
+      {
+        term: "Why it uses nine read-only tools",
+        body: "The investigator uses every read tool the MCP server registers today, which includes the four added after the interface diagram above was drawn: trace search, trace detail, and the two Red Team execution reads. It has no tool that writes, and the one verification it proposes is never run.",
       },
     ],
   },

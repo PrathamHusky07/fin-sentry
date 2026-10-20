@@ -65,6 +65,12 @@ export function IncidentHeader({ detail: d }: { detail: Detail }) {
         <StatusBadge status={d.status} withMeaning />
         <OutcomeBadge outcome={d.outcome} />
         <OriginBadge origin={d.origin} planner={d.planner} withMeaning />
+        <Link
+          href="/architecture#incident-investigator"
+          className="text-accent hover:text-text-primary inline-flex min-h-11 items-center px-1 text-sm underline underline-offset-4"
+        >
+          How the investigator works
+        </Link>
       </div>
 
       {d.stale ? (

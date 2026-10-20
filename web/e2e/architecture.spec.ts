@@ -200,3 +200,91 @@ test("browser tab titles use one separator and no em-dash", async ({
     await expect(page).toHaveTitle(title);
   }
 });
+
+test.describe("the incident investigator layer", () => {
+  test("is a fifth layer drawn as a control-flow state machine", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(m.text());
+    });
+    await page.goto("/architecture");
+    await expect(
+      page.getByRole("heading", { name: "Incident investigator", level: 2 }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("navigation", { name: "Architecture layers" })
+        .locator("li"),
+    ).toHaveCount(5);
+    const diagram = page.getByRole("img", {
+      name: /incident investigator as a control-flow state machine/i,
+    });
+    await diagram.scrollIntoViewIfNeeded();
+    await expect(diagram).toBeVisible();
+    await expect(diagram).toContainText("Evidence boundary");
+    for (const node of [
+      /^Trigger\./,
+      /^Plan\./,
+      /^Assess\./,
+      /^Abstention\./,
+    ]) {
+      await expect(diagram.getByRole("button", { name: node })).toBeVisible();
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test("pointing at Assess lights its connections and explains the state", async ({
+    page,
+  }) => {
+    await page.goto("/architecture");
+    const section = page.locator("section#incident-investigator");
+    const diagram = section.getByRole("img");
+    await diagram.scrollIntoViewIfNeeded();
+    await diagram.getByRole("button", { name: /^Assess\./ }).hover();
+    await expect(
+      diagram.getByRole("button", { name: /^Validate\./ }),
+    ).toHaveAttribute("data-state", "related");
+    await expect(
+      diagram.getByRole("button", { name: /^Trigger\./ }),
+    ).toHaveAttribute("data-state", "dim");
+    const strip = section.locator('[aria-live="polite"]');
+    await expect(strip).toContainText("Deterministic evaluators");
+  });
+
+  test("keyboard selection pins the model's node and Escape clears it", async ({
+    page,
+  }) => {
+    await page.goto("/architecture");
+    const section = page.locator("section#incident-investigator");
+    const planner = section.getByRole("button", { name: /^Planner\./ });
+    await planner.scrollIntoViewIfNeeded();
+    await planner.focus();
+    await page.keyboard.press("Enter");
+    await expect(planner).toHaveAttribute("aria-pressed", "true");
+    await expect(section.locator('[aria-live="polite"]')).toContainText(
+      "The model proposes",
+    );
+    await page.keyboard.press("Escape");
+    await expect(planner).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("a narrow screen gets the outline instead of the diagram", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/architecture");
+    const section = page.locator("section#incident-investigator");
+    await section.scrollIntoViewIfNeeded();
+    await expect(section.getByRole("img")).toBeHidden();
+    await expect(section.getByText("Continue or stop")).toBeVisible();
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(0);
+  });
+});

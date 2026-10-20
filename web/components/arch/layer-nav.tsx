@@ -24,15 +24,21 @@ const TONE: Record<Layer["id"], { dot: string; ring: string; lift: string }> = {
     ring: "text-text-primary",
     lift: "lift-accent",
   },
+  "incident-investigator": {
+    dot: "bg-info",
+    ring: "text-info",
+    lift: "lift-accent",
+  },
 };
 
-/** The four layers as a sequence of cards: where a request goes, how it is
- * judged, how the data travels and how an engineer or agent asks about it.
+/** The five layers as a sequence of cards: where a request goes, how it is
+ * judged, how the data travels, how an engineer or agent asks about it and how
+ * an incident is examined.
  * Each is a plain anchor, so the jump behavior is the browser's own. */
 export function LayerCards() {
   return (
     <nav aria-label="Architecture layers" className="mt-10">
-      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {LAYERS.map((layer, i) => (
           <li key={layer.id} className="relative">
             <a
