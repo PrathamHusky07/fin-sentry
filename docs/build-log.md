@@ -1,5 +1,80 @@
 # Build Log
 
+## 2026-10-20: Day 11.1b evidence integrity and a held-out baseline
+
+Model: Sonnet 5.5, no escalation. No frozen tool result schema, guardrail rail or tool name changed, and the
+investigation surface is still the nine read-only MCP tools. No new or mutating tool, no UI, no autonomous
+subagent, no separate LLM critic, no framework. Nothing was pushed. `origin/main` equalled the local head
+`f3089d6` at the start, checked with `git ls-remote`, so the earlier report of `7107055` was stale.
+
+Gemini moved to the new project `fin-sentry-512218` (vertex, location global, `gemini-3.6-flash`). One minimal
+call through the planner's own client config returned `ok` for 8 tokens, about $0.000009. Session Gemini spend is at
+most $0.0884 of the $0.12 cap, and $0.0700 of it is metered from usage (details in
+`docs/measurements/investigator/heldout/day11-1b-heldout-baseline.md`).
+
+Baseline before any change: `.venv/bin/python -m pytest -q` gave 1219 passed and 1 failed. The failure is
+`tests/dashboard/test_trace_list_sql_live.py`, a snapshot of one real AMZN trace in RisingWave. The container
+had restarted and the data was gone. It is unrelated and still fails. At the final commit the same command gives
+1338 passed and the same 1 failed.
+
+### Evidence-integrity fixes, each with a failing test first
+
+1. An unverified empty is never absence (`876f5d0`). `judge_failures`, `block_cluster` and `error_cluster` read
+   an empty listing that may have been a failed query as a clean negative. They now return unknown, and a listing
+   of another failure type no longer shows absence either. 17 of the new tests failed before the change.
+2. A failed query is unavailable over real stdio (`4bedb9b`). The four row tools read through `read_rows` and
+   `read_row` in `finsentry/mcp/state.py`, which call the DAO's raising `query_all` and `query_one`. A failed
+   query on a live pool raises, so the client reads it as unavailable. An offline pool still returns the empty
+   result with `risingwave_connected` false, and a result schema did not change. The proof drives the real server
+   as a subprocess against scratch databases on the local Postgres: one with the tables and no rows (empty), one
+   with no tables (a real `relation does not exist` error, unavailable), plus rows (ok), a malformed call
+   (rejected), an unset Red Team store and an offline pool (unavailable). Against the old tool code the four
+   failed-query cases failed with the SQL error read as an empty result. The adapter lost its `failure_probe`
+   and trusts an empty result only from a client that sets `failed_query_raises`. Residual limit: the SDK hides
+   the server's error message, so unavailable does not say why.
+3. Predictions bind to their subject (`876f5d0`). A named chunk, rail, error kind or judge is checked on its own
+   and never replaced by the most common one. An unnamed prediction still reads every record.
+4. Drift history is usable (`876f5d0`). With no current reading, the last recorded transition gives a hedged
+   observation that says it is a past record and not a present state.
+5. The subsystem is checked against the evidence, conservatively (`876f5d0`). A present signal carries the
+   subsystems its records can bear on, from the fields it reads (the rail that blocked, the target layer of a Red
+   Team execution). A chunk finding cannot establish an output rails diagnosis. A finding that fits two subsystems
+   supports both, and the review then finds two supported rivals and names neither. Tests cover both.
+6. Query selection is discriminating (`ac7c403`). A query counts only when two hypotheses make explicit,
+   different predictions about it. A silent hypothesis is not read as predicting the opposite. The planner double
+   and the planner prompt were updated to match. Four loop tests encoded the old behavior and were rewritten.
+7. The misleading case's counter-evidence is mandatory (`4b49600`). For a misleading-symptom case a correct
+   diagnosis without the required counter-evidence is diagnostically incomplete and does not pass, whatever the
+   aggregate. `passed` on a diagnosis case now also needs the diagnostic pass. Tests: counter-evidence stripped,
+   and a right subsystem with the wrong mechanism. Both failed on the old scorer.
+
+Lower priority: the Gemini request now carries a transport deadline (`54d8cba`), verification arguments get the
+full constraints and the validator checks the ranked statement, order and confidence against the ledger
+(`614fc36`), the DAO test restores its env vars and the faithfulness smoke script reads its cost from the
+process ledger (`9c70a7b`, not run). The installed google-genai 2.22 passes `HttpOptions.timeout` (milliseconds) to
+httpx and sends it as `X-Server-Timeout`. httpx applies it per phase, so it bounds one non-streaming reply and is not
+a total deadline. Cancelling the awaiting coroutine does not stop the worker thread, so a failed or cancelled call
+is charged at a pessimistic estimate and a new request is refused while one is still running.
+
+### Held-out baseline
+
+Nine new cases were frozen in `144c947` at 15:05:37 and run after. They are separate from the tuned nine, which
+are unchanged. The live pass: 6 of 9 passed, safety 9 of 9, diagnostic 4 pass, 3 incomplete, 0 fail, 12 model
+calls. Stub 1 of 9, planner double 5 of 9 (orchestration only). Per-case results and findings are in
+`docs/measurements/investigator/heldout/day11-1b-heldout-baseline.md`. Three findings matter:
+`ho-stale-chunk-tsla` is an invalid trial (two Vertex 504 responses, not rerun because the plan was one pass),
+`ho-pii-rail-regression` passes on the scorer while its cited support is the wrong scenario, and the mixed-cause
+case was half found.
+
+### Day 11.2 handoff
+
+Next is durable sessions, the incident API and the Investigations page, none of it started. Open items for the
+operator: rerun `ho-stale-chunk-tsla` alone if a valid trial is wanted (about $0.01). Log per-call planner latency and
+error class before deciding whether `REQUEST_TIMEOUT_S` should rise above 30 s. Decide whether a diagnostic pass
+should need the leading hypothesis to cite at least one required record, which the PII case shows is missing.
+Backlog, not built: new incident classes beyond the nine, and a planner prompt that nudges a mixed cause to propose
+both subsystems.
+
 ## 2026-10-09 (late night): Day 11.1 Reliability Incident Investigator
 
 Model: Sonnet 5.5, no escalation. Gemini spend is about $0.33 of the $0.50 cap, all of it the investigator's own
