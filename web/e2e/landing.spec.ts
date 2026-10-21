@@ -251,7 +251,10 @@ test.describe("Landing page", () => {
     page,
   }) => {
     await page.goto("/overview");
-    await page.getByRole("link", { name: "Fin-Sentry" }).click();
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("link", { name: "Fin-Sentry" })
+      .click();
     await expect(page).toHaveURL(/\/$/);
 
     await page.getByRole("link", { name: "Open the command center" }).click();

@@ -1,4 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+/** A stage card's link, found inside the card list so the top bar's and the footer's links of
+ * the same name cannot satisfy it. */
+function stageLink(page: Page, title: string): Locator {
+  return page
+    .getByRole("list")
+    .filter({ has: page.getByRole("heading", { name: "Guard", exact: true }) })
+    .getByRole("link", { name: new RegExp(`^${title}`) });
+}
 
 /**
  * The landing stage cards each open the part of the product that shows their stage.
@@ -17,21 +26,23 @@ for (const width of [375, 768, 1024, 1440]) {
       page,
     }) => {
       await page.goto("/");
-      const hrefs: string[] = [];
-      for (const title of ["Guard", "Retrieve", "Generate", "Judge", "Agent"]) {
-        const link = page
-          .getByRole("list")
-          .getByRole("link", { name: new RegExp(title) })
-          .first();
-        hrefs.push((await link.getAttribute("href")) ?? "");
-      }
-      expect(hrefs).toEqual([
+      const expected = [
         `/architecture#stage-input${suffix}`,
         `/architecture#stage-retrieval${suffix}`,
         `/architecture#stage-generation${suffix}`,
         "/architecture#evaluation-plane",
         "/agent",
-      ]);
+      ];
+      const titles = ["Guard", "Retrieve", "Generate", "Judge", "Agent"];
+      // The wide ids replace the outline ids once the page hydrates, so each href is
+      // asserted with retries.
+      for (const [i, title] of titles.entries()) {
+        await expect(stageLink(page, title)).toHaveAttribute(
+          "href",
+          expected[i],
+        );
+      }
+      const hrefs = expected;
       expect(new Set(hrefs).size).toBe(5);
       await expect(page.getByText("Investigate", { exact: true })).toHaveCount(
         0,
@@ -45,11 +56,7 @@ for (const width of [375, 768, 1024, 1440]) {
     ] as const) {
       test(`${title} lands on its own displayed stage`, async ({ page }) => {
         await page.goto("/");
-        await page
-          .getByRole("list")
-          .getByRole("link", { name: new RegExp(title) })
-          .first()
-          .click();
+        await stageLink(page, title).click();
         await expect(page).toHaveURL(
           new RegExp(`/architecture#stage-${stage}${suffix}$`),
         );
@@ -61,11 +68,7 @@ for (const width of [375, 768, 1024, 1440]) {
 
     test("Judge opens the evaluation plane", async ({ page }) => {
       await page.goto("/");
-      await page
-        .getByRole("list")
-        .getByRole("link", { name: /Judge/ })
-        .first()
-        .click();
+      await stageLink(page, "Judge").click();
       await expect(page).toHaveURL(/\/architecture#evaluation-plane$/);
       await expect(
         page.getByRole("heading", { name: "Evaluation plane" }),
@@ -74,11 +77,7 @@ for (const width of [375, 768, 1024, 1440]) {
 
     test("Agent opens the Agent route", async ({ page }) => {
       await page.goto("/");
-      await page
-        .getByRole("list")
-        .getByRole("link", { name: /Agent/ })
-        .first()
-        .click();
+      await stageLink(page, "Agent").click();
       await expect(page).toHaveURL(/\/agent$/);
       await expect(
         page.getByRole("heading", {

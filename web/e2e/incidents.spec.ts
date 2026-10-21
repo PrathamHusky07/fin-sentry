@@ -289,7 +289,9 @@ test.describe("Incident investigations", () => {
     const seen = watch(page);
     await page.goto("/agent");
     await expect(
-      page.getByRole("link", { name: "Agent", exact: true }),
+      page
+        .getByRole("navigation", { name: "Primary" })
+        .getByRole("link", { name: "Agent", exact: true }),
     ).toHaveAttribute("aria-current", "page");
     await expect(page.getByText("reports only what it can cite")).toBeVisible();
 

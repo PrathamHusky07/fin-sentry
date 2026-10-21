@@ -30,7 +30,7 @@ export function SiteFooter() {
               <li key={route.href}>
                 <Link
                   href={route.href}
-                  className="text-text-secondary hover:text-text-primary inline-flex min-h-11 items-center text-base transition-colors sm:text-sm"
+                  className="text-text-secondary hover:text-text-primary inline-flex min-h-11 min-w-11 items-center text-base transition-colors sm:text-sm"
                 >
                   {route.label}
                 </Link>

@@ -328,16 +328,14 @@ test("a narrow screen opens a scenario under its row and keeps every target at 4
   const row = page.locator('[data-scenario="PII-001"]');
   await expect(row).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("article")).toHaveCount(0);
-  await row.locator("button[aria-expanded]").click();
+  const rowButton = row.getByRole("button", { name: /^PII-001, version/ });
+  await rowButton.click();
   const detail = row.getByRole("article", { name: /PII-001/ });
   await expect(detail).toBeVisible();
   await detail.getByRole("button", { name: /Show all 2/ }).count();
   await expect(detail).toContainText("Differed before, matches now");
-  await expect(row.locator("button[aria-expanded]")).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
-  await row.locator("button[aria-expanded]").click();
+  await expect(rowButton).toHaveAttribute("aria-expanded", "true");
+  await rowButton.click();
   await expect(detail).toHaveCount(0);
 });
 
