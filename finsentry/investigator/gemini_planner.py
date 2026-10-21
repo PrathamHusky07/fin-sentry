@@ -6,12 +6,17 @@ validates before using any of it. Spend is counted from the response's own usage
 the platform's published rates (rails/output/cost_governance.py).
 
 Strict reservation. Before a request starts, the planner reserves its worst case, which is every
-input token the text could hold plus the whole output and thinking allowance, and refuses the
-request when spent plus that worst case would pass the planner's cap or the session's. Actual
-usage then replaces the reservation. Two caps apply and neither depends on the other: the
+input token the text could hold plus the whole output and thinking allowance. The check against
+the planner's cap and the hold on the session ledger are one step under the ledger's lock, so two
+planners that share the ledger cannot both spend the same remaining allowance. Actual usage is
+recorded, then the hold is released. Two caps apply and neither depends on the other: the
 planner's own, and the session ledger shared by every planner in the process, so a new planner
 instance does not reset the session. The ledger lives in one process and is not shared between
 replicas or restarts, the limit CostBudget already documents.
+
+Tokens. The cost model keeps output and thinking as two counts, candidates and thoughts, both
+billed at the output rate. The reservation holds the whole of each, and a call that may have run
+with no usage to read is charged that same worst case, once.
 
 Timeouts. The SDK call is synchronous and runs in a worker thread, so cancelling the awaiting
 coroutine (the loop's asyncio.wait_for) stops the wait and does not stop the request. The only
@@ -70,11 +75,18 @@ def system_prompt() -> str:
     return f"{SYSTEM_PROMPT}\nThe JSON must match this JSON schema exactly:\n{schema}\n"
 
 
+def _prompt_tokens_upper(digest: str) -> int:
+    """Every input token the request text could hold, at a pessimistic characters-per-token
+    ratio."""
+    return (len(system_prompt()) + len(digest)) // CHARS_PER_TOKEN + 1
+
+
 def worst_case_cost_usd(digest: str) -> float:
     """The most one request can cost: the prompt at a pessimistic characters-per-token ratio,
     the whole output allowance and the whole thinking budget, all at the platform's rates."""
-    prompt = (len(system_prompt()) + len(digest)) // CHARS_PER_TOKEN + 1
-    return CostBudget.estimate_call_cost(prompt, MAX_OUTPUT_TOKENS, THINKING_BUDGET)
+    return CostBudget.estimate_call_cost(
+        _prompt_tokens_upper(digest), MAX_OUTPUT_TOKENS, THINKING_BUDGET
+    )
 
 
 class GeminiPlanner:
@@ -153,15 +165,17 @@ class GeminiPlanner:
             self._ledger.record_call(prompt, candidates, thoughts)
 
     def _charge_unmetered(self, digest: str) -> None:
-        """Charge a call that may have run with no usage to read: every input token the text
-        could hold, and the whole output allowance."""
-        prompt = (len(system_prompt()) + len(digest)) // CHARS_PER_TOKEN
+        """Charge a call that may have run with no usage to read: the worst case the
+        reservation held, every input token the text could hold plus the whole output
+        allowance and the whole thinking budget. It is the same amount, charged once, because
+        the hold is released as this is recorded."""
         self.calls += 1
         self.unmetered_calls += 1
-        self._charge(prompt, MAX_OUTPUT_TOKENS, 0)
+        self._charge(_prompt_tokens_upper(digest), MAX_OUTPUT_TOKENS, THINKING_BUDGET)
 
-    def _reserve(self, digest: str) -> None:
-        """Refuse the request unless its worst case fits under both caps."""
+    def _reserve(self, digest: str) -> float:
+        """Refuse the request unless its worst case fits under both caps, and hold it on the
+        session ledger. Returns the amount held, which the caller releases."""
         worst = worst_case_cost_usd(digest)
         if self.cost_usd + worst > self._cap:
             raise PlanningError(
@@ -169,19 +183,28 @@ class GeminiPlanner:
                 f"${self.cost_usd:.4f} spent and up to ${worst:.4f} for this request"
             )
         if self._ledger is not None:
-            allowed, reason = self._ledger.can_proceed_cumulative(worst)
+            allowed, reason = self._ledger.reserve(worst)
             if not allowed:
                 spent = self._ledger.report()["run_total_usd"]
                 raise PlanningError(
                     f"the session cost cap would be breached ({reason}): ${spent:.4f} spent in "
                     f"this session and up to ${worst:.4f} for this request"
                 )
+        return worst
 
     async def plan(self, digest: str, *, round_no: int) -> Plan:
         if not self._idle.is_set():
             raise PlanningError("an earlier model request is still running, so none is started")
-        self._reserve(digest)
+        held = self._reserve(digest)
         self._idle.clear()
+        try:
+            return await self._plan_reserved(digest)
+        finally:
+            # The actual cost was recorded first, so the ledger never holds neither.
+            if self._ledger is not None:
+                self._ledger.release(held)
+
+    async def _plan_reserved(self, digest: str) -> Plan:
         try:
             response = await asyncio.to_thread(self._call_in_thread, digest)
         except BaseException:  # a failure or a cancelled wait: the request may still be billed

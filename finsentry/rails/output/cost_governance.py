@@ -10,6 +10,7 @@ Thinking tokens are billed at the output rate per Google Cloud Vertex AI pricing
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -51,15 +52,23 @@ class CostBudget:
     at the output rate per Google Cloud Vertex AI pricing. record_call() takes
     them separately for observability but includes them in output cost calculation.
 
-    Important: this is not a strict per-call reservation. The actual cost of a
-    specific upcoming call is unknown before it completes. Under variable token
-    usage or concurrent requests against a single rail instance, actual spend may
-    briefly exceed the configured per-call ceiling before subsequent calls are
+    Important: the rail's admission control is not a strict per-call reservation. The
+    actual cost of a specific upcoming call is unknown before it completes. Under
+    variable token usage or concurrent requests against a single rail instance, actual
+    spend may briefly exceed the configured per-call ceiling before subsequent calls are
     gated. The invariants guaranteed are: (a) exact post-hoc accounting via
     record_call, (b) admission control that gates further calls once running totals
-    cross per-run or per-day ceilings. Suitable for single-process development and
-    cost-observability. A stricter reservation mechanism would require broker-side
-    or storage-backed reservations, deferred to a future ADR.
+    cross per-run or per-day ceilings.
+
+    A caller that knows the worst case of a call before it starts (the investigator's
+    planner does) can use reserve() and release(). reserve() checks the ceilings against
+    spend plus every reservation still held and adds its own, under the ledger's lock, so
+    two callers sharing this ledger cannot both spend the same remaining allowance. The
+    caller records the actual cost with record_call() and then releases the reservation,
+    in that order, so the two are never both absent. Reservations are process-local like
+    the rest of the ledger: they reset on restart and are not shared between gateway
+    replicas. A global guarantee would need broker-side or storage-backed reservations,
+    deferred to a future ADR.
     """
 
     def __init__(
@@ -74,6 +83,12 @@ class CostBudget:
         self._run_total_usd = 0.0
         self._day_total_usd = 0.0  # in-memory; process-restart resets. Fine at Day 3.
         self._records: list[CallRecord] = []
+        self._reserved_usd = 0.0
+        self._lock = threading.Lock()
+
+    @property
+    def reserved_usd(self) -> float:
+        return self._reserved_usd
 
     @staticmethod
     def estimate_call_cost(
@@ -90,12 +105,32 @@ class CostBudget:
         return self.can_proceed_cumulative(projected_call_cost_usd)
 
     def can_proceed_cumulative(self, projected_call_cost_usd: float = 0.0) -> tuple[bool, str]:
-        """The per-run and per-day check alone, without the per-call ceiling."""
-        if self._run_total_usd + projected_call_cost_usd > self._per_run:
+        """The per-run and per-day check alone, without the per-call ceiling. Spend that is
+        reserved and not yet recorded counts as spent."""
+        with self._lock:
+            return self._cumulative_check(projected_call_cost_usd)
+
+    def _cumulative_check(self, projected_call_cost_usd: float) -> tuple[bool, str]:
+        held = self._reserved_usd
+        if self._run_total_usd + held + projected_call_cost_usd > self._per_run:
             return False, "per_run_ceiling_exceeded"
-        if self._day_total_usd + projected_call_cost_usd > self._per_day:
+        if self._day_total_usd + held + projected_call_cost_usd > self._per_day:
             return False, "per_day_ceiling_exceeded"
         return True, "ok"
+
+    def reserve(self, worst_case_cost_usd: float) -> tuple[bool, str]:
+        """Hold a call's worst case against the ceilings, or refuse it. Check and hold are
+        one step under the lock, so a second caller sees the first one's hold."""
+        with self._lock:
+            allowed, reason = self._cumulative_check(worst_case_cost_usd)
+            if allowed:
+                self._reserved_usd += worst_case_cost_usd
+            return allowed, reason
+
+    def release(self, worst_case_cost_usd: float) -> None:
+        """Drop a hold taken by reserve(), after the call's actual cost was recorded."""
+        with self._lock:
+            self._reserved_usd = max(0.0, self._reserved_usd - worst_case_cost_usd)
 
     def record_call(
         self, prompt_tokens: int, candidates_tokens: int, thoughts_tokens: int
@@ -107,9 +142,10 @@ class CostBudget:
             thoughts_tokens=thoughts_tokens,
             cost_usd=cost,
         )
-        self._records.append(record)
-        self._run_total_usd += cost
-        self._day_total_usd += cost
+        with self._lock:
+            self._records.append(record)
+            self._run_total_usd += cost
+            self._day_total_usd += cost
         return record
 
     def report(self) -> dict[str, Any]:

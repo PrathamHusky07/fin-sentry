@@ -257,3 +257,102 @@ def test_the_process_session_ledger_is_one_object_with_the_session_cap() -> None
     assert session_ledger() is session_ledger()
     assert SESSION_COST_CAP_USD == 0.10
     assert session_ledger().report()["ceilings"]["per_run_usd"] == SESSION_COST_CAP_USD
+
+
+# Two planners that share a ledger compete for one remaining allowance. A check that only reads
+# the ledger lets both pass before either has spent, so the second must see the first's reservation.
+
+
+class Gated:
+    """A client whose request blocks until released, so two requests can overlap."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+        self.models = SimpleNamespace(generate_content=self._generate)
+
+    def _generate(self, **_: Any) -> Any:
+        self.calls += 1
+        self.started.set()
+        self.release.wait(5)
+        return FakeClient(PLAN.model_dump_json())._response
+
+
+async def _until(event: Any) -> None:
+    import asyncio
+
+    for _ in range(200):
+        if event.is_set():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("the request never started")
+
+
+async def test_two_planners_cannot_both_spend_the_same_remaining_allowance() -> None:
+    import asyncio
+
+    worst = worst_case_cost_usd("digest")
+    # Room for one worst case and not for two.
+    ledger = CostBudget(per_run_ceiling_usd=worst * 1.5, per_day_ceiling_usd=worst * 1.5)
+    slow = Gated()
+    fast = FakeClient(PLAN.model_dump_json())
+    first = GeminiPlanner(slow, "gemini-test", cost_cap_usd=5.0, ledger=ledger)
+    second = GeminiPlanner(fast, "gemini-test", cost_cap_usd=5.0, ledger=ledger)
+    running = asyncio.create_task(first.plan("digest", round_no=1))
+    await _until(slow.started)
+    with pytest.raises(PlanningError, match="session"):
+        await second.plan("digest", round_no=1)
+    assert fast.calls == [], "the second planner reached the SDK on the first one's allowance"
+    slow.release.set()
+    assert await running == PLAN
+
+
+async def test_the_reservation_is_released_when_the_call_ends_so_later_calls_fit() -> None:
+    worst = worst_case_cost_usd("digest")
+    actual = CostBudget.estimate_call_cost(3000, 800, 200)
+    ledger = CostBudget(per_run_ceiling_usd=worst + actual + 0.001, per_day_ceiling_usd=5.0)
+    client = FakeClient(PLAN.model_dump_json())
+    planner = GeminiPlanner(client, "gemini-test", cost_cap_usd=5.0, ledger=ledger)
+    await planner.plan("digest", round_no=1)
+    assert ledger.reserved_usd == 0.0
+    await planner.plan("digest", round_no=2)  # fits only if the first reservation was released
+    assert len(client.calls) == 2 and ledger.reserved_usd == 0.0
+
+
+async def test_the_reservation_is_released_when_the_call_fails_or_the_reply_is_unusable() -> None:
+    ledger = CostBudget(per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    bad = GeminiPlanner(FakeClient('{"hypotheses": []}'), "gemini-test", ledger=ledger)
+    with pytest.raises(PlanningError):
+        await bad.plan("digest", round_no=1)
+    assert ledger.reserved_usd == 0.0
+
+    class Raises:
+        models = SimpleNamespace(generate_content=lambda **_: (_ for _ in ()).throw(OSError("x")))
+
+    broken = GeminiPlanner(Raises(), "gemini-test", ledger=ledger)
+    with pytest.raises(OSError):
+        await broken.plan("digest", round_no=1)
+    assert ledger.reserved_usd == 0.0
+
+
+async def test_a_failed_call_is_charged_at_the_same_worst_case_it_reserved_and_not_twice() -> None:
+    """Output and thinking tokens are separate counts in the cost model, both billed at the
+    output rate, and the reservation counts the whole of each. A call that may have run with no
+    usage to read is charged that same worst case, once: the reservation is released as the
+    charge is recorded, so the ledger holds the charge and nothing extra."""
+
+    class Raises:
+        models = SimpleNamespace(generate_content=lambda **_: (_ for _ in ()).throw(OSError("x")))
+
+    ledger = CostBudget(per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    planner = GeminiPlanner(Raises(), "gemini-test", ledger=ledger)
+    with pytest.raises(OSError):
+        await planner.plan("digest", round_no=1)
+    assert planner.cost_usd == pytest.approx(worst_case_cost_usd("digest"))
+    assert ledger.report()["run_total_usd"] == pytest.approx(
+        worst_case_cost_usd("digest"), abs=1e-6
+    )
+    assert ledger.reserved_usd == 0.0

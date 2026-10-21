@@ -350,3 +350,111 @@ async def test_a_verified_empty_second_endpoint_is_absence_for_its_own_predictio
     result = await investigate(WorldData(failing=A_BLOCKS), plan)
     assert status_of(result, "h2") == "supported"
     assert status_of(result, "h1") == "refuted"
+
+
+# The contract behind all of the above. ledger.covered_queries reads every result when a
+# prediction has no query_key or no scopes were given. That fallback must be unreachable from a
+# validated plan, because it would let a prediction be judged by records of a different query.
+
+
+def _plans_with_every_query_shape() -> list[Plan]:
+    """A plain query, a listing-sampled query and a pooled signal, in both polarities."""
+    plain = {"failure_type": "blocked", "time_window_minutes": 60, "limit": 50}
+    other = {"failure_type": "blocked", "time_window_minutes": 10, "limit": 50}
+    listing = ("get_failing_traces", plain)
+
+    def pooled(expect: bool) -> object:
+        return prediction(
+            "get_trace_detail",
+            "chunk_shared_by_failures",
+            "blocked requests retrieved the same chunk",
+            expect=expect,
+            listing=listing,  # type: ignore[arg-type]
+            sample_class="guardrail_blocked",
+        )
+
+    def block(args: dict[str, object], expect: bool) -> object:
+        return prediction(
+            "get_failing_traces", "block_cluster", "cluster", expect=expect, args=args
+        )
+
+    return [
+        Plan(
+            hypotheses=[
+                hypothesis(
+                    "h1",
+                    "blocks",
+                    "retrieval",
+                    "A shared chunk is faulty.",
+                    block(plain, True),  # type: ignore[arg-type]
+                    pooled(True),  # type: ignore[arg-type]
+                    block(other, False),  # type: ignore[arg-type]
+                ),
+                hypothesis(
+                    "h2",
+                    "blocks",
+                    "output_rails",
+                    "A rail misfires.",
+                    block(plain, True),  # type: ignore[arg-type]
+                    pooled(False),  # type: ignore[arg-type]
+                    block(other, True),  # type: ignore[arg-type]
+                ),
+            ]
+        )
+    ]
+
+
+def test_a_validated_plan_never_yields_a_prediction_without_a_query_key() -> None:
+    from finsentry.investigator.planning import validate_plan
+
+    for plan in _plans_with_every_query_shape():
+        validated = validate_plan(plan, make_state())
+        predictions = [p for h in validated.hypotheses for p in h.predicted_observations]
+        assert predictions, "the fixture plan must keep predictions or this proves nothing"
+        for p in predictions:
+            assert p.signal is not None, "a plan prediction always names a signal"
+            assert p.query_key, f"{p.signal} reached the ledger with no query_key"
+
+
+def test_with_scopes_a_validated_prediction_is_judged_by_its_own_queries_or_by_nothing() -> None:
+    from finsentry.investigator.ledger import covered_queries
+    from finsentry.investigator.planning import validate_plan
+
+    validated = validate_plan(_plans_with_every_query_shape()[0], make_state())
+    for h in validated.hypotheses:
+        for p in h.predicted_observations:
+            # Nothing has run: the covered set is empty, never None (every result).
+            assert covered_queries(h, p, {}) == frozenset()
+            assert p.query_key is not None
+            only_here = {p.query_key: frozenset({"q-own"})}
+            covered = covered_queries(h, p, only_here)
+            assert covered is not None and covered <= {"q-own"}
+            elsewhere = {"some|other|query": frozenset({"q-other"})}
+            assert covered_queries(h, p, elsewhere) == frozenset()
+
+
+async def test_the_loop_passes_scopes_to_every_ledger_call() -> None:
+    """The loop is the only caller that turns a plan into hypotheses and it always passes
+    scopes, so the all-results fallback is reachable only by a caller that builds a hypothesis
+    by hand and passes none."""
+    from finsentry.investigator import loop as loop_module
+
+    seen: list[object] = []
+    real_assess, real_diagnosis = loop_module.assess, loop_module.build_diagnosis
+
+    def spy_assess(*args: object, **kwargs: object) -> object:
+        seen.append(args[3] if len(args) > 3 else kwargs.get("scopes"))
+        return real_assess(*args, **kwargs)  # type: ignore[arg-type]
+
+    def spy_diagnosis(*args: object, **kwargs: object) -> object:
+        seen.append(args[7] if len(args) > 7 else kwargs.get("scopes"))
+        return real_diagnosis(*args, **kwargs)  # type: ignore[arg-type]
+
+    loop_module.assess, loop_module.build_diagnosis = spy_assess, spy_diagnosis  # type: ignore[assignment]
+    try:
+        result = await investigate(WorldData(failing=(*A_BLOCKS, *B_BLOCKS)), endpoint_plan())
+    finally:
+        loop_module.assess, loop_module.build_diagnosis = real_assess, real_diagnosis
+    assert result.report.outcome == "diagnosis"
+    assert len(seen) >= 2, "the spies never ran"
+    assert all(isinstance(s, dict) for s in seen), "a ledger call was made without scopes"
