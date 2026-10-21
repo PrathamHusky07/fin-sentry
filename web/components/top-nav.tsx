@@ -9,6 +9,7 @@ const ROUTES = [
   { href: "/overview", label: "Overview" },
   { href: "/operations", label: "Live Operations" },
   { href: "/investigations", label: "Investigations" },
+  { href: "/agent", label: "Agent" },
   { href: "/architecture", label: "Architecture" },
   { href: "/red-team", label: "Red Team" },
 ] as const;
@@ -19,7 +20,7 @@ function isActive(pathname: string, href: string): boolean {
 
 /**
  * The global product shell: sticky, translucent, and present on every
- * route. Five destinations plus the wordmark (which is the presentation
+ * route. Six destinations plus the wordmark (which is the presentation
  * route). Below the lg breakpoint the destinations collapse into a
  * disclosure menu; Escape closes it and returns focus to its button.
  */
@@ -50,7 +51,7 @@ export function TopNav() {
           href="/"
           aria-current={pathname === "/" ? "page" : undefined}
           onClick={() => setMenuOpen(false)}
-          className="text-text-primary -ml-2 flex min-h-11 items-center gap-2.5 rounded-md px-2 text-[15px] font-semibold tracking-tight"
+          className="text-text-primary -ml-2 flex min-h-11 items-center gap-2.5 rounded-md px-2 text-base font-semibold tracking-tight"
         >
           <Mark />
           Fin-Sentry

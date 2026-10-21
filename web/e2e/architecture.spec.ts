@@ -82,6 +82,7 @@ test("the global navigation stays pinned while scrolling", async ({ page }) => {
     "Overview",
     "Live Operations",
     "Investigations",
+    "Agent",
     "Architecture",
     "Red Team",
   ]) {
@@ -198,6 +199,7 @@ test("browser tab titles use one separator and no em-dash", async ({
     ["/operations", "Live Operations | Fin-Sentry"],
     ["/overview", "Overview | Fin-Sentry"],
     ["/red-team", "Red Team | Fin-Sentry"],
+    ["/agent", "Agent | Fin-Sentry"],
   ];
   for (const [route, title] of titles) {
     await page.goto(route);
@@ -323,5 +325,27 @@ test("the interface hub draws all nine read tools and no scenario-running tool",
   // The scenario tool stays dashed and unregistered.
   await expect(
     diagram.getByRole("button", { name: /^Scenario tool\./ }),
+  ).toBeVisible();
+});
+
+test("the agent is named in the jump rail, the layer card and the primary navigation", async ({
+  page,
+}) => {
+  await page.goto("/architecture");
+  await expect(
+    page
+      .getByRole("navigation", { name: "Jump to a layer" })
+      .getByRole("link", { name: /Incident Response Agent/ }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Architecture layers" })
+      .getByRole("link", { name: /Incident Response Agent/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Primary" }).getByRole("link", {
+      name: "Agent",
+      exact: true,
+    }),
   ).toBeVisible();
 });

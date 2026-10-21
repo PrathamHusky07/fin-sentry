@@ -810,3 +810,57 @@ export function formatArgs(args: Record<string, unknown>): string {
   const parts = Object.entries(args).map(([k, v]) => `${k}=${String(v)}`);
   return parts.length === 0 ? "no arguments" : parts.join(", ");
 }
+
+// The landing's summary, derived from the stored sessions it has loaded.
+
+export interface SessionTally {
+  total: number;
+  /** Finished with a best-supported hypothesis. Never "solved". */
+  diagnoses: number;
+  /** Finished and said the records did not support a cause. A complete outcome. */
+  abstentions: number;
+  running: number;
+  failed: number;
+  interrupted: number;
+  live: number;
+  fixture: number;
+}
+
+/** DERIVED from the loaded session summaries only. It counts what is on screen, so the page
+ * says how many were loaded and never presents the tally as the platform's whole history. */
+export function tallySessions(rows: Summary[]): SessionTally {
+  const tally: SessionTally = {
+    total: rows.length,
+    diagnoses: 0,
+    abstentions: 0,
+    running: 0,
+    failed: 0,
+    interrupted: 0,
+    live: 0,
+    fixture: 0,
+  };
+  for (const s of rows) {
+    if (s.origin === "live") tally.live += 1;
+    else tally.fixture += 1;
+    if (s.status === "running") tally.running += 1;
+    else if (s.status === "failed") tally.failed += 1;
+    else if (s.status === "interrupted") tally.interrupted += 1;
+    else if (s.outcome === "diagnosis") tally.diagnoses += 1;
+    else if (s.outcome === "abstention") tally.abstentions += 1;
+  }
+  return tally;
+}
+
+/** DERIVED. The stored sessions that were started from one Red Team execution through the
+ * red_team_miss trigger, newest first as the list returns them. A session of another trigger
+ * that merely mentions the id is not a match. */
+export function sessionsForExecution(
+  rows: Summary[],
+  executionId: string,
+): Summary[] {
+  return rows.filter(
+    (s) =>
+      s.trigger.kind === "red_team_miss" &&
+      s.trigger.reference_id === executionId,
+  );
+}

@@ -5,7 +5,9 @@ import {
   hypothesisRows,
   queryOutcome,
   recordHref,
+  sessionsForExecution,
   spendNote,
+  tallySessions,
   timelineSteps,
   whyItRanks,
   type Assessed,
@@ -13,6 +15,7 @@ import {
   type HypothesisAssessment,
   type PredictionResult,
   type QueryRun,
+  type Summary,
   type TimelineEntry,
   type Usage,
 } from "@/lib/incidents";
@@ -430,5 +433,101 @@ describe("budget and spend", () => {
         "live",
       ),
     ).toMatch(/2 calls returned no usage/);
+  });
+});
+
+describe("tallySessions", () => {
+  const row = (over: Partial<Summary>): Summary => ({
+    investigation_id: "i",
+    incident_id: "inc",
+    status: "completed",
+    outcome: "diagnosis",
+    origin: "fixture",
+    planner: "planner-double",
+    created_at: "2026-10-20T00:00:00Z",
+    finished_at: null,
+    trigger: { kind: "single_trace", reference_id: null, description: "d" },
+    scope: { endpoint: null, ticker: null, trace_ids: [] },
+    window: { start: "2026-10-20T00:00:00Z", end: "2026-10-20T01:00:00Z" },
+    stopping_reason: null,
+    leading: null,
+    hypotheses: null,
+    queries: null,
+    model_calls: null,
+    cost_usd: null,
+    error: null,
+    stale: false,
+    ...over,
+  });
+
+  it("counts an abstention as a completed result and a failed run as neither", () => {
+    const t = tallySessions([
+      row({ outcome: "diagnosis" }),
+      row({ outcome: "abstention" }),
+      row({ status: "failed", outcome: null }),
+      row({ status: "interrupted", outcome: null }),
+      row({ status: "running", outcome: null, origin: "live" }),
+    ]);
+    expect(t).toMatchObject({
+      total: 5,
+      diagnoses: 1,
+      abstentions: 1,
+      failed: 1,
+      interrupted: 1,
+      running: 1,
+      live: 1,
+      fixture: 4,
+    });
+  });
+
+  it("never counts a session that did not finish as a diagnosis or an abstention", () => {
+    const t = tallySessions([row({ status: "failed", outcome: "diagnosis" })]);
+    expect(t.diagnoses + t.abstentions).toBe(0);
+  });
+});
+
+describe("sessionsForExecution", () => {
+  const base: Omit<Summary, "trigger"> = {
+    investigation_id: "i",
+    incident_id: "inc",
+    status: "completed",
+    outcome: "abstention",
+    origin: "live",
+    planner: "p",
+    created_at: "2026-10-20T00:00:00Z",
+    finished_at: null,
+    scope: { endpoint: null, ticker: null, trace_ids: [] },
+    window: { start: "2026-10-20T00:00:00Z", end: "2026-10-20T01:00:00Z" },
+    stopping_reason: null,
+    leading: null,
+    hypotheses: null,
+    queries: null,
+    model_calls: null,
+    cost_usd: null,
+    error: null,
+    stale: false,
+  };
+
+  it("matches only a red_team_miss session that names the execution", () => {
+    const rows: Summary[] = [
+      {
+        ...base,
+        investigation_id: "a",
+        trigger: { kind: "red_team_miss", reference_id: "x1", description: "" },
+      },
+      {
+        ...base,
+        investigation_id: "b",
+        trigger: { kind: "single_trace", reference_id: "x1", description: "" },
+      },
+      {
+        ...base,
+        investigation_id: "c",
+        trigger: { kind: "red_team_miss", reference_id: "x2", description: "" },
+      },
+    ];
+    expect(
+      sessionsForExecution(rows, "x1").map((s) => s.investigation_id),
+    ).toEqual(["a"]);
   });
 });

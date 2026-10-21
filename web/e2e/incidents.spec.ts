@@ -6,7 +6,7 @@ import {
 } from "@playwright/test";
 
 /**
- * /investigations/incidents -- the incident investigation workspace on the real gateway API
+ * /agent -- the Incident Response Agent workspace on the real gateway API
  * and the real stored sessions. The five lifecycle states below are read from fixture
  * sessions that `python -m finsentry.investigator.evaluation.seed --replace` stores through
  * the real session code (the page says "Fixture replay" on every one). No state here is a
@@ -60,9 +60,9 @@ test.describe("Incident investigations", () => {
     request,
   }) => {
     const seen = watch(page);
-    await page.goto("/investigations/incidents");
+    await page.goto("/agent");
     await expect(
-      page.getByRole("heading", { name: "Incident investigations" }),
+      page.getByRole("heading", { name: "Incident Response Agent", level: 1 }),
     ).toBeVisible();
     const rows = page.locator("main ul li.row-reveal");
     await expect(rows.first()).toBeVisible();
@@ -91,7 +91,7 @@ test.describe("Incident investigations", () => {
         r.trigger.kind === "judge_disagreement_cluster",
     );
     const seen = watch(page);
-    await page.goto(`/investigations/incidents/${row.investigation_id}`);
+    await page.goto(`/agent/${row.investigation_id}`);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Judge disagreement cluster",
     );
@@ -138,7 +138,7 @@ test.describe("Incident investigations", () => {
     const row = await pick(request, (r) => r.outcome === "diagnosis");
     const before = (await sessions(request)).length;
     const seen = watch(page);
-    await page.goto(`/investigations/incidents/${row.investigation_id}`);
+    await page.goto(`/agent/${row.investigation_id}`);
     await expect(page.getByText("not a proven cause")).toBeVisible();
     const first = await page.locator("#timeline").innerText();
     await page.reload();
@@ -158,7 +158,7 @@ test.describe("Incident investigations", () => {
         r.outcome === "abstention" &&
         r.stopping_reason === "justified_abstention",
     );
-    await page.goto(`/investigations/incidents/${row.investigation_id}`);
+    await page.goto(`/agent/${row.investigation_id}`);
     await expect(page.getByText("no root cause was established")).toBeVisible();
     await expect(page.getByText("This is a complete result.")).toBeVisible();
     await expect(
@@ -181,7 +181,7 @@ test.describe("Incident investigations", () => {
       request,
       (r) => r.stopping_reason === "critical_evidence_unavailable",
     );
-    await page.goto(`/investigations/incidents/${row.investigation_id}`);
+    await page.goto(`/agent/${row.investigation_id}`);
     await expect(
       page
         .locator("#outcome")
@@ -203,7 +203,7 @@ test.describe("Incident investigations", () => {
     request,
   }) => {
     const row = await pick(request, (r) => r.status === "failed");
-    await page.goto(`/investigations/incidents/${row.investigation_id}`);
+    await page.goto(`/agent/${row.investigation_id}`);
     await expect(
       page.getByText("Outcome: the investigation failed"),
     ).toBeVisible();
@@ -222,7 +222,7 @@ test.describe("Incident investigations", () => {
     request,
   }) => {
     const row = await pick(request, (r) => r.status === "interrupted");
-    await page.goto(`/investigations/incidents/${row.investigation_id}`);
+    await page.goto(`/agent/${row.investigation_id}`);
     await expect(
       page.getByText("the investigation was interrupted"),
     ).toBeVisible();
@@ -242,7 +242,7 @@ test.describe("Incident investigations", () => {
       "No live session is stored. Start one from the page to run this check.",
     );
     if (!live) return;
-    await page.goto(`/investigations/incidents/${live.investigation_id}`);
+    await page.goto(`/agent/${live.investigation_id}`);
     await expect(page.getByText("Live platform").first()).toBeVisible();
     await expect(page.getByText("Fixture replay")).toHaveCount(0);
     await expect(page.locator("#budget")).toContainText("estimate, not a bill");
@@ -250,22 +250,111 @@ test.describe("Incident investigations", () => {
   });
 
   test("an unknown id says nothing is stored under it", async ({ page }) => {
-    await page.goto(
-      "/investigations/incidents/00000000-0000-0000-0000-000000000000",
-    );
+    await page.goto("/agent/00000000-0000-0000-0000-000000000000");
     await expect(
       page.getByText("No investigation is stored under this id."),
     ).toBeVisible();
   });
 
-  test("the Investigations area switches between executions and incidents", async ({
+  test("the Investigations area links to the agent and back", async ({
     page,
   }) => {
     await page.goto("/investigations");
-    await page.getByRole("link", { name: "Incidents" }).click();
-    await expect(page).toHaveURL(/\/investigations\/incidents$/);
-    await page.getByRole("link", { name: "Executions" }).click();
+    await page.getByRole("link", { name: "Agent investigations" }).click();
+    await expect(page).toHaveURL(/\/agent$/);
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("link", { name: "Investigations" })
+      .click();
     await expect(page).toHaveURL(/\/investigations$/);
+  });
+
+  test("the old incident paths redirect to the agent and keep a stored link working", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/investigations/incidents");
+    await expect(page).toHaveURL(/\/agent$/);
+    const row = await pick(request, (r) => r.outcome === "diagnosis");
+    await page.goto(`/investigations/incidents/${row.investigation_id}`);
+    await expect(page).toHaveURL(new RegExp(`/agent/${row.investigation_id}$`));
+    await expect(page.getByText("not a proven cause")).toBeVisible();
+  });
+
+  test("the landing says what the agent does, steps through its lifecycle and starts nothing", async ({
+    page,
+    request,
+  }) => {
+    const before = (await sessions(request)).length;
+    const seen = watch(page);
+    await page.goto("/agent");
+    await expect(
+      page.getByRole("link", { name: "Agent", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(page.getByText("reports only what it can cite")).toBeVisible();
+
+    const steps = page.locator("#lifecycle ol > li button");
+    await expect(steps).toHaveCount(6);
+    await expect(steps.first()).toHaveAttribute("aria-pressed", "true");
+    const detail = page.locator("#agent-step-detail");
+    await expect(detail).toContainText(
+      "Opening a stored session never starts one",
+    );
+    await steps.nth(1).click();
+    await expect(steps.nth(1)).toHaveAttribute("aria-pressed", "true");
+    await expect(detail).toContainText("only part that is not code");
+    await steps.nth(5).focus();
+    await page.keyboard.press("Enter");
+    await expect(detail).toContainText("never presented as proven");
+
+    // The headline is derived from the stored rows and never calls a fixture live.
+    const headline = page.locator("#investigations p").filter({
+      hasText: "stored investigation",
+    });
+    await expect(headline.first()).toContainText("fixture replay");
+
+    await page.getByRole("button", { name: "Fixture replay" }).click();
+    const rows = page.locator("#investigations ul li.row-reveal");
+    await expect(rows.first()).toBeVisible();
+    expect(
+      await rows.evaluateAll((els) =>
+        els.every((e) => /Fixture replay/.test(e.textContent ?? "")),
+      ),
+    ).toBe(true);
+    await page.getByRole("button", { name: "Live platform" }).click();
+    for (const r of await rows.all()) {
+      await expect(r).toContainText("Live platform");
+    }
+
+    await page.reload();
+    expect((await sessions(request)).length).toBe(before);
+    expect(seen.posts).toEqual([]);
+    expect(seen.issues).toEqual([]);
+  });
+
+  test("the reading guide uses the same wording as the detail page", async ({
+    page,
+  }) => {
+    await page.goto("/agent");
+    const guide = page.locator("#guide");
+    await expect(guide).toContainText("Ran, matched nothing");
+    await expect(guide).toContainText("Empty, not verified");
+    await expect(guide).toContainText("Could not run");
+    await expect(guide).toContainText("not a proven cause");
+  });
+
+  test("a live red team trigger links back to its execution and a fixture one does not", async ({
+    page,
+    request,
+  }) => {
+    const fixture = await pick(
+      request,
+      (r) => r.trigger.kind === "red_team_miss",
+    );
+    await page.goto(`/agent/${fixture.investigation_id}`);
+    await expect(
+      page.getByRole("link", { name: "Open the execution in Red Team" }),
+    ).toHaveCount(0);
   });
 
   for (const width of [375, 768, 1440]) {
@@ -275,10 +364,7 @@ test.describe("Incident investigations", () => {
     }) => {
       const row = await pick(request, (r) => r.outcome === "diagnosis");
       await page.setViewportSize({ width, height: 900 });
-      for (const path of [
-        "/investigations/incidents",
-        `/investigations/incidents/${row.investigation_id}`,
-      ]) {
+      for (const path of ["/agent", `/agent/${row.investigation_id}`]) {
         await page.goto(path);
         await page.waitForLoadState("networkidle");
         const overflow = await page.evaluate(
@@ -295,11 +381,36 @@ test.describe("Incident investigations", () => {
           ]
             .filter((e) => {
               const b = e.getBoundingClientRect();
-              return b.width > 0 && b.height > 0 && b.height < 43.5;
+              return (
+                b.width > 0 &&
+                b.height > 0 &&
+                (b.height < 43.5 || b.width < 43.5)
+              );
             })
             .map((e) => e.textContent?.trim().slice(0, 30)),
         );
         expect(small).toEqual([]);
+        if (width === 375) {
+          const tiny = await page.evaluate(() => {
+            const out: string[] = [];
+            const walker = document.createTreeWalker(
+              document.querySelector("main") ?? document.body,
+              NodeFilter.SHOW_TEXT,
+            );
+            while (walker.nextNode()) {
+              const n = walker.currentNode;
+              const el = n.parentElement;
+              if (!el || !n.textContent?.trim() || el.closest("svg")) continue;
+              const box = el.getBoundingClientRect();
+              if (box.width === 0 || box.height === 0) continue;
+              if (parseFloat(getComputedStyle(el).fontSize) < 15.5) {
+                out.push(n.textContent.trim().slice(0, 30));
+              }
+            }
+            return out;
+          });
+          expect(tiny).toEqual([]);
+        }
       }
     });
   }

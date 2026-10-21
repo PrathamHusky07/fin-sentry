@@ -31,7 +31,7 @@ function QueryLine({ q }: { q: QueryRun }) {
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <a
         href={`#${q.query_id}`}
-        className="text-accent inline-flex min-h-11 items-center font-mono text-sm underline underline-offset-4"
+        className="text-accent inline-flex min-h-11 min-w-11 items-center justify-center font-mono text-sm underline underline-offset-4"
       >
         {q.query_id}
       </a>

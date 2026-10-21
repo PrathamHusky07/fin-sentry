@@ -9,13 +9,13 @@ import {
   StatusBadge,
   SubsystemChip,
 } from "@/components/incidents/badges";
-import { StartIncident } from "@/components/incidents/start-incident";
-import { ViewSwitch } from "@/components/incidents/view-switch";
-import { PageHeader } from "@/components/page-header";
 import { relativeTime } from "@/lib/format";
 import {
   STOPPING_LABEL,
   TRIGGER_LABEL,
+  tallySessions,
+  type Origin,
+  type SessionTally,
   type Status,
   type Summary,
 } from "@/lib/incidents";
@@ -60,7 +60,7 @@ function Finding({ s }: { s: Summary }) {
     return (
       <span className="flex flex-wrap items-center gap-2">
         <SubsystemChip subsystem={s.leading.subsystem} />
-        <span className="text-text-secondary text-sm">
+        <span className="text-text-secondary text-base sm:text-sm">
           {s.leading.confidence} confidence, not proven
         </span>
       </span>
@@ -75,7 +75,9 @@ function Finding({ s }: { s: Summary }) {
 
 function Meta({ s }: { s: Summary }) {
   const queries =
-    s.queries === null ? "queries not stored" : `${s.queries} queries`;
+    s.queries === null
+      ? "queries not stored"
+      : `${s.queries} ${s.queries === 1 ? "query" : "queries"}`;
   const model =
     s.model_calls === null
       ? "model use not stored"
@@ -83,7 +85,7 @@ function Meta({ s }: { s: Summary }) {
         ? "no model call"
         : `${s.model_calls} model ${s.model_calls === 1 ? "call" : "calls"}, $${(s.cost_usd ?? 0).toFixed(4)}`;
   return (
-    <span className="text-text-secondary text-sm">
+    <span className="text-text-secondary text-base sm:text-sm">
       {queries}, {model}
     </span>
   );
@@ -103,7 +105,7 @@ function Row({ s }: { s: Summary }) {
             <OriginBadge origin={s.origin} planner={s.planner} />
           </div>
           <Link
-            href={`/investigations/incidents/${s.investigation_id}`}
+            href={`/agent/${s.investigation_id}`}
             className="text-text-primary mt-2 inline-flex min-h-11 items-center text-lg font-medium after:absolute after:inset-0"
           >
             {TRIGGER_LABEL[s.trigger.kind]}
@@ -113,11 +115,11 @@ function Row({ s }: { s: Summary }) {
           </p>
         </div>
         <div>
-          <p className="text-text-tertiary text-sm lg:hidden">Finding</p>
+          <p className="text-text-tertiary text-base lg:hidden">Finding</p>
           <Finding s={s} />
         </div>
         <div>
-          <p className="text-text-tertiary text-sm lg:hidden">Stopped for</p>
+          <p className="text-text-tertiary text-base lg:hidden">Stopped for</p>
           <p className="text-text-primary text-base">
             {s.stopping_reason
               ? STOPPING_LABEL[s.stopping_reason]
@@ -126,7 +128,7 @@ function Row({ s }: { s: Summary }) {
           <Meta s={s} />
         </div>
         <p
-          className="text-text-secondary text-sm lg:text-right"
+          className="text-text-secondary text-base sm:text-sm lg:text-right"
           title={s.created_at}
         >
           {relativeTime(s.created_at)}
@@ -136,13 +138,55 @@ function Row({ s }: { s: Summary }) {
   );
 }
 
+const ORIGINS: { value: Origin | ""; label: string }[] = [
+  { value: "", label: "Live and fixture" },
+  { value: "live", label: "Live platform" },
+  { value: "fixture", label: "Fixture replay" },
+];
+
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The one sentence a viewer reads first, from the loaded sessions only. It never calls a
+ * failed or unfinished session a result, and it says how many are fixtures. */
+function headline(t: SessionTally, more: boolean): string {
+  const parts = [
+    `${plural(t.total, "stored investigation")}${more ? " loaded, with older ones still stored" : ""}.`,
+  ];
+  const finished = [
+    t.diagnoses > 0
+      ? `${t.diagnoses} named a best-supported cause, not a proven one`
+      : null,
+    t.abstentions > 0 ? `${t.abstentions} abstained` : null,
+  ].filter((x): x is string => x !== null);
+  if (finished.length > 0) parts.push(`${finished.join(" and ")}.`);
+  const unfinished = [
+    t.failed > 0 ? `${t.failed} failed` : null,
+    t.interrupted > 0 ? `${t.interrupted} was interrupted` : null,
+    t.running > 0 ? `${t.running} still running` : null,
+  ].filter((x): x is string => x !== null);
+  if (unfinished.length > 0) parts.push(`${unfinished.join(", ")}.`);
+  parts.push(
+    t.live === 0
+      ? "None ran on the live platform. Every one is a fixture replay."
+      : `${t.live} ran on the live platform and ${t.fixture} ${t.fixture === 1 ? "is a fixture replay" : "are fixture replays"}.`,
+  );
+  return parts.join(" ");
+}
+
+const CHIP =
+  "min-h-11 rounded-lg border px-4 text-base sm:text-sm transition-colors";
+
 /**
- * Every stored investigation, newest first. A row is one session of the investigator on one
- * incident. The list reads stored sessions only. Nothing on this page runs an investigation
- * except the start form, and that says what it does before it does it.
+ * Every stored investigation, newest first. A row is one session of the agent on one incident.
+ * The list reads stored sessions only. Nothing here runs an investigation except the start
+ * form, and that says what it does before it does it. The origin filter works on the rows
+ * already loaded, because the API filters by status only.
  */
 export function IncidentList() {
   const [filter, setFilter] = useState<Status | "">("");
+  const [origin, setOrigin] = useState<Origin | "">("");
   const [rows, setRows] = useState<Summary[]>([]);
   const [next, setNext] = useState<number | null>(null);
   const [status, setStatus] = useState<AsyncStatus>("loading");
@@ -192,103 +236,102 @@ export function IncidentList() {
     }
   }
 
+  const shown = origin ? rows.filter((r) => r.origin === origin) : rows;
+
   return (
-    <div className="ctx ctx-forensic flex-1">
-      <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-8 sm:py-16">
-        <PageHeader
-          eyebrow="Which incident was examined, and what did the investigator find?"
-          title="Incident investigations"
-          aside={
-            <div className="flex flex-col items-start gap-1 lg:items-end">
-              <ViewSwitch current="incidents" />
-              <Link
-                href="/architecture#incident-investigator"
-                className="text-accent hover:text-text-primary inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+    <div>
+      <AsyncState
+        status={status}
+        errorMessage={error}
+        onRetry={() => {
+          setStatus("loading");
+          setRetry((n) => n + 1);
+        }}
+        loadingLabel="Loading stored investigations"
+      >
+        {!filter && rows.length > 0 ? (
+          <p className="text-text-primary max-w-3xl text-lg leading-snug font-medium text-pretty">
+            {headline(tallySessions(rows), next !== null)}
+          </p>
+        ) : null}
+
+        <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Filter by status"
+          >
+            {FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                aria-pressed={filter === f.value}
+                onClick={() => {
+                  setStatus("loading");
+                  setFilter(f.value);
+                }}
+                className={`${CHIP} ${filter === f.value ? "border-line-active bg-surface-high text-text-primary" : "border-border-strong text-text-secondary hover:text-text-primary"}`}
               >
-                How the investigator works
-              </Link>
-            </div>
-          }
-        >
-          Each row is one stored session of the reliability investigator on one
-          incident: what triggered it, which hypotheses competed, and whether it
-          found a best-supported cause or said it could not. Opening a row reads
-          the stored session and runs nothing.
-        </PageHeader>
-
-        <div className="mt-8">
-          <StartIncident />
-        </div>
-
-        <div
-          className="mt-8 flex flex-wrap items-center gap-2"
-          role="group"
-          aria-label="Filter by status"
-        >
-          {FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              aria-pressed={filter === f.value}
-              onClick={() => {
-                setStatus("loading");
-                setFilter(f.value);
-              }}
-              className={`min-h-11 rounded-lg border px-4 text-sm ${filter === f.value ? "border-line-active bg-surface-high text-text-primary" : "border-border-strong text-text-secondary hover:text-text-primary"}`}
-            >
-              {f.label}
-            </button>
-          ))}
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Filter by origin"
+          >
+            {ORIGINS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                aria-pressed={origin === o.value}
+                onClick={() => setOrigin(o.value)}
+                className={`${CHIP} ${origin === o.value ? "border-line-active bg-surface-high text-text-primary" : "border-border-strong text-text-secondary hover:text-text-primary"}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-4">
-          <AsyncState
-            status={status}
-            errorMessage={error}
-            onRetry={() => {
-              setStatus("loading");
-              setRetry((n) => n + 1);
-            }}
-            loadingLabel="Loading stored investigations"
-          >
-            {rows.length === 0 ? (
-              <div className="border-border-strong rounded-xl border border-dashed px-6 py-14 text-center">
-                <p className="text-text-primary text-lg font-medium">
-                  {filter
-                    ? "No stored investigation has this status."
-                    : "No investigation is stored yet."}
-                </p>
-                <p className="text-text-secondary mx-auto mt-2 max-w-xl text-base">
-                  A stored session appears here after an investigation is
-                  started and finishes or stops.
-                </p>
-              </div>
-            ) : (
-              <>
-                <ul className="border-border border-t">
-                  {rows.map((s) => (
-                    <Row key={s.investigation_id} s={s} />
-                  ))}
-                </ul>
-                {next !== null ? (
-                  <button
-                    type="button"
-                    onClick={loadMore}
-                    disabled={more}
-                    className="border-border-strong text-text-primary hover:bg-surface mt-4 min-h-11 rounded-lg border px-4 text-sm font-medium disabled:opacity-50"
-                  >
-                    {more ? "Loading…" : "Load older investigations"}
-                  </button>
-                ) : (
-                  <p className="text-text-tertiary mt-4 text-sm">
-                    End of stored investigations.
-                  </p>
-                )}
-              </>
-            )}
-          </AsyncState>
+          {shown.length === 0 ? (
+            <div className="border-border-strong rounded-xl border border-dashed px-6 py-14 text-center">
+              <p className="text-text-primary text-lg font-medium">
+                {filter || origin
+                  ? "No loaded investigation matches these filters."
+                  : "No investigation is stored yet."}
+              </p>
+              <p className="text-text-secondary mx-auto mt-2 max-w-xl text-base">
+                {origin && next !== null
+                  ? "Older stored sessions are not loaded yet. Load more to look further back."
+                  : "A stored session appears here after an investigation is started and finishes or stops."}
+              </p>
+            </div>
+          ) : (
+            <ul className="border-border border-t">
+              {shown.map((s) => (
+                <Row key={s.investigation_id} s={s} />
+              ))}
+            </ul>
+          )}
+          {next !== null ? (
+            <button
+              type="button"
+              onClick={loadMore}
+              disabled={more}
+              className="border-border-strong text-text-primary hover:bg-surface mt-4 min-h-11 rounded-lg border px-4 text-base font-medium disabled:opacity-50 sm:text-sm"
+            >
+              {more ? "Loading…" : "Load older investigations"}
+            </button>
+          ) : shown.length > 0 ? (
+            <p className="text-text-tertiary mt-4 text-base sm:text-sm">
+              End of stored investigations.
+            </p>
+          ) : null}
         </div>
-      </div>
+      </AsyncState>
     </div>
   );
 }

@@ -72,7 +72,7 @@ export function IncidentWorkspace({ id }: { id: string }) {
   }, [id, retry]);
 
   return (
-    <div className="ctx ctx-forensic flex-1">
+    <div className="ctx ctx-forensic mobile-readable flex-1">
       {detail ? <SectionRail sections={SECTIONS} /> : null}
       <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-8 sm:py-14">
         <AsyncState
@@ -90,10 +90,10 @@ export function IncidentWorkspace({ id }: { id: string }) {
                 No investigation is stored under this id.
               </p>
               <Link
-                href="/investigations/incidents"
+                href="/agent"
                 className="text-accent mt-4 inline-flex min-h-11 items-center underline underline-offset-4"
               >
-                See all incident investigations
+                See all investigations
               </Link>
             </div>
           ) : (

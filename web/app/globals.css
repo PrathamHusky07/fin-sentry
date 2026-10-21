@@ -1161,3 +1161,13 @@ svg :focus-visible {
 .arch-edge[data-state="lit"] .arch-edge-halo {
   opacity: 0.16;
 }
+
+/* The Agent and Red Team routes keep small text for desktop density and lift it to 16px on a
+   phone, which the frontend rules require. It is unlayered on purpose, so it wins over the
+   utility classes inside these routes only. Diagram text is SVG and is not affected. */
+@media (max-width: 639px) {
+  .mobile-readable :where(.text-xs, .text-sm, .eyebrow, .text-\[15px\]) {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+}

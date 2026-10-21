@@ -47,7 +47,7 @@ export function SectionRail({ sections }: { sections: RailSection[] }) {
               <a
                 href={`#${s.id}`}
                 aria-current={current ? "location" : undefined}
-                className={`flex min-h-11 items-center px-3 text-sm transition-colors duration-[var(--dur-base)] ${current ? "text-text-primary font-medium" : "text-text-secondary hover:text-text-primary"}`}
+                className={`flex min-h-11 items-center px-3 text-base transition-colors sm:text-sm duration-[var(--dur-base)] ${current ? "text-text-primary font-medium" : "text-text-secondary hover:text-text-primary"}`}
               >
                 {s.label}
               </a>

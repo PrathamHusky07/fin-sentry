@@ -40,17 +40,38 @@ function scopeText(d: Detail): string {
     : "No endpoint or ticker was named, so the whole platform in the window";
 }
 
+/** DERIVED. Where the record that triggered a live session can be opened. A fixture session
+ * names a record that exists only inside a replayed case world, so it links nowhere. */
+function triggerSource(d: Detail): { href: string; label: string } | null {
+  const id = d.trigger.reference_id;
+  if (d.origin !== "live" || !id) return null;
+  if (d.trigger.kind === "red_team_miss") {
+    return {
+      href: `/red-team?execution=${encodeURIComponent(id)}`,
+      label: "Open the execution in Red Team",
+    };
+  }
+  if (d.trigger.kind === "single_trace") {
+    return {
+      href: `/investigations?trace=${encodeURIComponent(id)}`,
+      label: "Open the trace",
+    };
+  }
+  return null;
+}
+
 /** What triggered this investigation and what it was asked to look at, from the stored
  * request. Every field here is persisted as the request was accepted. */
 export function IncidentHeader({ detail: d }: { detail: Detail }) {
   const minutes = windowMinutes(d.window);
+  const source = triggerSource(d);
   return (
     <header>
       <Link
-        href="/investigations/incidents"
+        href="/agent"
         className="text-text-secondary hover:text-text-primary -ml-2 inline-flex min-h-11 items-center gap-2 px-2 text-sm"
       >
-        <span aria-hidden="true">←</span> All incident investigations
+        <span aria-hidden="true">←</span> All investigations
       </Link>
       <p className="eyebrow mt-4">Incident {d.incident_id}</p>
       <h1 className="text-text-primary mt-2 max-w-4xl text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
@@ -66,10 +87,10 @@ export function IncidentHeader({ detail: d }: { detail: Detail }) {
         <OutcomeBadge outcome={d.outcome} />
         <OriginBadge origin={d.origin} planner={d.planner} withMeaning />
         <Link
-          href="/architecture#incident-investigator"
+          href="/architecture#incident-response-agent"
           className="text-accent hover:text-text-primary inline-flex min-h-11 items-center px-1 text-sm underline underline-offset-4"
         >
-          How the investigator works
+          How the agent works
         </Link>
       </div>
 
@@ -98,9 +119,17 @@ export function IncidentHeader({ detail: d }: { detail: Detail }) {
         <Fact label="Triggered by">
           {TRIGGER_LABEL[d.trigger.kind]}
           {d.trigger.reference_id ? (
-            <span className="text-text-secondary block font-mono text-sm break-all">
+            <span className="text-text-secondary block font-mono text-base break-all sm:text-sm">
               {d.trigger.reference_id}
             </span>
+          ) : null}
+          {source ? (
+            <Link
+              href={source.href}
+              className="text-accent hover:text-text-primary inline-flex min-h-11 items-center text-base underline underline-offset-4 sm:text-sm"
+            >
+              {source.label}
+            </Link>
           ) : null}
         </Fact>
         <Fact label="Scope">{scopeText(d)}</Fact>

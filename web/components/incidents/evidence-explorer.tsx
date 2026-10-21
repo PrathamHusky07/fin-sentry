@@ -140,7 +140,7 @@ function RecordsTable({
                     {i > 0 ? ", " : ""}
                     <a
                       href={`#${id}`}
-                      className="text-accent inline-flex min-h-11 items-center underline underline-offset-4"
+                      className="text-accent inline-flex min-h-11 min-w-11 items-center justify-center underline underline-offset-4"
                     >
                       {id}
                     </a>

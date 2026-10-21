@@ -49,9 +49,7 @@ export function StartIncident() {
     try {
       const started = await startIncident(body);
       if (started.created) {
-        router.push(
-          `/investigations/incidents/${started.investigation.investigation_id}`,
-        );
+        router.push(`/agent/${started.investigation.investigation_id}`);
         return;
       }
       setNotice({
@@ -163,7 +161,7 @@ export function StartIncident() {
               {notice.text}{" "}
               {notice.id ? (
                 <Link
-                  href={`/investigations/incidents/${notice.id}`}
+                  href={`/agent/${notice.id}`}
                   className="text-accent underline underline-offset-4"
                 >
                   Open the running one

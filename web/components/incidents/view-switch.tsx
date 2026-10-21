@@ -10,7 +10,7 @@ export function ViewSwitch({
 }) {
   const items = [
     { key: "executions", href: "/investigations", label: "Executions" },
-    { key: "incidents", href: "/investigations/incidents", label: "Incidents" },
+    { key: "incidents", href: "/agent", label: "Agent investigations" },
   ] as const;
   return (
     <nav aria-label="Investigations views">

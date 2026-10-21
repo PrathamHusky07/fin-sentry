@@ -13,6 +13,22 @@ const nextConfig: NextConfig = {
   // Dev only: without this, Next blocks /_next/hmr and the client never
   // hydrates when the app is opened as http://127.0.0.1:3000.
   allowedDevOrigins: ["127.0.0.1"],
+  // The incident workspace moved from the Investigations area to the Agent route. The old
+  // paths keep working, and a stored link to one session still opens it.
+  async redirects() {
+    return [
+      {
+        source: "/investigations/incidents",
+        destination: "/agent",
+        permanent: false,
+      },
+      {
+        source: "/investigations/incidents/:id",
+        destination: "/agent/:id",
+        permanent: false,
+      },
+    ];
+  },
   async rewrites() {
     return [{ source: "/ops/:path*", destination: `${gatewayUrl}/ops/:path*` }];
   },
