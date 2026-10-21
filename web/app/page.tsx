@@ -132,7 +132,7 @@ export default function LandingPage() {
               src="/screenshots/trace-detail.png"
               route="/investigations"
               href="/investigations?disagreement=true"
-              cta="Inspect disagreement"
+              cta="Filter disagreements"
               {...SHOT.traceDetail}
               alt="The trace detail drawer for a real disagreement: the flash judge scored an Amazon net income answer 1.000 and the frontier judge scored it 0.000, with the frontier judge’s written reasoning."
             />
@@ -142,7 +142,12 @@ export default function LandingPage() {
               </span>{" "}
               The flash judge scored this Amazon answer as fully faithful. The
               frontier judge scored it zero and explained that the retrieved
-              context did contain the figure.
+              context did contain the figure.{" "}
+              <span className="text-text-tertiary">
+                This is a capture taken on 2026-10-08 of an execution stored on
+                2026-10-03. The event log has since expired that execution, so
+                the live disagreement filter can come back empty.
+              </span>
             </figcaption>
           </figure>
 

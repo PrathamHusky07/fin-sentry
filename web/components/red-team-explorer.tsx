@@ -1,6 +1,5 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
 import {
   ExpectationChip,
   ModeBadge,
@@ -30,24 +29,10 @@ import {
   type ScenarioView,
   type Severity,
 } from "@/lib/red-team";
+import { useIsDesktop } from "@/lib/use-is-desktop";
 
 const SELECT =
   "border-border-strong bg-background-elevated text-text-primary hover:border-line-active focus-visible:border-accent min-h-11 w-full min-w-0 rounded-lg border px-3 text-base sm:text-sm";
-
-/** True from the lg breakpoint up, where the scenario detail sits beside the list. Below it
- * the detail opens under the selected row. The server renders the narrow layout, and the
- * client switches after hydration without a mismatch. */
-export function useIsDesktop(): boolean {
-  return useSyncExternalStore(
-    (notify) => {
-      const query = window.matchMedia("(min-width: 1024px)");
-      query.addEventListener("change", notify);
-      return () => query.removeEventListener("change", notify);
-    },
-    () => window.matchMedia("(min-width: 1024px)").matches,
-    () => false,
-  );
-}
 
 const DOT: Record<Outcome, string> = {
   caught: "bg-positive",

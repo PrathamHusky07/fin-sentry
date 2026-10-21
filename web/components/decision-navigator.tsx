@@ -15,35 +15,57 @@ function pad(n: number): string {
 }
 
 /** One decision as an argument: the problem, what was decided, then what it
- * cost and what it made true. The words are the persisted text, unedited. */
+ * cost and what it made true. The words are the persisted text, unedited. The
+ * decision and the two outcomes are instruments: pointing at one brings it
+ * forward, and the outcome beside it steps back. */
 function DecisionBody({ decision }: { decision: Decision }) {
   const step = (n: number) => ({ "--i": n }) as CSSProperties;
+  const tone = (color: string, wake: string) =>
+    ({ "--tone": color, "--wake": wake }) as CSSProperties;
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       <div className="dn-part" style={step(1)}>
         <p className="text-text-tertiary text-sm">Problem</p>
         <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
           {decision.problem}
         </p>
       </div>
-      <div className="dn-part border-accent/60 border-l-2 pl-5" style={step(2)}>
-        <p className="text-accent text-sm">Decision</p>
-        <p className="text-text-primary mt-1.5 text-lg leading-relaxed">
-          {decision.decision}
-        </p>
-      </div>
-      <div className="grid gap-x-8 gap-y-7 sm:grid-cols-2">
-        <div className="dn-part" style={step(3)}>
-          <p className="text-text-tertiary text-sm">Tradeoff</p>
-          <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
-            {decision.tradeoff}
+      <div className="dn-part" style={step(2)}>
+        <div
+          className="instrument bg-surface/40 rounded-xl p-5 pl-6"
+          style={tone("var(--accent)", "46%")}
+        >
+          <span aria-hidden="true" className="dn-rail" />
+          <p className="text-accent text-sm">Decision</p>
+          <p className="text-text-primary mt-1.5 text-lg leading-relaxed">
+            {decision.decision}
           </p>
         </div>
+      </div>
+      <div className="dn-ledger grid gap-4 sm:grid-cols-2">
+        <div className="dn-part" style={step(3)}>
+          <div
+            className="instrument dn-focus bg-surface/40 h-full rounded-xl p-5 pl-6"
+            style={tone("var(--warning)", "46%")}
+          >
+            <span aria-hidden="true" className="dn-rail" />
+            <p className="text-warning text-sm">Tradeoff</p>
+            <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
+              {decision.tradeoff}
+            </p>
+          </div>
+        </div>
         <div className="dn-part" style={step(4)}>
-          <p className="text-text-tertiary text-sm">Consequence</p>
-          <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
-            {decision.consequence}
-          </p>
+          <div
+            className="instrument dn-focus bg-surface/40 h-full rounded-xl p-5 pl-6"
+            style={tone("var(--positive)", "46%")}
+          >
+            <span aria-hidden="true" className="dn-rail" />
+            <p className="text-positive text-sm">Consequence</p>
+            <p className="text-text-secondary mt-1.5 text-base leading-relaxed">
+              {decision.consequence}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -148,7 +170,7 @@ export function DecisionNavigator() {
           </ul>
         </div>
 
-        <div className="border-line bg-background-elevated/60 relative grid rounded-2xl border p-8 shadow-[var(--elev-2)] xl:p-10">
+        <div className="instrument bg-background-elevated/60 relative grid rounded-2xl p-8 xl:p-10">
           <span
             aria-hidden="true"
             className="via-accent/40 absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent to-transparent"
@@ -168,12 +190,22 @@ export function DecisionNavigator() {
                   open ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
               >
-                <p
-                  className="eyebrow dn-part"
+                <div
+                  className="dn-part flex items-center gap-3"
                   style={{ "--i": 0 } as CSSProperties}
                 >
-                  Decision {pad(i + 1)} of {pad(TOTAL)}
-                </p>
+                  <p className="eyebrow">
+                    Decision {pad(i + 1)} of {pad(TOTAL)}
+                  </p>
+                  <span aria-hidden="true" className="flex gap-1">
+                    {DECISIONS.map((d, n) => (
+                      <span
+                        key={d.title}
+                        className={`h-1 w-4 rounded-full ${n === i ? "bg-accent" : "bg-line-active"}`}
+                      />
+                    ))}
+                  </span>
+                </div>
                 <h3
                   className="dn-part text-text-primary mt-2 mb-7 text-2xl leading-tight font-semibold tracking-tight text-balance"
                   style={{ "--i": 0 } as CSSProperties}

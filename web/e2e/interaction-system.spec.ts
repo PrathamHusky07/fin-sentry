@@ -297,4 +297,32 @@ test.describe("Decision navigator", () => {
     );
     expect(opaque).toBe(1);
   });
+
+  test("pointing at a part of the open decision brings it forward and quiets the part beside it", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/");
+    const rows = page.locator("button[id^='decision-tab-']");
+    await rows.first().scrollIntoViewIfNeeded();
+    await rows.nth(2).click();
+    const panel = page.locator("#decision-panel-2");
+    await expect(panel).toHaveCSS("opacity", "1");
+    const cards = panel.locator(".dn-focus");
+    await expect(cards).toHaveCount(2);
+
+    await expect(cards.nth(0)).toHaveCSS("opacity", "1");
+    await expect(cards.nth(1)).toHaveCSS("opacity", "1");
+    await cards.nth(0).hover();
+    await expect(cards.nth(0)).toHaveCSS("opacity", "1");
+    await expect(cards.nth(1)).toHaveCSS("opacity", "0.55");
+    await cards.nth(1).hover();
+    await expect(cards.nth(0)).toHaveCSS("opacity", "0.55");
+    await expect(cards.nth(1)).toHaveCSS("opacity", "1");
+
+    // Moving off the ledger restores both, so nothing stays dimmed.
+    await page.mouse.move(5, 5);
+    await expect(cards.nth(0)).toHaveCSS("opacity", "1");
+    await expect(cards.nth(1)).toHaveCSS("opacity", "1");
+  });
 });

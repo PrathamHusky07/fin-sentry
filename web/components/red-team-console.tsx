@@ -6,7 +6,7 @@ import { type AsyncStatus } from "@/components/async-state";
 import { SectionRail } from "@/components/incidents/section-rail";
 import { RedTeamAttention } from "@/components/red-team-attention";
 import { RedTeamEvidence } from "@/components/red-team-evidence";
-import { RedTeamExplorer, useIsDesktop } from "@/components/red-team-explorer";
+import { RedTeamExplorer } from "@/components/red-team-explorer";
 import {
   RedTeamResults,
   type ResultFilters,
@@ -15,6 +15,7 @@ import { RedTeamRunBar } from "@/components/red-team-run-bar";
 import { RedTeamScenario } from "@/components/red-team-scenario";
 import type { Summary } from "@/lib/incidents";
 import { fetchIncidents } from "@/lib/incidents-api";
+import { useIsDesktop } from "@/lib/use-is-desktop";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import {
   CATEGORY_ORDER,

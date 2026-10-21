@@ -541,6 +541,43 @@ svg :focus-visible {
     transition-delay: 0ms;
   }
 
+  /* A part of an open decision that answers the pointer. The part under it comes
+     forward through .instrument, and its sibling in the same ledger steps back, so
+     what a decision cost is read against what it made true. The step back is opacity
+     only and has no delay, unlike the staged entrance on .dn-part that wraps it. */
+  .dn-focus {
+    transition:
+      opacity var(--dur-base) var(--ease-soft),
+      transform var(--dur-base) var(--ease),
+      border-color var(--dur-base) var(--ease),
+      box-shadow var(--dur-base) var(--ease);
+  }
+
+  @media (hover: hover) {
+    .dn-ledger:has(.dn-focus:hover) .dn-focus:not(:hover) {
+      opacity: 0.55;
+    }
+  }
+
+  /* The toned rail on the left edge of a part. It is the part's own color at rest and
+     reaches full strength when the part is pointed at or focused. */
+  .dn-rail {
+    position: absolute;
+    top: 1rem;
+    bottom: 1rem;
+    left: 0;
+    width: 3px;
+    border-radius: 9999px;
+    background: var(--tone);
+    opacity: 0.5;
+    transition: opacity var(--dur-base) var(--ease-soft);
+  }
+
+  .instrument:hover > .dn-rail,
+  .instrument:focus-within > .dn-rail {
+    opacity: 1;
+  }
+
   /* ---------- One-shot reveals ----------
 
      Each runs once on mount and uses `backwards` fill, so after it ends the
