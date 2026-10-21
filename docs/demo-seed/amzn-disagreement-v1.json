@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "kind": "historical-trace",
+  "status": "HISTORICAL. Not in the live store. The source records expired from the rag-responses, judge-verdicts and rag-frontier-verdicts topics under Redpanda's 7-day retention, and RisingWave sources read those topics. Nothing here is replayed into the pipeline.",
+  "app_trace_id": "96bca4b5-f707-4a93-b421-2674032849b5",
+  "ticker": "AMZN",
+  "query": "What is Amazon's FY2024 net income attributable to shareholders (in USD millions)?",
+  "captured_at_utc": "2026-10-03T19:55:59.372665+00:00",
+  "recovered_fields": {
+    "gateway": {
+      "rag_status": "success",
+      "answer": "Data for FY2024 net income attributable to shareholders is not readily available from the provided documents.",
+      "confidence": "low",
+      "model_used": "llama3.1:8b",
+      "citations": [],
+      "retrieved_chunk_ids": [
+        "cb3dd2bdb25a3821",
+        "058c172b8bb618bc",
+        "558b95baf175f24b",
+        "f3212495c8b590e4",
+        "babd0b2123a11cbd"
+      ],
+      "event_timestamp_utc": "2026-10-03T19:55:59.372665+00:00",
+      "source": "persisted trace snapshot printed by GET /ops/traces/{id} during the 2026-10-08 Investigator session"
+    },
+    "flash_judge": {
+      "status": "complete",
+      "faithfulness_score": 1.0,
+      "faithfulness_status": "complete",
+      "timestamp_utc": "2026-10-03T19:56:10.138074Z",
+      "source": "same snapshot as above"
+    },
+    "frontier_judge": {
+      "judge_id": "gemini-rubric",
+      "status": "success",
+      "faithfulness_score": 0.0,
+      "latency_ms": 6243,
+      "rubric_reasoning": "The retrieved context explicitly contains Amazon's FY2024 net income ($59,248 million) across multiple tables. The answer incorrectly claims that this information is not available in the provided documents.",
+      "peers_used": [
+        {
+          "example_id": "financebench_id_08286",
+          "similarity": 0.9207571924861067
+        }
+      ],
+      "verdict": "frontier_degraded",
+      "disagreement_classification": "insufficient_judges",
+      "verdict_timestamp_utc": "2026-10-03T19:56:06.614359+00:00",
+      "source": "docs/measurements/faithjudge-e2e-smoke-d5a-m2.json, scenario_2_success_with_peers"
+    }
+  },
+  "not_recovered": [
+    "event_id",
+    "output_rail_trace_snapshot",
+    "total_latency_ms",
+    "retrieved_chunks_text as stored",
+    "answer_relevance and context_relevance scores",
+    "judge token counts and cost",
+    "score_delta",
+    "frontier_sampling_decision_key"
+  ],
+  "cross_check": "All five retrieved_chunk_ids exist in the Postgres corpus table as AMZN filings. Three of them (558b95baf175f24b, babd0b2123a11cbd, cb3dd2bdb25a3821) contain the figure 59,248 that the frontier judge's reasoning cites. Checked 2026-10-21."
+}

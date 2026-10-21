@@ -1,0 +1,255 @@
+{
+  "version": 1,
+  "kind": "demo-questions",
+  "recovered_from": "The original Day 9 corpus script, as written during the 2026-10-06 session. The query strings are verbatim. The records those questions produced (Oct 6) expired from the rag-responses topic under Redpanda's 7-day retention, so only the wording is recoverable.",
+  "companies": [
+    "AAPL",
+    "AMZN",
+    "JPM",
+    "MSFT",
+    "NVDA"
+  ],
+  "questions_per_company": 8,
+  "questions": [
+    {
+      "id": "AAPL-direct_factual",
+      "ticker": "AAPL",
+      "archetype": "direct_factual",
+      "query": "What was Apple's total net sales for fiscal year 2024?"
+    },
+    {
+      "id": "AAPL-different_metric",
+      "ticker": "AAPL",
+      "archetype": "different_metric",
+      "query": "What was Apple's gross margin percentage in its most recent fiscal year 10-K filing?"
+    },
+    {
+      "id": "AAPL-yoy_reasoning",
+      "ticker": "AAPL",
+      "archetype": "yoy_reasoning",
+      "query": "How did Apple's iPhone revenue in its most recent fiscal year compare to the prior fiscal year?"
+    },
+    {
+      "id": "AAPL-segment_product",
+      "ticker": "AAPL",
+      "archetype": "segment_product",
+      "query": "What was Apple's Services segment revenue in its latest 10-K filing?"
+    },
+    {
+      "id": "AAPL-multi_hop",
+      "ticker": "AAPL",
+      "archetype": "multi_hop",
+      "query": "What was Apple's effective tax rate in its most recent fiscal year, and how did it compare to the prior year's effective tax rate?"
+    },
+    {
+      "id": "AAPL-temporal",
+      "ticker": "AAPL",
+      "archetype": "temporal",
+      "query": "What was Apple's total net sales for the quarter covered by its most recent 10-Q filing?"
+    },
+    {
+      "id": "AAPL-derived_calculated",
+      "ticker": "AAPL",
+      "archetype": "derived_calculated",
+      "query": "What is the dollar difference between Apple's most recent fiscal year total net sales and the prior fiscal year's total net sales?"
+    },
+    {
+      "id": "AAPL-citation_evidence",
+      "ticker": "AAPL",
+      "archetype": "citation_evidence",
+      "query": "Does Apple's most recent 10-K disclose any material pending legal proceedings, and what are they?"
+    },
+    {
+      "id": "MSFT-direct_factual",
+      "ticker": "MSFT",
+      "archetype": "direct_factual",
+      "query": "What was Microsoft's total revenue for its most recent fiscal year?"
+    },
+    {
+      "id": "MSFT-different_metric",
+      "ticker": "MSFT",
+      "archetype": "different_metric",
+      "query": "What was Microsoft's operating income for its most recent fiscal year?"
+    },
+    {
+      "id": "MSFT-segment_product",
+      "ticker": "MSFT",
+      "archetype": "segment_product",
+      "query": "What was Microsoft's Intelligent Cloud segment revenue in its most recent 10-K filing?"
+    },
+    {
+      "id": "MSFT-yoy_reasoning",
+      "ticker": "MSFT",
+      "archetype": "yoy_reasoning",
+      "query": "How did Microsoft's Productivity and Business Processes segment revenue change between its most recent fiscal year and the prior fiscal year?"
+    },
+    {
+      "id": "MSFT-multi_hop",
+      "ticker": "MSFT",
+      "archetype": "multi_hop",
+      "query": "What were Microsoft's research and development expenses in its most recent fiscal year, and what percentage of total revenue did that represent?"
+    },
+    {
+      "id": "MSFT-temporal",
+      "ticker": "MSFT",
+      "archetype": "temporal",
+      "query": "What was Microsoft's revenue for the quarter covered by its most recent 10-Q filing?"
+    },
+    {
+      "id": "MSFT-derived_calculated",
+      "ticker": "MSFT",
+      "archetype": "derived_calculated",
+      "query": "What is the percentage change in Microsoft's net income between its two most recently reported fiscal years?"
+    },
+    {
+      "id": "MSFT-citation_evidence",
+      "ticker": "MSFT",
+      "archetype": "citation_evidence",
+      "query": "What does Microsoft's most recent 10-K say about its principal competition?"
+    },
+    {
+      "id": "AMZN-direct_factual",
+      "ticker": "AMZN",
+      "archetype": "direct_factual",
+      "query": "What was Amazon's total net sales for its most recent fiscal year?"
+    },
+    {
+      "id": "AMZN-different_metric",
+      "ticker": "AMZN",
+      "archetype": "different_metric",
+      "query": "What was Amazon's operating cash flow for its most recent fiscal year?"
+    },
+    {
+      "id": "AMZN-segment_product",
+      "ticker": "AMZN",
+      "archetype": "segment_product",
+      "query": "What was Amazon Web Services (AWS) segment net sales in Amazon's most recent 10-K filing?"
+    },
+    {
+      "id": "AMZN-yoy_reasoning",
+      "ticker": "AMZN",
+      "archetype": "yoy_reasoning",
+      "query": "How did Amazon's North America segment operating income change between its most recent fiscal year and the prior fiscal year?"
+    },
+    {
+      "id": "AMZN-multi_hop",
+      "ticker": "AMZN",
+      "archetype": "multi_hop",
+      "query": "What was Amazon Web Services' operating margin in its most recent fiscal year, based on its segment net sales and operating income?"
+    },
+    {
+      "id": "AMZN-temporal",
+      "ticker": "AMZN",
+      "archetype": "temporal",
+      "query": "What was Amazon's total net sales for the quarter covered by its most recent 10-Q filing?"
+    },
+    {
+      "id": "AMZN-derived_calculated",
+      "ticker": "AMZN",
+      "archetype": "derived_calculated",
+      "query": "What is the dollar difference between Amazon's most recent fiscal year total operating expenses and the prior fiscal year's total operating expenses?"
+    },
+    {
+      "id": "AMZN-citation_evidence",
+      "ticker": "AMZN",
+      "archetype": "citation_evidence",
+      "query": "What risk factors does Amazon's most recent 10-K identify related to its fulfillment and logistics network?"
+    },
+    {
+      "id": "NVDA-direct_factual",
+      "ticker": "NVDA",
+      "archetype": "direct_factual",
+      "query": "What was NVIDIA's total revenue for its most recent fiscal year?"
+    },
+    {
+      "id": "NVDA-different_metric",
+      "ticker": "NVDA",
+      "archetype": "different_metric",
+      "query": "What was NVIDIA's gross margin percentage in its most recent fiscal year 10-K filing?"
+    },
+    {
+      "id": "NVDA-segment_product",
+      "ticker": "NVDA",
+      "archetype": "segment_product",
+      "query": "What was NVIDIA's Data Center segment revenue in its most recent 10-K filing?"
+    },
+    {
+      "id": "NVDA-yoy_reasoning",
+      "ticker": "NVDA",
+      "archetype": "yoy_reasoning",
+      "query": "How did NVIDIA's Gaming segment revenue change between its most recent fiscal year and the prior fiscal year?"
+    },
+    {
+      "id": "NVDA-multi_hop",
+      "ticker": "NVDA",
+      "archetype": "multi_hop",
+      "query": "What was NVIDIA's research and development spending in its most recent fiscal year, and what percentage of total revenue did that represent?"
+    },
+    {
+      "id": "NVDA-temporal",
+      "ticker": "NVDA",
+      "archetype": "temporal",
+      "query": "What was NVIDIA's revenue for the quarter covered by its most recent 10-Q filing?"
+    },
+    {
+      "id": "NVDA-derived_calculated",
+      "ticker": "NVDA",
+      "archetype": "derived_calculated",
+      "query": "What is the percentage growth in NVIDIA's Data Center segment revenue between its two most recently reported fiscal years?"
+    },
+    {
+      "id": "NVDA-citation_evidence",
+      "ticker": "NVDA",
+      "archetype": "citation_evidence",
+      "query": "What does NVIDIA's most recent 10-K disclose about export restrictions affecting its sales to China?"
+    },
+    {
+      "id": "JPM-direct_factual",
+      "ticker": "JPM",
+      "archetype": "direct_factual",
+      "query": "What was JPMorgan Chase's total net revenue for its most recent fiscal year?"
+    },
+    {
+      "id": "JPM-different_metric",
+      "ticker": "JPM",
+      "archetype": "different_metric",
+      "query": "What was JPMorgan Chase's return on tangible common equity (ROTCE) in its most recent fiscal year?"
+    },
+    {
+      "id": "JPM-segment_product",
+      "ticker": "JPM",
+      "archetype": "segment_product",
+      "query": "What was JPMorgan Chase's Consumer and Community Banking segment net income in its most recent 10-K filing?"
+    },
+    {
+      "id": "JPM-yoy_reasoning",
+      "ticker": "JPM",
+      "archetype": "yoy_reasoning",
+      "query": "How did JPMorgan Chase's provision for credit losses change between its most recent fiscal year and the prior fiscal year?"
+    },
+    {
+      "id": "JPM-multi_hop",
+      "ticker": "JPM",
+      "archetype": "multi_hop",
+      "query": "What was JPMorgan Chase's common equity tier 1 (CET1) capital ratio in its most recent fiscal year, and how did it compare to the prior year?"
+    },
+    {
+      "id": "JPM-temporal",
+      "ticker": "JPM",
+      "archetype": "temporal",
+      "query": "What was JPMorgan Chase's net income for the quarter covered by its most recent 10-Q filing?"
+    },
+    {
+      "id": "JPM-derived_calculated",
+      "ticker": "JPM",
+      "archetype": "derived_calculated",
+      "query": "What is the dollar difference between JPMorgan Chase's most recent fiscal year total noninterest expense and the prior fiscal year's total noninterest expense?"
+    },
+    {
+      "id": "JPM-citation_evidence",
+      "ticker": "JPM",
+      "archetype": "citation_evidence",
+      "query": "What risk factors does JPMorgan Chase's most recent 10-K identify related to credit risk in its consumer loan portfolio?"
+    }
+  ]
+}
