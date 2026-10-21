@@ -1,6 +1,5 @@
-/** The product routes, in navigation order. The top bar and the footer both read this list,
- * and routes.test.ts checks that every entry has a page, so neither can link to a route that
- * does not exist. */
+/** The product routes, in navigation order. The top bar reads this list, and routes.test.ts
+ * checks that every entry has a page, so it cannot link to a route that does not exist. */
 export const ROUTES = [
   { href: "/overview", label: "Overview" },
   { href: "/operations", label: "Live Operations" },
