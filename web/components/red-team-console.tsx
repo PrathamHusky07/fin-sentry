@@ -24,6 +24,7 @@ import {
   attentionItems,
   byScenario,
   countExecutions,
+  filterScenarios,
   groupByLayer,
   summarizeLatest,
   type Category,
@@ -251,9 +252,18 @@ export function RedTeamConsole() {
     () => Object.fromEntries(scenarios.map((s) => [s.id, s.executor])),
     [scenarios],
   );
-  const firstScenario = groupByLayer(scenarios)[0]?.scenarios[0]?.id ?? null;
-  // A wide screen opens the most important scenario so the detail is never an empty pane.
-  const defaultSelected = items[0]?.scenario.id ?? firstScenario;
+  const visibleScenarios = useMemo(
+    () => filterScenarios(scenarios, explorerFilters),
+    [scenarios, explorerFilters],
+  );
+  const firstScenario =
+    groupByLayer(visibleScenarios)[0]?.scenarios[0]?.id ?? null;
+  // A wide screen opens the most important scenario the filters leave visible, so the detail
+  // is never an empty pane and never a scenario the list has hidden.
+  const visibleIds = new Set(visibleScenarios.map((s) => s.id));
+  const defaultSelected =
+    items.find((i) => visibleIds.has(i.scenario.id))?.scenario.id ??
+    firstScenario;
   const selectedId = chosen ?? (desktop ? defaultSelected : null);
   const busy = starting || activeRunId !== null;
   const persistence = overview?.persistence_available ?? false;

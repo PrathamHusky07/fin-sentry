@@ -184,6 +184,46 @@ test("REAL STACK: the scenario filters narrow the lanes, live in the URL and sur
   await expect(page).not.toHaveURL(/severity=/);
 });
 
+test("REAL STACK: the detail follows the filtered set, and clearing the filters brings the scenario back", async ({
+  page,
+}) => {
+  await page.setViewportSize(desktop);
+  await page.goto("/red-team?severity=critical");
+  const rows = page.locator("[data-scenario]");
+  await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+  const critical = await rows.evaluateAll((els) =>
+    els.map((el) => el.getAttribute("data-scenario") ?? ""),
+  );
+  await page.getByRole("button", { name: "Clear filters" }).first().click();
+  await expect(rows).toHaveCount(10);
+  const ids = await rows.evaluateAll((els) =>
+    els.map((el) => el.getAttribute("data-scenario") ?? ""),
+  );
+  const target = ids.find((id) => !critical.includes(id));
+  if (!target)
+    throw new Error("every scenario is critical, nothing to filter out");
+
+  await page
+    .locator(`[data-scenario="${target}"] button[aria-expanded]`)
+    .click();
+  const article = page.getByRole("article", { name: new RegExp(target) });
+  await expect(article).toBeVisible();
+
+  await page
+    .getByRole("combobox", { name: "Severity" })
+    .selectOption("critical");
+  await expect(article).toHaveCount(0);
+  const hidden = page.locator('[data-detail-state="hidden"]');
+  await expect(hidden).toContainText(
+    `${target} is hidden by the current filters`,
+  );
+  await expect(page).toHaveURL(new RegExp(`scenario=${target}`));
+
+  await page.getByRole("button", { name: "Clear filters" }).first().click();
+  await expect(hidden).toHaveCount(0);
+  await expect(article).toBeVisible();
+});
+
 test("REAL STACK: fourteen identical re-runs are one row with a count, and every execution is still reachable", async ({
   page,
 }) => {

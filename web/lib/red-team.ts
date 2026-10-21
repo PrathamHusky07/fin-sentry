@@ -563,6 +563,26 @@ export function filterScenarios(
   });
 }
 
+/** What the detail panel shows. It follows the filtered set: a scenario the filters hide is
+ * not shown as if it were still open, and its id is kept so clearing the filters brings it back. */
+export type DetailSelection =
+  | { kind: "open"; scenario: ScenarioView }
+  | { kind: "hidden"; id: string }
+  | { kind: "none" };
+
+export function resolveDetail(
+  scenarios: ScenarioView[],
+  visible: ScenarioView[],
+  selectedId: string | null,
+): DetailSelection {
+  if (selectedId === null) return { kind: "none" };
+  const open = visible.find((s) => s.id === selectedId);
+  if (open) return { kind: "open", scenario: open };
+  return scenarios.some((s) => s.id === selectedId)
+    ? { kind: "hidden", id: selectedId }
+    : { kind: "none" };
+}
+
 // ---------------------------------------------------------------------------
 // History. Executions of one scenario, oldest first, collapsed into runs of the same result.
 // ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ import {
   findingHeadline,
   groupByLayer,
   historySummary,
+  resolveDetail,
   streakChanges,
   streaks,
   expectationLabel,
@@ -800,5 +801,48 @@ describe("historySummary", () => {
         ]),
       ),
     ).toBe("2 executions, 2 different results");
+  });
+});
+
+describe("resolveDetail follows the filtered set", () => {
+  const a: ScenarioView = {
+    ...scenario("A-1", "direct_injection", null),
+    severity: "critical",
+  };
+  const b: ScenarioView = {
+    ...scenario("B-1", "direct_injection", null),
+    severity: "low",
+  };
+  const all = [a, b];
+
+  it("opens the selected scenario while it is visible", () => {
+    expect(resolveDetail(all, all, "A-1")).toEqual({
+      kind: "open",
+      scenario: a,
+    });
+  });
+
+  it("does not keep a filtered-out scenario open, and remembers which one it was", () => {
+    const visible = filterScenarios(all, {
+      ...NO_EXPLORER_FILTERS,
+      severity: "low",
+    });
+    expect(resolveDetail(all, visible, "A-1")).toEqual({
+      kind: "hidden",
+      id: "A-1",
+    });
+  });
+
+  it("restores the same scenario once the filters are cleared", () => {
+    const visible = filterScenarios(all, NO_EXPLORER_FILTERS);
+    expect(resolveDetail(all, visible, "A-1")).toEqual({
+      kind: "open",
+      scenario: a,
+    });
+  });
+
+  it("shows nothing for no selection or an id the registry does not have", () => {
+    expect(resolveDetail(all, all, null)).toEqual({ kind: "none" });
+    expect(resolveDetail(all, all, "Z-9")).toEqual({ kind: "none" });
   });
 });

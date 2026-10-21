@@ -20,6 +20,7 @@ import {
   isSafetyBoundSkip,
   layerLabel,
   NO_EXPLORER_FILTERS,
+  resolveDetail,
   streaks,
   type Category,
   type ExecutionRecord,
@@ -229,7 +230,7 @@ export function RedTeamExplorer({
   const desktop = useIsDesktop();
   const visible = filterScenarios(scenarios, filters);
   const lanes = groupByLayer(visible);
-  const detailScenario = scenarios.find((s) => s.id === selectedId) ?? null;
+  const detail = resolveDetail(scenarios, visible, selectedId);
   const filtered = hasExplorerFilters(filters);
 
   return (
@@ -401,15 +402,32 @@ export function RedTeamExplorer({
         </div>
         {desktop ? (
           <div className="lg:sticky lg:top-[calc(var(--nav-h)+4.25rem)] lg:max-h-[calc(100vh-var(--nav-h)-5.5rem)] lg:overflow-y-auto">
-            {detailScenario ? (
+            {detail.kind === "open" ? (
               <div
-                key={detailScenario.id}
+                key={detail.scenario.id}
                 className="swap-in border-border bg-background-elevated/50 rounded-xl border p-5"
               >
-                {renderDetail(detailScenario)}
+                {renderDetail(detail.scenario)}
+              </div>
+            ) : detail.kind === "hidden" ? (
+              <div
+                role="status"
+                data-detail-state="hidden"
+                className="border-border-strong text-text-secondary rounded-xl border border-dashed p-6 text-base"
+              >
+                <p className="text-text-primary">
+                  {detail.id} is hidden by the current filters.
+                </p>
+                <p className="mt-2">
+                  Select a scenario in the list, or clear the filters to open{" "}
+                  {detail.id} again.
+                </p>
               </div>
             ) : (
-              <div className="border-border-strong text-text-secondary rounded-xl border border-dashed p-6 text-base">
+              <div
+                data-detail-state="none"
+                className="border-border-strong text-text-secondary rounded-xl border border-dashed p-6 text-base"
+              >
                 Select a scenario to read its latest result, its history and the
                 definition it was written from.
               </div>
