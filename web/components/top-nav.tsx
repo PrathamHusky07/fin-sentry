@@ -4,15 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Mark } from "@/components/mark";
-
-const ROUTES = [
-  { href: "/overview", label: "Overview" },
-  { href: "/operations", label: "Live Operations" },
-  { href: "/investigations", label: "Investigations" },
-  { href: "/agent", label: "Agent" },
-  { href: "/architecture", label: "Architecture" },
-  { href: "/red-team", label: "Red Team" },
-] as const;
+import { ROUTES } from "@/lib/routes";
 
 function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);

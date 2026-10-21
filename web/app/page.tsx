@@ -198,16 +198,6 @@ export default function LandingPage() {
           </figure>
         </div>
       </section>
-
-      <footer className="border-border border-t">
-        <div className="text-text-tertiary mx-auto flex w-full max-w-7xl flex-col gap-2 px-4 py-8 text-sm sm:flex-row sm:justify-between sm:px-8">
-          <p>
-            Fin-Sentry is a portfolio project. All data shown comes from a
-            demonstration corpus of ten SEC filers.
-          </p>
-          <p>Built with Next.js, FastAPI, Redpanda and RisingWave.</p>
-        </div>
-      </footer>
     </div>
   );
 }
