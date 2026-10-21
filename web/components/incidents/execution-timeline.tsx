@@ -320,7 +320,7 @@ export function ExecutionTimeline({ detail }: { detail: Detail }) {
         id="timeline-heading"
         className="text-text-primary text-2xl font-semibold tracking-tight"
       >
-        Execution timeline
+        Decision trail
       </h2>
       <p className="text-text-secondary mt-2 max-w-3xl text-base leading-relaxed">
         What the investigator did, in order. Each query says which hypotheses it

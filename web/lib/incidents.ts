@@ -505,6 +505,9 @@ export function recordHref(ref: EvidenceRef, origin: Origin): string | null {
 export interface HypothesisRow {
   hypothesis_id: string;
   rank: number | null;
+  /** The symptom the hypothesis explains. Hypotheses with the same symptom are rivals. Null
+   * when the session stored no assessment for it. */
+  symptom: string | null;
   subsystem: Subsystem;
   statement: string;
   status: HypothesisStatus;
@@ -595,6 +598,7 @@ export function hypothesisRows(detail: Detail): HypothesisRow[] {
         return {
           hypothesis_id: r.hypothesis_id,
           rank: r.rank,
+          symptom: a?.symptom ?? null,
           subsystem: r.subsystem,
           statement: r.statement,
           status,
@@ -620,6 +624,7 @@ export function hypothesisRows(detail: Detail): HypothesisRow[] {
   return assessed.hypotheses.map((h) => ({
     hypothesis_id: h.hypothesis_id,
     rank: null,
+    symptom: h.symptom,
     subsystem: h.subsystem,
     statement: h.statement,
     status: h.status,

@@ -1,17 +1,11 @@
 import { ConfidenceChip, SubsystemChip } from "@/components/incidents/badges";
+import { stoppedWhy } from "@/lib/agent-view";
 import {
   STOPPING_LABEL,
   STOPPING_MEANING,
   hypothesisRows,
   type Detail,
 } from "@/lib/incidents";
-
-function stoppedWhy(d: Detail): string | null {
-  for (const { event } of d.timeline) {
-    if (event.kind === "stopped") return event.why;
-  }
-  return null;
-}
 
 function Panel({
   tone,

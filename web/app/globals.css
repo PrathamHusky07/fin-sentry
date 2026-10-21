@@ -1032,6 +1032,14 @@ svg :focus-visible {
   opacity: 0.06;
 }
 
+/* The investigation map reuses the constellation states. Under reduced motion a stage
+   that comes forward keeps its halo and brighter border but does not move or grow. */
+@media (prefers-reduced-motion: reduce) {
+  .im .cn-inner[data-state="active"] {
+    transform: none;
+  }
+}
+
 /* A quick swap for caption content that changes on hover or selection. */
 @media (prefers-reduced-motion: no-preference) {
   .swap-in {

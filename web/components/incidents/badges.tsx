@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Tip } from "@/components/tip";
+import { RECORD_STATE } from "@/lib/agent-view";
 import {
   HYPOTHESIS_STATUS_LABEL,
   HYPOTHESIS_STATUS_MEANING,
@@ -116,23 +117,23 @@ export function OriginBadge({
   return origin === "live" ? (
     <Meaning
       on={withMeaning}
-      label="Live platform"
-      definition={`Read from the running platform through the nine read-only MCP tools. Planner: ${planner}.`}
+      label={RECORD_STATE.live.label}
+      definition={`${RECORD_STATE.live.meaning} Planner: ${planner}.`}
     >
       <span className={`${BADGE} text-signal border-signal/40 bg-signal/10`}>
-        Live platform
+        {RECORD_STATE.live.label}
       </span>
     </Meaning>
   ) : (
     <Meaning
       on={withMeaning}
-      label="Fixture replay"
-      definition={`A known-answer case world replayed through the same investigator and store with the scripted planner (${planner}). It is not a result on the live platform and no model was called.`}
+      label={RECORD_STATE.fixture.label}
+      definition={`${RECORD_STATE.fixture.meaning} Scripted planner: ${planner}.`}
     >
       <span
         className={`${BADGE} text-disagreement border-disagreement/50 border-dashed`}
       >
-        Fixture replay
+        {RECORD_STATE.fixture.label}
       </span>
     </Meaning>
   );

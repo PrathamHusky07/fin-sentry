@@ -69,7 +69,7 @@ test.describe("Incident investigations", () => {
     expect(await rows.count()).toBeGreaterThanOrEqual(5);
     await expect(rows.getByText("Fixture replay").first()).toBeVisible();
 
-    await page.getByRole("button", { name: "Failed" }).click();
+    await page.getByRole("button", { name: /^Failed\s*\d+$/ }).click();
     await expect(rows).toHaveCount(
       (await sessions(request)).filter((r) => r.status === "failed").length,
     );
@@ -111,11 +111,14 @@ test.describe("Incident investigations", () => {
     await expect(ledger.nth(1)).toContainText("Refuted");
     await expect(ledger.first().getByText(/predictions met/)).toBeVisible();
 
-    await ledger
-      .first()
-      .getByText(/Predictions and how each was judged/)
-      .click();
-    await expect(ledger.first().getByText("Judged by").first()).toBeVisible();
+    // The selected hypothesis opens in full beside the list, and the leader opens first.
+    const selected = page.locator("#hypotheses");
+    await expect(selected.getByText("Supporting evidence (")).toBeVisible();
+    await expect(selected.getByText("Counter-evidence (")).toBeVisible();
+    await expect(selected.getByText("Missing evidence (")).toBeVisible();
+    await expect(selected.getByText("Rival explanations (")).toBeVisible();
+    await selected.getByText(/Predictions and how each was judged/).click();
+    await expect(selected.getByText("Judged by").first()).toBeVisible();
 
     await expect(page.locator("#timeline li").first()).toContainText(
       "search_traces",
@@ -243,7 +246,7 @@ test.describe("Incident investigations", () => {
     );
     if (!live) return;
     await page.goto(`/agent/${live.investigation_id}`);
-    await expect(page.getByText("Live platform").first()).toBeVisible();
+    await expect(page.getByText("Live execution").first()).toBeVisible();
     await expect(page.getByText("Fixture replay")).toHaveCount(0);
     await expect(page.locator("#budget")).toContainText("estimate, not a bill");
     await expect(page.locator("#budget")).toContainText("Model calls");
@@ -293,29 +296,34 @@ test.describe("Incident investigations", () => {
         .getByRole("navigation", { name: "Primary" })
         .getByRole("link", { name: "Agent", exact: true }),
     ).toHaveAttribute("aria-current", "page");
-    await expect(page.getByText("reports only what it can cite")).toBeVisible();
+    await expect(
+      page.getByText("every claim cites the records behind it"),
+    ).toBeVisible();
 
-    const steps = page.locator("#lifecycle ol > li button");
+    // At this width the map is a drawing whose six stages are buttons.
+    const steps = page.locator('#lifecycle [role="button"]');
     await expect(steps).toHaveCount(6);
     await expect(steps.first()).toHaveAttribute("aria-pressed", "true");
     const detail = page.locator("#agent-step-detail");
     await expect(detail).toContainText(
-      "Opening a stored session never starts one",
+      "Opening a stored case never starts one",
     );
     await steps.nth(1).click();
     await expect(steps.nth(1)).toHaveAttribute("aria-pressed", "true");
-    await expect(detail).toContainText("only part that is not code");
+    await expect(detail).toContainText("Nothing the planner writes can later");
     await steps.nth(5).focus();
     await page.keyboard.press("Enter");
     await expect(detail).toContainText("never presented as proven");
 
     // The headline is derived from the stored rows and never calls a fixture live.
     const headline = page.locator("#investigations p").filter({
-      hasText: "stored investigation",
+      hasText: /\d+ stored investigations?/,
     });
     await expect(headline.first()).toContainText("fixture replay");
 
-    await page.getByRole("button", { name: "Fixture replay" }).click();
+    await page
+      .getByRole("button", { name: "Fixture replay", exact: true })
+      .click();
     const rows = page.locator("#investigations ul li.row-reveal");
     await expect(rows.first()).toBeVisible();
     expect(
@@ -323,9 +331,11 @@ test.describe("Incident investigations", () => {
         els.every((e) => /Fixture replay/.test(e.textContent ?? "")),
       ),
     ).toBe(true);
-    await page.getByRole("button", { name: "Live platform" }).click();
+    await page
+      .getByRole("button", { name: "Live execution", exact: true })
+      .click();
     for (const r of await rows.all()) {
-      await expect(r).toContainText("Live platform");
+      await expect(r).toContainText("Live execution");
     }
 
     await page.reload();

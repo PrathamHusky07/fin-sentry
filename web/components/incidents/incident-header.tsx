@@ -5,6 +5,7 @@ import {
   OutcomeBadge,
   StatusBadge,
 } from "@/components/incidents/badges";
+import { RECORD_STATE, recordStateOf } from "@/lib/agent-view";
 import { formatUtc, formatUtcSeconds, relativeTime } from "@/lib/format";
 import {
   TRIGGER_LABEL,
@@ -93,6 +94,16 @@ export function IncidentHeader({ detail: d }: { detail: Detail }) {
           How the agent works
         </Link>
       </div>
+
+      <p
+        data-record-state={recordStateOf(d.origin)}
+        className={`mt-4 max-w-3xl border-l-2 pl-4 text-base leading-relaxed ${d.origin === "live" ? "border-signal/60" : "border-disagreement/60 border-dashed"} text-text-secondary`}
+      >
+        <span className="text-text-primary font-medium">
+          {RECORD_STATE[recordStateOf(d.origin)].label}.
+        </span>{" "}
+        {RECORD_STATE[recordStateOf(d.origin)].meaning}
+      </p>
 
       {d.stale ? (
         <p

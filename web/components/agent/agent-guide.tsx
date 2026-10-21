@@ -12,22 +12,21 @@ const STATES: { key: QueryOutcome; border: string }[] = [
   { key: "rejected", border: "border-dashed border-border-strong" },
 ];
 
-/** A static key to what an investigation page can say. The wording of the five query states is
- * the same constant the detail page renders, so this key cannot drift from it. */
+/** A compact key to what a case file can say. The wording of the five query states is the
+ * same constant the case file renders, so this key cannot drift from it. */
 export function AgentGuide() {
   return (
-    <div className="grid gap-10 lg:grid-cols-[minmax(0,22rem)_1fr] lg:gap-16">
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,22rem)_1fr] lg:gap-16">
       <div>
         <h2
           id="guide-heading"
           className="text-text-primary text-2xl font-semibold tracking-tight text-balance"
         >
-          How to read an investigation
+          Reading a case file
         </h2>
         <p className="text-text-secondary mt-3 text-base leading-relaxed text-pretty">
-          The agent can be wrong, and the page is built so that a wrong answer
-          is visible. A solid border says something about the platform. A dashed
-          border says nothing about it.
+          A solid border says something about the platform. A dashed border says
+          nothing about it. The same rule holds for the states below.
         </p>
       </div>
       <div className="space-y-8">
@@ -56,7 +55,8 @@ export function AgentGuide() {
             </dt>
             <dd className="text-text-secondary mt-1 text-base leading-relaxed">
               The records are consistent with it and no rival is also supported.
-              That is not a proven cause, and the page says so on the result.
+              That is not a proven cause, and the case file says so on the
+              result.
             </dd>
           </div>
           <div>
@@ -64,28 +64,9 @@ export function AgentGuide() {
               Abstained
             </dt>
             <dd className="text-text-secondary mt-1 text-base leading-relaxed">
-              A finished investigation that found no supported cause, or could
+              The investigation finished and found no supported cause, or could
               not read the source it needed. It is stored and shown as a
               complete result, not as an error.
-            </dd>
-          </div>
-          <div>
-            <dt className="text-text-primary text-base font-medium">
-              Live platform
-            </dt>
-            <dd className="text-text-secondary mt-1 text-base leading-relaxed">
-              Read from the running platform through the nine read-only tools,
-              with a real model call. Its cost is stored with the session.
-            </dd>
-          </div>
-          <div>
-            <dt className="text-text-primary text-base font-medium">
-              Fixture replay
-            </dt>
-            <dd className="text-text-secondary mt-1 text-base leading-relaxed">
-              A known-answer case world replayed through the same code with a
-              scripted planner. No model was called, and it says nothing about
-              the live platform.
             </dd>
           </div>
         </dl>

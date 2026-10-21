@@ -11,19 +11,56 @@ import { IncidentVerdict } from "@/components/incidents/incident-verdict";
 import { NotEstablished } from "@/components/incidents/not-established";
 import { SectionRail } from "@/components/incidents/section-rail";
 import { SpendPanel } from "@/components/incidents/spend-panel";
+import { TrailSummary } from "@/components/incidents/trail-summary";
 import type { Detail } from "@/lib/incidents";
 import { IncidentApiError, fetchIncident } from "@/lib/incidents-api";
 
 const POLL_MS = 2000;
 
 const SECTIONS = [
-  { id: "outcome", label: "Outcome" },
+  { id: "outcome", label: "Summary" },
   { id: "hypotheses", label: "Hypotheses" },
-  { id: "timeline", label: "Timeline" },
-  { id: "evidence", label: "Evidence" },
+  { id: "trail", label: "Decision trail" },
+  { id: "evidence", label: "Cited records" },
   { id: "gaps", label: "Not established" },
   { id: "budget", label: "Budget" },
 ];
+
+/** The divider that names one of the three layers of a case file and what it answers. */
+function Layer({
+  n,
+  title,
+  question,
+  id,
+  children,
+}: {
+  n: number;
+  title: string;
+  question: string;
+  id?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      aria-label={`Layer ${n}: ${title}`}
+      className="scroll-mt-32"
+    >
+      <div className="border-border-strong flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t pt-5">
+        <span className="tabular-metric text-accent text-sm">
+          Layer {n} of 3
+        </span>
+        <span className="text-text-primary text-base font-semibold">
+          {title}
+        </span>
+        <span className="text-text-tertiary text-base sm:text-sm">
+          {question}
+        </span>
+      </div>
+      <div className="mt-8 space-y-14">{children}</div>
+    </section>
+  );
+}
 
 /**
  * One stored investigation, opened by its id. Everything is read from the stored session
@@ -85,9 +122,20 @@ export function IncidentWorkspace({ id }: { id: string }) {
           loadingLabel="Loading the stored investigation"
         >
           {notFound || !detail ? (
-            <div className="border-border-strong rounded-xl border border-dashed px-6 py-14 text-center">
-              <p className="text-text-primary text-lg font-medium">
+            <div
+              data-record-state="unavailable"
+              className="border-failure/40 rounded-xl border border-dashed px-6 py-14 text-center"
+            >
+              <p className="text-failure text-sm font-medium">
+                Unavailable record
+              </p>
+              <p className="text-text-primary mt-2 text-lg font-medium">
                 No investigation is stored under this id.
+              </p>
+              <p className="text-text-secondary mx-auto mt-2 max-w-xl text-base">
+                The gateway answered, and it holds no case file with this id.
+                Nothing is shown in its place, and no investigation is started
+                by opening this page.
               </p>
               <Link
                 href="/agent"
@@ -99,14 +147,34 @@ export function IncidentWorkspace({ id }: { id: string }) {
           ) : (
             <div className="space-y-14">
               <IncidentHeader detail={detail} />
-              <div id="outcome" className="scroll-mt-32">
-                <IncidentVerdict detail={detail} />
-              </div>
-              <HypothesisLedger detail={detail} />
-              <ExecutionTimeline detail={detail} />
-              <EvidenceExplorer detail={detail} />
-              <NotEstablished detail={detail} />
-              <SpendPanel detail={detail} />
+              <Layer
+                n={1}
+                title="Incident summary"
+                question="What happened and how did it end?"
+              >
+                <div id="outcome" className="scroll-mt-32">
+                  <IncidentVerdict detail={detail} />
+                </div>
+              </Layer>
+              <Layer
+                n={2}
+                title="Hypothesis comparison"
+                question="What explanations were weighed, and against what?"
+              >
+                <HypothesisLedger detail={detail} />
+              </Layer>
+              <Layer
+                n={3}
+                title="Evidence and decision trail"
+                question="What was retrieved, what was cited and why did it stop?"
+                id="trail"
+              >
+                <TrailSummary detail={detail} />
+                <ExecutionTimeline detail={detail} />
+                <EvidenceExplorer detail={detail} />
+                <NotEstablished detail={detail} />
+                <SpendPanel detail={detail} />
+              </Layer>
             </div>
           )}
         </AsyncState>
