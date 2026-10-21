@@ -1,5 +1,79 @@
 # Build Log
 
+## 2026-10-21: Day 12 Session 1, correctness gate, demo-data recovery, footer and homepage
+
+Model: Sonnet 5.5, no escalation. Nothing was pushed. Session start: `main`, HEAD and `origin/main` both `3b5f9fb`. No frozen tool
+schema, guardrail rail, nine-tool surface, held-out case or planner spending behavior changed. No new runtime, service or store.
+No RAG run was made and no model call was made by this session.
+
+### Part A: correctness gate
+1. Usage metadata charged as zero (fixed, `e6f58cf`). `_plan_reserved` priced a reply that did not raise from its usage
+   metadata and treated a missing record as zero. It now charges the reserved worst case, once, when the metadata is absent or
+   when the prompt or candidate count is missing or invalid. A missing thinking count alone still reads as zero, because the SDK
+   leaves it unset when the model did not think, and charging the worst case there would drain the session cap about three times
+   faster. Four regression tests (absent, incomplete in two forms, negative) failed against the old code and pass now, on the
+   planner and on the session ledger, and they check the hold is released as the charge is recorded.
+2. Per-call ceiling (documented, behavior unchanged). Source confirms `can_proceed()` is the only check that applies the per-call
+   ceiling, and it is called by the faithfulness, answer relevance and context relevance metrics and by the Gemini rubric adapter.
+   Nothing under `finsentry/investigator/` calls it. The planner uses `reserve()`, which checks the run and day ceilings, plus its
+   own cap. Both modules now say so, and two tests prove the planner runs a call above $0.02 and stops at the run ceiling.
+3. Query-scope contract (confirmed, code untouched). Every validated prediction has a `query_key`, `covered_queries` returns None
+   only when no scopes are passed or the prediction names no query, and the loop passes scopes at both call sites. The three
+   contract tests in `test_query_scope.py` pass.
+4. Red Team filter and detail (fixed, `f2a4cd1`). The list was filtered and the detail was not. `resolveDetail` now makes the detail
+   follow the filtered set. A hidden selection shows a status panel naming it and stays in the URL, so clearing the filters brings
+   it back, and the desktop default selection is chosen from the visible scenarios. Vitest covers the four cases and a Playwright
+   test failed without the fix (the detail stayed open) and passes with it.
+
+### Part B: demo-data recovery. Verdict: UNRECOVERED for the live trace, REBUILT as a committed seed
+The earlier explanation, that RisingWave lost state on a restart, was wrong. RisingWave's three sources read the Redpanda topics,
+so a trace exists only while its Kafka records do. The topics keep 7 days, and `rag-responses` now starts at offset 245 of 547.
+The 302 retained events are exactly the 302 rows RisingWave returns. The AMZN trace (stored 2026-10-03) and the Day 9 corpus
+(2026-10-06) are in none of the three topics, in none of the five Postgres investigation and Red Team tables, and nowhere else live.
+Path 1 (re-materialize from the source store) therefore has nothing to replay, and no replay was run.
+Path 2 recovered what exists as data. The 40 question strings came verbatim from the 2026-10-06 session transcript (5 companies,
+8 questions each, not the 10 companies the brief assumed). The AMZN record's answer, confidence, model, five chunk ids, flash
+score and the frontier score and reasoning came from a transcript snapshot of `/ops/traces/{id}` and the committed
+`faithjudge-e2e-smoke-d5a-m2.json`. All five chunk ids exist in the Postgres corpus as AMZN filings and three contain the figure
+59,248 that the frontier reasoning cites. Path 3 (a fenced re-ingest) was not run: a new run mints a new trace id, so it could not
+restore the pinned one, and it would spend judge calls.
+Committed in `d24ae49`: `docs/demo-seed/demo-questions-v1.json`, `docs/demo-seed/amzn-disagreement-v1.json` (marked HISTORICAL, with
+the fields that were not recovered listed), and `scripts/demo_seed.py` with three commands that are safe to run twice. `status`
+is read only, `retention` sets `retention.ms=-1` on the three topics (applied and re-run, nothing lost, high watermark unchanged
+at 547), and `send --limit N` asks missing seed questions one at a time through the real gateway only while at least 25 percent
+of memory is free. `send` was not run. Today 10 of 40 questions still have a stored execution and the AMZN trace is absent.
+Nothing was injected into the live topics, because the running consumers would judge an injected event with real Gemini calls.
+
+### Part C: footer and homepage
+One footer through the root layout (`b045fec`), reading the same route list as the top bar, with a test that every listed route
+has a page. The five stage cards (`dbd3914`) now open Guard, Retrieve and Generate at their request-path stage on the architecture
+page (the link picks the wide or outline id for the current width), Judge opens the evaluation plane, and "Investigate" became
+Agent at `/agent`. Red Team is a separate dashed line below the cards, labelled as outside the request path. The six decisions
+panel is an instrument. The decision, tradeoff and consequence are three parts, pointing at one brings it forward and its
+sibling in the ledger steps back to 55 percent opacity, and a six-segment marker shows the position. Nothing moves under reduced
+motion. The homepage disagreement figure is a screenshot of a real capture, and its caption now says it was taken on 2026-10-08
+and that the event log has since expired the execution.
+
+### Part D: verification
+`.venv/bin/python -m pytest -q -p no:cacheprovider` at `dbd3914`: 1446 passed, 1 failed, 178.8 s. The failure is
+`test_disagreement_trace_ids_finds_the_real_amazon_hallucination_trace` with `assert '96bca4b5-f707-4a93-b421-2674032849b5' in set()`,
+the known cause. The baseline was not rerun. The recorded baseline at `685b906` was 1434 passed and the same single failure, and
+the 12 added tests account for the difference. ruff, ruff format and mypy are clean on changed files, `tsc`, eslint, prettier and
+Vitest (143) are clean, and `npm run build` passes. Playwright, one worker, no failure limit: 177 passed, 8 failed. The 8 all
+need the AMZN trace (Overview featured card and its two interaction specs, the disagreement lens, the drawer hover, Overview
+interactions and trace detail). That is the earlier 11 minus the three Retrieve card specs, which no longer open the trace. The
+first full run had 29 failures, 21 of them mine: a footer link 38 px wide, locators that matched the nav and footer links, a
+card test read before hydration, and a Red Team test whose selector hit the new "Show all 2" button. All were fixed in `057b011`
+without changing an expected result. At 375, 768, 1024 and 1440 there is no overflow and no console error.
+Cost. This session made no model call. The full pytest run publishes probe events to the live topics, and the live flash
+consumer judges them with real Gemini calls. This run added 6 verdicts and $0.0165 (all-time judge cost $3.5078 to $3.5244).
+That path is older than this session and is not in any session ledger. It is why the suite was run once and not twice.
+
+### Open items
+The 8 AMZN specs and the one pytest test stay failing until a real disagreement exists again. The test suite writes probe events
+into the live topics, which the dashboards show and the consumer pays to judge. Retention is now unbounded, so those events and
+the demo data both stay. The skills `vercel-composition-patterns` and `finsentry-*` do not exist in this repo or on this machine.
+
 ## 2026-10-20 (night): Day 12 Agent and Red Team product pass, Day 11 release gate
 
 Model: Sonnet 5.5, no escalation. Nothing was pushed. Session start: branch `main`, HEAD and `origin/main` both `26083f2`.
