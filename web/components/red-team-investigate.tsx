@@ -129,7 +129,7 @@ export function InvestigateThis({
             {OUTCOME_LABEL[execution.outcome ?? "missed"].toLowerCase()} and{" "}
             {expectationLabel(execution).toLowerCase()}. The agent reads through
             nine read-only tools and asks the model for hypotheses at most
-            twice. Each call&apos;s worst-case cost is reserved against a $0.10
+            twice. Each call’s worst-case cost is reserved against a $0.10
             session cap first. The result is stored and opens in the Agent.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">

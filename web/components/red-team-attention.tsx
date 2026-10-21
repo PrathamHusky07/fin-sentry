@@ -192,7 +192,7 @@ function OutcomeBar({
         ]
       : []),
   ];
-  const label = `Latest result of ${plural(summary.scenarioCount, "scenario", "scenarios")}: ${segments.map((s) => s.label).join(", ")}.`;
+  const label = `Scenarios by latest outcome, ${plural(summary.scenarioCount, "scenario", "scenarios")}: ${segments.map((s) => s.label).join(", ")}.`;
   return (
     <div>
       <div

@@ -18,8 +18,9 @@ import { fetchIncidents } from "@/lib/incidents-api";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import {
   CATEGORY_ORDER,
-  NO_EXPLORER_FILTERS,
+  MODES,
   OUTCOMES,
+  SEVERITIES,
   attentionItems,
   byScenario,
   countExecutions,
@@ -28,10 +29,12 @@ import {
   type Category,
   type ExecutionRecord,
   type ExplorerFilters,
+  type Mode,
   type Outcome,
   type RunDetail,
   type RunRecord,
   type ScenarioList,
+  type Severity,
 } from "@/lib/red-team";
 import {
   RedTeamApiError,
@@ -85,8 +88,20 @@ export function RedTeamConsole() {
     outcome: oneOf<Outcome>(searchParams.get("outcome"), OUTCOMES),
     runId: searchParams.get("run") ?? "",
   }));
-  const [explorerFilters, setExplorerFilters] =
-    useState<ExplorerFilters>(NO_EXPLORER_FILTERS);
+  const [explorerFilters, setExplorerFilters] = useState<ExplorerFilters>(
+    () => ({
+      result: oneOf<Outcome | "not_run">(searchParams.get("result"), [
+        ...OUTCOMES,
+        "not_run",
+      ]),
+      severity: oneOf<Severity>(searchParams.get("severity"), SEVERITIES),
+      mode: oneOf<Mode>(searchParams.get("mode"), MODES),
+      category: oneOf<Category>(
+        searchParams.get("scenario_category"),
+        CATEGORY_ORDER,
+      ),
+    }),
+  );
   const [chosen, setChosen] = useState<string | null>(
     searchParams.get("scenario"),
   );
@@ -189,11 +204,17 @@ export function RedTeamConsole() {
     if (filters.category) params.set("category", filters.category);
     if (filters.outcome) params.set("outcome", filters.outcome);
     if (filters.runId) params.set("run", filters.runId);
+    if (explorerFilters.result) params.set("result", explorerFilters.result);
+    if (explorerFilters.severity)
+      params.set("severity", explorerFilters.severity);
+    if (explorerFilters.mode) params.set("mode", explorerFilters.mode);
+    if (explorerFilters.category)
+      params.set("scenario_category", explorerFilters.category);
     if (chosen) params.set("scenario", chosen);
     if (openExecution) params.set("execution", openExecution);
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `/red-team?${qs}` : "/red-team");
-  }, [filters, chosen, openExecution]);
+  }, [filters, explorerFilters, chosen, openExecution]);
 
   async function start(ids: string[] | null, judgeAssisted: boolean) {
     setStarting(true);

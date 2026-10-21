@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { AsyncState, type AsyncStatus } from "@/components/async-state";
 import {
   ExpectationChip,
@@ -271,13 +271,20 @@ export function RedTeamResults({
   const filtered = Boolean(
     filters.category || filters.outcome || filters.runId,
   );
-  const shown = executions.filter(
-    (e) =>
-      (!filters.category || e.category === filters.category) &&
-      (!filters.outcome || e.outcome === filters.outcome) &&
-      (!filters.runId || e.run_id === filters.runId),
-  );
-  const rows = buildRows(shown, grouped, !filters.outcome && !filters.runId);
+  // The run poll re-renders the console every 1.5 seconds, so the derived rows are memoized
+  // on what they read.
+  const { shown, rows } = useMemo(() => {
+    const kept = executions.filter(
+      (e) =>
+        (!filters.category || e.category === filters.category) &&
+        (!filters.outcome || e.outcome === filters.outcome) &&
+        (!filters.runId || e.run_id === filters.runId),
+    );
+    return {
+      shown: kept,
+      rows: buildRows(kept, grouped, !filters.outcome && !filters.runId),
+    };
+  }, [executions, filters, grouped]);
 
   function toggle(key: string) {
     setExpanded((prev) => {

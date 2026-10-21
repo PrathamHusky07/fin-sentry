@@ -117,9 +117,9 @@ function LatestResult({ e }: { e: ExecutionRecord }) {
       </div>
       <Facts evidence={e.evidence} />
       <p className="text-text-tertiary mt-3 text-base sm:text-sm">
-        A recorded execution of the real defense on the scenario&apos;s
-        controlled input. It is stored, not a fixture, and it is not a measure
-        of how often a real attacker would succeed.
+        A recorded execution of the real defense on the scenario’s controlled
+        input. It is stored, not a fixture, and it is not a measure of how often
+        a real attacker would succeed.
       </p>
       {e.trace_ref ? (
         <Link

@@ -200,6 +200,14 @@ export const MODE_MEANING: Record<Mode, string> = {
     "Detection depends on the Gemini faithfulness judge, so this run spends model calls.",
 };
 
+export const SEVERITIES: readonly Severity[] = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+];
+export const MODES: readonly Mode[] = ["deterministic", "judge_assisted"];
+
 export const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 0,
   high: 1,

@@ -154,6 +154,36 @@ test("REAL STACK: selecting a scenario is kept in the URL and reopens after a re
   });
 });
 
+test("REAL STACK: the scenario filters narrow the lanes, live in the URL and survive a reload", async ({
+  page,
+}) => {
+  await page.setViewportSize(desktop);
+  await page.goto("/red-team");
+  await expect(page.locator("[data-scenario]")).toHaveCount(10, {
+    timeout: 15_000,
+  });
+  await page
+    .getByRole("combobox", { name: "Severity" })
+    .selectOption("critical");
+  await expect(page).toHaveURL(/severity=critical/);
+  await expect(page.getByText("Showing 2 of 10 scenarios.")).toBeVisible();
+  await expect(page.locator("[data-scenario]")).toHaveCount(2);
+  await page.reload();
+  await expect(page.getByText("Showing 2 of 10 scenarios.")).toBeVisible({
+    timeout: 15_000,
+  });
+  await page
+    .getByRole("combobox", { name: "Latest result" })
+    .selectOption("missed");
+  await expect(page.locator("[data-scenario]")).toHaveCount(0);
+  await expect(
+    page.getByText("No scenario matches these filters."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).first().click();
+  await expect(page.locator("[data-scenario]")).toHaveCount(10);
+  await expect(page).not.toHaveURL(/severity=/);
+});
+
 test("REAL STACK: fourteen identical re-runs are one row with a count, and every execution is still reachable", async ({
   page,
 }) => {
@@ -609,7 +639,7 @@ test("RENDERING: the counts come from the stored results and the filters narrow 
     ).toContainText("1 scenario, 1 execution");
   }
   const before = requests.length;
-  await page.getByLabel("Outcome").selectOption("missed");
+  await page.getByRole("combobox", { name: "Outcome" }).selectOption("missed");
   await expect(logRows(page)).toHaveCount(1);
   // The filter works on what was loaded and asks the API for nothing more.
   expect(requests.length).toBe(before);

@@ -108,6 +108,9 @@ export function StartIncident() {
                 className={`${FIELD} mt-1 font-mono`}
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
+                name="reference_id"
+                autoComplete="off"
+                spellCheck={false}
                 required
                 maxLength={100}
               />
@@ -121,6 +124,9 @@ export function StartIncident() {
               className={`${FIELD} mt-1 font-mono uppercase`}
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
+              name="ticker"
+              autoComplete="off"
+              spellCheck={false}
               maxLength={12}
             />
           </label>
