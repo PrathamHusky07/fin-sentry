@@ -14,6 +14,13 @@ planner's own, and the session ledger shared by every planner in the process, so
 instance does not reset the session. The ledger lives in one process and is not shared between
 replicas or restarts, the limit CostBudget already documents.
 
+Governance contract. The planner is governed by run and session ceilings only: its own
+cost_cap_usd and the shared ledger's per-run and per-day ceilings, checked by reserve(). It does
+not enforce the ledger's per-call ceiling. That ceiling is the judges' policy, applied by
+can_proceed() in the faithfulness metrics and the Gemini rubric adapter, and nothing in the
+investigator calls can_proceed(). The planner's worst case (about $0.021) is above the $0.02
+per-call constant by design, so wiring that constant into reserve() would refuse every request.
+
 Tokens. The cost model keeps output and thinking as two counts, candidates and thoughts, both
 billed at the output rate. The reservation holds the whole of each, and a call that may have run
 with no usage to read is charged that same worst case, once.
@@ -79,6 +86,31 @@ def _prompt_tokens_upper(digest: str) -> int:
     """Every input token the request text could hold, at a pessimistic characters-per-token
     ratio."""
     return (len(system_prompt()) + len(digest)) // CHARS_PER_TOKEN + 1
+
+
+def _token_count(value: object) -> int | None:
+    """A usable token count, or None for a missing or invalid one."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def _read_usage(usage: Any) -> tuple[int, int, int] | None:
+    """The prompt, candidate and thinking counts of a reply, or None when the reply cannot be
+    priced. No usage record, or a prompt or candidate count that is missing or invalid, is
+    None, and the caller charges the reserved worst case instead of zero. A missing thinking
+    count alone is read as zero: the SDK leaves it unset when the model did not think."""
+    if usage is None:
+        return None
+    prompt = _token_count(getattr(usage, "prompt_token_count", None))
+    candidates = _token_count(getattr(usage, "candidates_token_count", None))
+    if prompt is None or candidates is None:
+        return None
+    thoughts = getattr(usage, "thoughts_token_count", None)
+    if thoughts is None:
+        return prompt, candidates, 0
+    thoughts_ok = _token_count(thoughts)
+    return None if thoughts_ok is None else (prompt, candidates, thoughts_ok)
 
 
 def worst_case_cost_usd(digest: str) -> float:
@@ -210,15 +242,16 @@ class GeminiPlanner:
         except BaseException:  # a failure or a cancelled wait: the request may still be billed
             self._charge_unmetered(digest)
             raise
-        usage = response.usage_metadata
-        prompt = (usage.prompt_token_count or 0) if usage else 0
-        candidates = (usage.candidates_token_count or 0) if usage else 0
-        thoughts = (usage.thoughts_token_count or 0) if usage else 0
-        self.calls += 1
-        self.tokens["prompt"] += prompt
-        self.tokens["candidates"] += candidates
-        self.tokens["thoughts"] += thoughts
-        self._charge(prompt, candidates, thoughts)
+        counts = _read_usage(response.usage_metadata)
+        if counts is None:  # the call ran and was billed, but its bill cannot be read
+            self._charge_unmetered(digest)
+        else:
+            prompt, candidates, thoughts = counts
+            self.calls += 1
+            self.tokens["prompt"] += prompt
+            self.tokens["candidates"] += candidates
+            self.tokens["thoughts"] += thoughts
+            self._charge(prompt, candidates, thoughts)
         text = response.text or ""
         try:
             return Plan.model_validate_json(text)

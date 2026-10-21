@@ -356,3 +356,96 @@ async def test_a_failed_call_is_charged_at_the_same_worst_case_it_reserved_and_n
         worst_case_cost_usd("digest"), abs=1e-6
     )
     assert ledger.reserved_usd == 0.0
+
+
+# A reply that did not raise but carries no readable usage still ran and was billed. It is charged
+# at the worst case the reservation held, once, and never at zero.
+
+
+def _client_with_usage(usage: Any) -> Any:
+    client = FakeClient(PLAN.model_dump_json())
+    client._response = SimpleNamespace(text=PLAN.model_dump_json(), usage_metadata=usage)
+    return client
+
+
+async def test_a_reply_with_no_usage_metadata_is_charged_the_reserved_worst_case() -> None:
+    ledger = CostBudget(per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    planner = GeminiPlanner(_client_with_usage(None), "gemini-test", ledger=ledger)
+    assert await planner.plan("digest", round_no=1) == PLAN
+    worst = worst_case_cost_usd("digest")
+    assert planner.cost_usd == pytest.approx(worst)
+    assert ledger.report()["run_total_usd"] == pytest.approx(worst, abs=1e-6)
+    assert ledger.report()["call_count"] == 1, "charged once"
+    assert planner.calls == 1 and planner.unmetered_calls == 1
+    assert ledger.reserved_usd == 0.0, "the hold was released as the charge was recorded"
+
+
+@pytest.mark.parametrize("missing", ["prompt_token_count", "candidates_token_count"])
+async def test_a_reply_with_an_incomplete_usage_record_is_charged_the_reserved_worst_case(
+    missing: str,
+) -> None:
+    counts = {
+        "prompt_token_count": 3000,
+        "candidates_token_count": 800,
+        "thoughts_token_count": 200,
+    }
+    counts[missing] = None  # type: ignore[assignment]
+    ledger = CostBudget(per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    planner = GeminiPlanner(_client_with_usage(SimpleNamespace(**counts)), "g", ledger=ledger)
+    await planner.plan("digest", round_no=1)
+    worst = worst_case_cost_usd("digest")
+    assert planner.cost_usd == pytest.approx(worst)
+    assert ledger.report()["run_total_usd"] == pytest.approx(worst, abs=1e-6)
+    assert ledger.report()["call_count"] == 1 and planner.unmetered_calls == 1
+    assert ledger.reserved_usd == 0.0
+
+
+async def test_a_negative_token_count_is_invalid_and_charged_the_worst_case() -> None:
+    usage = SimpleNamespace(
+        prompt_token_count=-1, candidates_token_count=800, thoughts_token_count=200
+    )
+    planner = GeminiPlanner(_client_with_usage(usage), "gemini-test")
+    await planner.plan("digest", round_no=1)
+    assert planner.cost_usd == pytest.approx(worst_case_cost_usd("digest"))
+
+
+async def test_a_missing_thinking_count_alone_is_a_call_that_did_not_think_not_a_gap() -> None:
+    """The SDK leaves thoughts_token_count unset when the model produced no thinking tokens.
+    Prompt and candidate counts are the required ones. Charging the worst case here would
+    drain the session cap about three times faster for no reason."""
+    usage = SimpleNamespace(
+        prompt_token_count=3000, candidates_token_count=800, thoughts_token_count=None
+    )
+    planner = GeminiPlanner(_client_with_usage(usage), "gemini-test")
+    await planner.plan("digest", round_no=1)
+    assert planner.cost_usd == pytest.approx(CostBudget.estimate_call_cost(3000, 800, 0))
+    assert planner.unmetered_calls == 0
+
+
+# Governance contract: the planner is bounded by run and session ceilings. The per-call ceiling is
+# the judges' policy (can_proceed) and reserve() does not apply it.
+
+
+def test_reserve_enforces_run_and_day_ceilings_and_not_the_per_call_ceiling() -> None:
+    worst = worst_case_cost_usd("digest")
+    assert worst > 0.02, "the planner's worst case is above the per-call constant by design"
+    ledger = CostBudget(per_call_ceiling_usd=0.02, per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    assert ledger.can_proceed(worst) == (False, "per_call_ceiling_exceeded")  # the judges' check
+    assert ledger.reserve(worst) == (True, "ok")  # the planner's check ignores it
+    ledger.release(worst)
+    tight_run = CostBudget(per_run_ceiling_usd=worst / 2, per_day_ceiling_usd=1.0)
+    assert tight_run.reserve(worst) == (False, "per_run_ceiling_exceeded")
+    tight_day = CostBudget(per_run_ceiling_usd=1.0, per_day_ceiling_usd=worst / 2)
+    assert tight_day.reserve(worst) == (False, "per_day_ceiling_exceeded")
+
+
+async def test_the_planner_ignores_the_per_call_constant_and_stops_at_the_run_ceiling() -> None:
+    worst = worst_case_cost_usd("digest")
+    ledger = CostBudget(per_call_ceiling_usd=0.02, per_run_ceiling_usd=1.0, per_day_ceiling_usd=1.0)
+    client = FakeClient(PLAN.model_dump_json())
+    await GeminiPlanner(client, "g", cost_cap_usd=5.0, ledger=ledger).plan("digest", round_no=1)
+    assert len(client.calls) == 1
+    capped = CostBudget(per_run_ceiling_usd=worst / 2, per_day_ceiling_usd=1.0)
+    with pytest.raises(PlanningError, match="session"):
+        await GeminiPlanner(client, "g", cost_cap_usd=5.0, ledger=capped).plan("d", round_no=1)
+    assert len(client.calls) == 1

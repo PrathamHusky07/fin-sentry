@@ -60,6 +60,11 @@ class CostBudget:
     record_call, (b) admission control that gates further calls once running totals
     cross per-run or per-day ceilings.
 
+    The per-call ceiling is enforced only by can_proceed(), which the judges call (the
+    faithfulness metrics and the Gemini rubric adapter). reserve() checks the per-run and
+    per-day ceilings and not the per-call one, so the investigator's planner, which uses
+    reserve(), is bounded by its own cap and the shared run and day ceilings.
+
     A caller that knows the worst case of a call before it starts (the investigator's
     planner does) can use reserve() and release(). reserve() checks the ceilings against
     spend plus every reservation still held and adds its own, under the ledger's lock, so
