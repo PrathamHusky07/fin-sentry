@@ -1,5 +1,126 @@
 # Build Log
 
+## 2026-10-20 (night): Day 12 Agent and Red Team product pass, Day 11 release gate
+
+Model: Sonnet 5.5, no escalation. Nothing was pushed. Session start: branch `main`, HEAD and `origin/main` both `26083f2`.
+No frozen tool result schema, guardrail rail, tool name or held-out case changed. The investigator still has exactly the
+nine read-only MCP tools, the Red Team scenario tool is still not registered, and nothing was added to the runtime: no new
+service, store, framework, autonomous subagent or separate LLM critic. No live investigation was run and no Gemini call was
+made, so the session spend is $0.00 of the $0.05 cap.
+
+Baseline before any change: `.venv/bin/python -m pytest -q -p no:cacheprovider` gave 1427 passed and 1 failed. The failure is
+`tests/dashboard/test_trace_list_sql_live.py`, with `assert '96bca4b5-f707-4a93-b421-2674032849b5' in set()`, the missing AMZN
+trace in RisingWave, the known environment cause. At the final commit (`685b906`) the same command gives 1434 passed and the
+same single failure with the same text.
+
+### Part A: the narrow release gate
+
+1. Cost reservation. The old `_reserve` was an affordability check only. It read the shared ledger and recorded nothing, so
+   two planners sharing the ledger could both pass the check before either had spent. A regression test reproduced it first
+   (the second planner reached the SDK on the first one's allowance). The fix stays inside `CostBudget`: `reserve()` checks the
+   ceilings against spend plus every hold and adds its own under a lock, `release()` drops it, and `record_call()` is atomic
+   under the same lock. The planner reserves its worst case, records the actual cost, then releases, in that order, so the
+   ledger is never missing both. The rail's own use of the ledger is unchanged because its holds are always zero. The ledger is
+   process-local, and that stays a documented limit.
+   Token model, from `cost_governance`: output and thinking are two counts, `candidates` and `thoughts`, both billed at the
+   output rate, and `estimate_call_cost` sums them. The reservation holds the whole of each (4096 output and 1024 thinking).
+   `_charge_unmetered` charged only 4096 output and no thinking before, which was below the amount it had reserved. It now
+   charges the same worst case once, with the prompt estimate from one shared helper, and the hold is released as it is
+   recorded, so nothing is counted twice. Whether the SDK's max_output_tokens already includes thinking is not stated in the
+   SDK types, so the charge is a stated upper bound and no price was invented. Four tests cover two instances competing,
+   release after success and after failure, and the failed-call charge. Commit `e6303f8`.
+2. Query-scope contract. `validate_plan` sets `query_key` on every kept prediction, a plan prediction always names a signal,
+   `loop.py:366` is the only place a plan becomes hypotheses, `merge_hypotheses` only selects among those, and the loop passes
+   `scopes` to both `assess` and `build_diagnosis`. `covered_queries` returns None (all results) only when a caller builds a
+   hypothesis by hand and passes no scopes. The invariant already held, so the code was left alone. Three contract tests now
+   prove it: every validated prediction has a query key, a validated prediction with nothing run is covered by the empty set
+   and never by all results, and the loop passes scopes on every ledger call.
+3. Contracts. The five outcome states, the persisted expected-versus-observed evidence and the handling of unavailable and
+   failed evaluations are covered by the Day 10 tests, which passed (685 passed in `tests/investigator`, `tests/rails` and
+   `tests/redteam`). The Day 11 harness, the required-evidence gate, provenance, counter-evidence and abstention tests passed,
+   and the frozen held-out manifest and cases are untouched (`git diff` shows nothing under `evaluation/`).
+4. The intermittent `tests/redteam/test_api.py` failure (`KeyError: 'run'`) has a cause. Six sequential runs of the file passed.
+   Two runs at the same time against the shared `finsentry_test` database failed with 409 responses, because the API allows
+   one active run and the second process's start was answered with an error body that has no `run` key. A concurrent pytest, or
+   any leftover process using that database, produces it. It is a test-environment isolation constraint and not a defect in the
+   API, and it was not exempted: do not run two pytest processes at once.
+5. Stale copy. The architecture page and the landing said five read tools. They said nine nowhere. All locations are fixed
+   (below). No Python test asserted four layers or five tools.
+
+### Part B: naming (`a9d3c5c`)
+
+The fifth layer is now "Incident Response Agent", anchor `#incident-response-agent`. The layer card, the section heading, the
+jump rail, the page intro, the diagram's accessible name and the primary navigation label ("Agent") use it. The landing
+constellation node reads "Agent", with hover copy that says it examines persisted evidence through read-only tools, names a
+best-supported cause or abstains, and that every execution stays stored. The five-to-nine correction covers
+`lib/architecture-layers.ts` (the layer intro, the outline step and the agent's reasons), `lib/architecture-data.ts`, the
+topology station, the constellation MCP node, and the interface hub diagram, which now draws all nine tools (the page still
+states that the scenario tool is not registered, drawn dashed). The investigator control-flow diagram is unchanged in
+composition. The landing's "Investigate" stage card still points at the executions workspace, which is its true target.
+
+### Part C: the Agent experience (`f15960e`)
+
+The incident workspace moved to `/agent` (landing and list) and `/agent/[id]` (detail), and the old
+`/investigations/incidents` paths redirect (temporary, query preserved). The typed API, the stored sessions and every detail
+component are reused as they were. Added: a lifecycle stepper (trigger, plan, execute, assess, validate, conclude or abstain,
+with who acts and where it can stop), a headline derived from the loaded sessions that never calls a failure a result and says
+how many are fixtures, an origin filter next to the status filter, a reading guide that renders the same constants as the
+detail page, and a link from a live session back to its Red Team execution or trace. The page is a Server Component with two
+small client islands. Starting an investigation is still only the form's submit.
+
+### Part D: Red Team Console (`cfade5e`, `keep scenario filters`)
+
+Information hierarchy, decided before the components: what needs attention (a ranked finding list, then a one-bar outcome
+summary and the five-state key), then the defenses in the order a request meets them with a selected-scenario detail, then
+the recorded executions. Fixed from the Day 11 list: the five equal tiles (the finding leads, and the five outcomes are a key
+with "None recorded" instead of three zeros); the re-run noise (consecutive identical results are one row with a count and a
+date span, and a row after a different result carries the change, such as "Caught before, missed now", derived from the stored
+history); the caught-but-differs result (amber with its own glyph and the sentence "Expected X. Y acted."); the unexplained
+checkbox (an explicit "Select scenarios to run together" mode); the judge-assisted button (its confirmation states the latest
+stored run's calls and recorded cost); the sub-16px mobile text (zero elements under 15.5px at 375); no jump rail (there is
+one). Page height: 1440px wide 4,852 to 4,416; 375px wide 9,200 to about 7,430. The mobile page is still long because ten
+scenarios and eleven log rows are real content. The history is read once through `fetchAllExecutions` (newest 500, and the page
+says when it cut), so the server-side filters on the log became client-side filters on the loaded rows. All previous
+capabilities remain: run all, run selected, run one, judge confirmation, progress, the evidence drawer, the trace link, and the
+category, outcome and run filters with URL state. Added: scenario filters (result, severity, mode, category) in the URL.
+"Investigate this" is wired end to end: it posts `red_team_miss` with the execution id to the existing bounded API and lands on
+the Agent detail. It is offered for a miss and for a caught result that differs, never for a result that says nothing about a
+defense. It offers a stored investigation of the same execution first, says what a start costs and caps, and is not triggered
+by a load, refresh or hover. It was verified with the one POST intercepted. No live start was run, because the wiring needed no model call to prove.
+Provenance: no Red Team execution is a fixture, and the detail says so. Definitions (dashed, in their own tab) and recorded
+executions (solid) are visibly apart. The five outcome states are drawn from contract-shaped fixtures in the Playwright
+RENDERING tests, which say they prove the drawing and not that the platform produced them.
+
+### Verification
+
+- Backend: ruff and mypy clean (136 files). pytest 1434 passed and the one known failure, the command above, at `685b906`.
+  `cost_governance.py` was already unformatted before this session and was not reformatted.
+- Frontend: tsc, eslint and prettier clean, Vitest 134 passed (110 before), production build passed with the dev server
+  stopped, and it was restarted (200 on :3000).
+- Playwright against the real gateway: 141 passed and 11 failed. The 11 are the same trace `96bca4b5` specs as the Day 11.2
+  run (Overview, the Investigations drawer and disagreement lens, stage anchors, trace detail), failing for the same reason as
+  the pytest failure. The Agent, Red Team, architecture, landing and responsive specs pass at 375, 768 and 1440 with no
+  horizontal overflow, no target under 44px and no console error. One existing spec needed a change: the Live Operations Tab
+  test counted 12 presses and the sixth navigation link makes it 13.
+- A real Red Team run of OUT-001 is part of the Red Team spec, as before, so OUT-001 now has more stored executions. It makes no
+  model call.
+
+### Found and not fixed
+
+- `web/components/arch/web-components-arch.zip`, an untracked file at session start, was gone before the first commit. No
+  command run here deletes files and the cause is unknown. `tests/mcp/tools/tests-mcp-tools.zip` is still untracked.
+- The explorer filters on `/agent` (status and origin) are not in the URL. The Red Team ones are.
+- A stale frontier consumer (pid 99435) from Oct 9 is still running next to the current one and was not touched.
+- The skills that were not installed (frontend-design, vercel-composition-patterns, uml-and-software-architecture-visualization)
+  were not installed. The concept-image step the visualization and app-builder skills require could not be done, because no
+  image generation tool exists here, so the layouts were designed from the existing system and checked in the browser.
+
+### Day 13 handoff
+
+Deployment. Before it: decide whether `/agent` and `/red-team` should show an explicit "demo data" banner on the deployed site,
+since every Agent session there would be a fixture replay unless a live one is started with a key. The ledger is process-local,
+so a replica set can spend up to N times the session cap, as already documented.
+
 ## 2026-10-20 (evening): Day 11.2 evidence gaps closed, durable sessions, incident API, Investigations page
 
 Model: Sonnet 5.5, no escalation. No frozen tool result schema, guardrail rail or tool name changed, and the
