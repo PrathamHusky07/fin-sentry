@@ -38,7 +38,7 @@ from finsentry.frontier.types import (
 # Tagged "slow" (not just "integration") so the existing `pytest -m "not slow"`
 # exclusion already relied on throughout this repo also skips these by default;
 # run explicitly with `pytest -m integration`.
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.live_topics]
 
 _BOOTSTRAP = "localhost:19092"
 _SOURCE_TOPIC = "rag-responses"

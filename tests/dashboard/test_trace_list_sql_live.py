@@ -19,6 +19,8 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from finsentry.dashboard.app import _dao, _fetch_disagreement_trace_ids, _fetch_trace_list
 from finsentry.events.schema import JudgeVerdictEvent, RagResponseEvent
 from finsentry.events.topics import JUDGE_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
@@ -119,6 +121,7 @@ async def test_fetch_trace_list_search_and_filter_params_execute_against_real_ri
         await _dao.close()
 
 
+@pytest.mark.live_topics
 async def test_fetch_trace_list_picks_latest_judge_verdict_when_trace_has_two_rows() -> None:
     """Day 9 Session 2B duplicate-row fix. judge_verdicts is an append-only
     RisingWave source over the judge-verdicts Kafka topic (see
