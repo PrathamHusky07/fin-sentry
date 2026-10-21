@@ -102,7 +102,8 @@ test.describe("Live Operations interaction system", () => {
   }) => {
     await openOperations(page);
     const seen: string[] = [];
-    for (let i = 0; i < 12; i++) {
+    // Six primary navigation links come before the freshness cells.
+    for (let i = 0; i < 13; i++) {
       await page.keyboard.press("Tab");
       const info = await page.evaluate(() => {
         const el = document.activeElement as HTMLElement | null;
