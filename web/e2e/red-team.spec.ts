@@ -48,6 +48,30 @@ function watch(page: Page) {
 
 const desktop = { width: 1440, height: 900 };
 
+/** The execution history is collapsed on arrival. Open it before reading the log. */
+async function openHistory(page: Page) {
+  const toggle = page.locator('[aria-controls="history-body"]');
+  await toggle.waitFor({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+}
+
+/** The execution workflow is collapsed on arrival too. */
+async function openWorkflow(page: Page) {
+  const toggle = page.locator('[aria-controls="execute-body"]');
+  await toggle.waitFor({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+}
+
+async function openMoreFilters(page: Page) {
+  await page.getByText("More filters", { exact: true }).click({
+    timeout: 15_000,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // REAL STACK
 // ---------------------------------------------------------------------------
@@ -60,7 +84,7 @@ for (const origin of ORIGINS) {
     const w = watch(page);
     await page.goto(`${origin}/red-team`);
     await expect(
-      page.getByRole("heading", { name: "Defenses and their scenarios" }),
+      page.getByRole("heading", { name: /^Scenarios, in the order/ }),
     ).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("[data-scenario]")).toHaveCount(10);
     await expect(page.getByText("Failed to fetch")).toHaveCount(0);
@@ -88,6 +112,7 @@ test("REAL STACK: the known gap leads the page and the five outcomes are all key
   await expect(card).toContainText("Observed, from the latest execution");
   await expect(card).toContainText("Known gap confirmed");
   // The finding is above the key. The key lists all five states and does not draw a zero.
+  await attention.getByText("What the five results mean").click();
   const keyed = attention.locator("[data-outcome]");
   await expect(keyed).toHaveCount(5);
   await expect(attention.locator('[data-recorded="false"]')).toHaveCount(3);
@@ -162,6 +187,7 @@ test("REAL STACK: the scenario filters narrow the lanes, live in the URL and sur
   await expect(page.locator("[data-scenario]")).toHaveCount(10, {
     timeout: 15_000,
   });
+  await openMoreFilters(page);
   await page
     .getByRole("combobox", { name: "Severity" })
     .selectOption("critical");
@@ -209,6 +235,7 @@ test("REAL STACK: the detail follows the filtered set, and clearing the filters 
   const article = page.getByRole("article", { name: new RegExp(target) });
   await expect(article).toBeVisible();
 
+  await openMoreFilters(page);
   await page
     .getByRole("combobox", { name: "Severity" })
     .selectOption("critical");
@@ -229,6 +256,7 @@ test("REAL STACK: fourteen identical re-runs are one row with a count, and every
 }) => {
   await page.setViewportSize(desktop);
   await page.goto("/red-team");
+  await openHistory(page);
   const toggle = page.getByRole("button", {
     name: /Show the \d+ executions of OUT-001, version 1/,
   });
@@ -246,45 +274,106 @@ test("REAL STACK: fourteen identical re-runs are one row with a count, and every
   expect(await rows.count()).toBeLessThanOrEqual(grouped + 1);
 });
 
-test("REAL STACK: selecting a scenario and running it stores a new execution", async ({
+test("EXECUTION: reading never starts a run, and the workflow reviews, confirms and then starts exactly one", async ({
+  page,
+}) => {
+  // The one POST that would fire scenarios through the live defenses is intercepted, so the
+  // wiring is proven with no run, no stored row and no event. A real run is a manual check.
+  await page.setViewportSize(desktop);
+  const started: unknown[] = [];
+  const run = {
+    run_id: "22222222-2222-2222-2222-222222222222",
+    created_at: "2026-10-21T20:00:00Z",
+    finished_at: "2026-10-21T20:00:01Z",
+    status: "completed",
+    scenario_ids: ["OUT-001"],
+    allow_judge_assisted: false,
+    failure_reason: null,
+    total: 1,
+    finished: 1,
+    outcome_counts: { caught: 1 },
+  };
+  await page.route("**/ops/redteam/runs**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      started.push(request.postDataJSON());
+      return route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ run, executions: [] }),
+      });
+    }
+    if (new URL(request.url()).pathname.endsWith(run.run_id)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ run, executions: [] }),
+      });
+    }
+    return route.continue();
+  });
+  await page.goto("/red-team");
+  await expect(page.locator("[data-scenario]").first()).toBeVisible({
+    timeout: 15_000,
+  });
+  // Nothing on the reading surface offers to run anything.
+  const reading = page.locator("#attention, #defenses, #executions");
+  await expect(
+    reading.getByRole("button", { name: /^Run (all|selected|OUT)/ }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  expect(started).toEqual([]);
+
+  await openWorkflow(page);
+  await page.getByRole("checkbox", { name: "Select OUT-001" }).check();
+  await page
+    .getByRole("button", { name: "Review run of selected (1)" })
+    .click();
+  const review = page.getByRole("region", { name: "Confirm the run" });
+  await expect(review).toContainText(
+    "fires 1 scenario through the live defenses",
+  );
+  await expect(review).toContainText("writes 1 new execution record");
+  await expect(review).toContainText("scenario calls the rails directly");
+  await expect(review).not.toContainText("send a real request to the gateway");
+  expect(started).toEqual([]);
+
+  // Cancel starts nothing. Confirm starts one run with exactly the chosen scenario.
+  await review.getByRole("button", { name: "Cancel" }).click();
+  expect(started).toEqual([]);
+  await page
+    .getByRole("button", { name: "Review run of selected (1)" })
+    .click();
+  await page.getByRole("button", { name: "Confirm and run 1" }).click();
+  await expect(page.getByRole("heading", { name: "Run finished" })).toBeVisible(
+    { timeout: 15_000 },
+  );
+  expect(started).toEqual([
+    { scenario_ids: ["OUT-001"], allow_judge_assisted: false },
+  ]);
+});
+
+test("EXECUTION: a run that includes gateway scenarios says what they send before it can be confirmed", async ({
   page,
 }) => {
   await page.setViewportSize(desktop);
-  const w = watch(page);
+  const posts: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST") posts.push(r.url());
+  });
   await page.goto("/red-team");
+  await openWorkflow(page);
   await page
-    .getByRole("button", { name: "Select scenarios to run together" })
-    .click({ timeout: 15_000 });
-  await page.getByRole("checkbox", { name: "Select OUT-001" }).check();
-  await expect(
-    page.getByRole("button", { name: "Run selected (1)" }),
-  ).toBeEnabled();
-
-  const countOf = async () => {
-    const label =
-      (await page
-        .getByRole("button", { name: /executions of OUT-001, version 1/ })
-        .getAttribute("aria-label")) ?? "";
-    return Number(/the (\d+) executions/.exec(label)?.[1]);
-  };
-  const before = await countOf();
-  await page.getByRole("button", { name: "Run selected (1)" }).click();
-  await expect(page.getByRole("heading", { name: "Run finished" })).toBeVisible(
-    { timeout: 20_000 },
-  );
-  await expect.poll(countOf).toBeGreaterThan(before);
-
-  await page
-    .getByRole("button", { name: /^Open evidence for OUT-001/ })
-    .first()
+    .getByRole("button", { name: /^Review run of all deterministic/ })
     .click();
-  const dialog = page.getByRole("dialog", { name: "Execution evidence" });
-  await expect(dialog).toContainText("Schema enforcement");
-  await expect(dialog).toContainText("hallucinated_citation");
-  await expect(dialog).toContainText("no gateway request");
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  expect(w.problems).toEqual([]);
+  const review = page.getByRole("region", { name: "Confirm the run" });
+  await expect(review).toContainText("DI-001, HZ-001, MS-001");
+  await expect(review).toContainText("real request to the gateway");
+  await expect(review).toContainText("Live Operations counts");
+  await expect(review).toContainText("at most one");
+  await expect(review).toContainText("Earlier records are kept");
+  await review.getByRole("button", { name: "Cancel" }).click();
+  await expect(review).toHaveCount(0);
+  expect(posts).toEqual([]);
 });
 
 test("a judge-assisted scenario asks for confirmation, states its recorded cost and starts nothing on cancel", async ({
@@ -298,26 +387,44 @@ test("a judge-assisted scenario asks for confirmation, states its recorded cost 
     }
   });
   await page.goto("/red-team");
+  await openWorkflow(page);
   await page
-    .locator('[data-scenario="OUT-003"] button[aria-expanded]')
-    .click({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Run with Gemini judge" }).click();
-  const confirm = page.getByRole("button", { name: "Confirm and run" });
-  await expect(confirm).toBeVisible();
-  await expect(page.locator("#defenses")).toContainText(
-    "The latest stored run made",
-  );
-  await expect(page.locator("#defenses")).toContainText("recorded $");
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(confirm).toHaveCount(0);
-  expect(posts).toEqual([]);
-  // In select mode a judge-assisted scenario cannot be selected, and says why.
-  await page
-    .getByRole("button", { name: "Select scenarios to run together" })
+    .getByRole("button", { name: "Review run of OUT-003 with Gemini judge" })
     .click();
+  const review = page.getByRole("region", { name: "Confirm the run" });
   await expect(
-    page.getByRole("checkbox", { name: /OUT-003 runs alone/ }),
-  ).toBeDisabled();
+    review.getByRole("button", { name: "Confirm and run" }),
+  ).toBeVisible();
+  await expect(review).toContainText("The latest stored run made");
+  await expect(review).toContainText("recorded $");
+  await review.getByRole("button", { name: "Cancel" }).click();
+  await expect(review).toHaveCount(0);
+  expect(posts).toEqual([]);
+  // A judge-assisted scenario runs alone, so it is not in the group list.
+  await expect(page.getByRole("checkbox", { name: /OUT-003/ })).toHaveCount(0);
+});
+
+test("a scenario's Set up a run opens the workflow with it chosen and starts nothing", async ({
+  page,
+}) => {
+  await page.setViewportSize(desktop);
+  const posts: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST") posts.push(r.url());
+  });
+  await page.goto("/red-team");
+  await page
+    .locator('[data-scenario="DI-001"] button[aria-expanded]')
+    .click({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Set up a run of DI-001" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Select DI-001" }),
+  ).toBeChecked();
+  await expect(page.locator('[aria-controls="execute-body"]')).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(posts).toEqual([]);
 });
 
 test("a narrow screen opens a scenario under its row and keeps every target at 44px", async ({
@@ -625,6 +732,7 @@ test("RENDERING: each of the five outcomes is drawn distinctly and only caught r
   await mockStore(page);
   const w = watch(page);
   await page.goto("/red-team");
+  await openHistory(page);
   const table = page.locator("#executions table");
   await expect(table).toBeVisible({ timeout: 15_000 });
 
@@ -667,6 +775,7 @@ test("RENDERING: the counts come from the stored results and the filters narrow 
     if (r.url().includes("/ops/redteam/executions")) requests.push(r.url());
   });
   await page.goto("/red-team");
+  await openHistory(page);
   await expect(page.locator("#attention")).toContainText(
     "scenario was missed and expected to be caught",
     { timeout: 15_000 },
@@ -717,6 +826,7 @@ test("RENDERING: a scenario caught before and missed now is called a regression,
     }),
   );
   await page.goto("/red-team");
+  await openHistory(page);
   const list = page.getByRole("list", {
     name: "Scenarios that need attention",
   });
@@ -749,6 +859,7 @@ test("RENDERING: the evidence drawer never credits a layer when the evaluator wa
   await page.setViewportSize(desktop);
   await mockStore(page);
   await page.goto("/red-team");
+  await openHistory(page);
   await logRows(page)
     .filter({ hasText: "Evaluator unavailable" })
     .getByRole("button")
@@ -776,6 +887,7 @@ test("RENDERING: a gateway request no input rail stopped says it may have reache
   await page.setViewportSize(desktop);
   await mockStore(page);
   await page.goto("/red-team");
+  await openHistory(page);
   const dialog = page.getByRole("dialog", { name: "Execution evidence" });
 
   await logRows(page)
@@ -825,6 +937,7 @@ test("RENDERING: an unreachable store is shown as unknown, not as zero", async (
     );
   }
   await page.goto("/red-team");
+  await openHistory(page);
   await expect(
     page.getByText(/The result store could not be read/),
   ).toBeVisible({ timeout: 15_000 });
@@ -847,6 +960,7 @@ test("RENDERING: an interrupted gateway execution says it was interrupted and th
   ]);
   await page.setViewportSize(desktop);
   await page.goto("/red-team");
+  await openHistory(page);
   await logRows(page).getByRole("button").first().click({ timeout: 15_000 });
   const dialog = page.getByRole("dialog", { name: "Execution evidence" });
   const continuation = dialog.getByTestId("continuation");
@@ -889,6 +1003,7 @@ test("RENDERING: a legacy gateway execution with no evidence does not claim a di
   ]);
   await page.setViewportSize(desktop);
   await page.goto("/red-team");
+  await openHistory(page);
   const dialog = page.getByRole("dialog", { name: "Execution evidence" });
 
   await logRows(page)
@@ -920,6 +1035,7 @@ test("RENDERING: a confirmed block reads did not continue and a confirmed pass r
   await mockStore(page, [execution("1", "caught"), execution("2", "missed")]);
   await page.setViewportSize(desktop);
   await page.goto("/red-team");
+  await openHistory(page);
   const dialog = page.getByRole("dialog", { name: "Execution evidence" });
 
   await observedRow(page, "Caught")
@@ -965,6 +1081,7 @@ test("RENDERING: a safety-bound skip reads Not run (safety bound), and a real ha
   ]);
   await page.setViewportSize(desktop);
   await page.goto("/red-team");
+  await openHistory(page);
   await expect(page.locator("#attention")).toContainText(
     "2 results say nothing about a defense",
     { timeout: 15_000 },
@@ -1066,17 +1183,27 @@ for (const width of [375, 768, 1440]) {
   });
 }
 
-test("reduced motion removes the detail's entrance animation", async ({
+test("reduced motion removes the detail's staged entrance, and it runs otherwise", async ({
   page,
 }) => {
   await page.setViewportSize(desktop);
-  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/red-team");
-  const detail = page.getByRole("article").first();
-  await expect(detail).toBeVisible({ timeout: 15_000 });
-  const wrapper = detail.locator("xpath=..");
-  const name = await wrapper.evaluate(
-    (el) => getComputedStyle(el).animationName,
-  );
-  expect(name).toBe("none");
+  const parts = page.getByRole("article").first().locator(".enter-up");
+  await expect(parts.first()).toBeVisible({ timeout: 15_000 });
+  expect(
+    await parts.evaluateAll((els) =>
+      els.map((el) => getComputedStyle(el).animationName),
+    ),
+  ).toEqual(["rise", "rise", "rise", "rise"]);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  const still = page.getByRole("article").first().locator(".enter-up");
+  await expect(still.first()).toBeVisible({ timeout: 15_000 });
+  expect(
+    await still.evaluateAll((els) =>
+      els.map((el) => getComputedStyle(el).animationName),
+    ),
+  ).toEqual(["none", "none", "none", "none"]);
 });

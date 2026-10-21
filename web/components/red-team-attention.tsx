@@ -76,12 +76,19 @@ function AttentionCard({
   const diff = differenceText(e);
   return (
     <li
-      className="border-border bg-background-elevated/60 relative rounded-xl border p-4 pl-5 sm:p-5 sm:pl-6"
-      style={{ ["--tone" as string]: KIND_TONE[kind] }}
+      data-attention={kind}
+      className="instrument bg-background-elevated/60 relative rounded-xl p-4 pl-5 sm:p-5 sm:pl-6"
+      style={{
+        ["--tone" as string]: KIND_TONE[kind],
+        ["--wake" as string]: "48%",
+        ["--rest-border" as string]:
+          "color-mix(in srgb, var(--tone) 22%, var(--line))",
+        ["--lift" as string]: "2px",
+      }}
     >
       <span
         aria-hidden="true"
-        className="absolute inset-y-3 left-0 w-1 rounded-r"
+        className="absolute inset-y-3 left-0 w-1 rounded-r transition-[inset,opacity] duration-[var(--dur-base)] [li:hover_&]:inset-y-0 [li:focus-within_&]:inset-y-0"
         style={{ background: "var(--tone)" }}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -333,18 +340,24 @@ export function RedTeamAttention({
       <div className="mt-8">
         <OutcomeBar summary={summary} persistence={persistence} />
       </div>
-      <div className="mt-5">
-        <OutcomeKey
-          summary={summary}
-          executionCounts={executionCounts}
-          persistence={persistence}
-        />
-        <p className="text-text-tertiary mt-3 text-base sm:text-sm">
-          Scenario counts use the most recent stored execution of each scenario.
-          Execution counts cover every stored execution that was loaded. Only a
-          caught result means a defense acted, and the layer is named on it.
-        </p>
-      </div>
+      <details className="group mt-5" open={!persistence || undefined}>
+        <summary className="text-accent hover:text-text-primary inline-flex min-h-11 cursor-pointer items-center text-base underline-offset-4 group-open:underline sm:text-sm">
+          What the five results mean
+        </summary>
+        <div className="mt-2">
+          <OutcomeKey
+            summary={summary}
+            executionCounts={executionCounts}
+            persistence={persistence}
+          />
+          <p className="text-text-tertiary mt-3 text-base sm:text-sm">
+            Scenario counts use the most recent stored execution of each
+            scenario. Execution counts cover every stored execution that was
+            loaded. Only a caught result means a defense acted, and the layer is
+            named on it.
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

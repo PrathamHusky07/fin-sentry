@@ -17,11 +17,14 @@ import {
   continuationState,
   countExecutions,
   evaluatorStatus,
+  executionStatus,
   filterScenarios,
   findingHeadline,
   groupByLayer,
   historySummary,
+  matchesQuery,
   resolveDetail,
+  statusCounts,
   streakChanges,
   streaks,
   expectationLabel,
@@ -844,5 +847,90 @@ describe("resolveDetail follows the filtered set", () => {
   it("shows nothing for no selection or an id the registry does not have", () => {
     expect(resolveDetail(all, all, null)).toEqual({ kind: "none" });
     expect(resolveDetail(all, all, "Z-9")).toEqual({ kind: "none" });
+  });
+});
+
+describe("the status filters", () => {
+  const failed = execution({
+    outcome: "execution_failed",
+    expectation: null,
+    acting_layer: null,
+  });
+  const interrupted = execution({
+    outcome: "execution_failed",
+    expectation: null,
+    acting_layer: null,
+    evidence: { continuation_unknown: true },
+  });
+  const skipped = execution({
+    outcome: "execution_failed",
+    expectation: null,
+    acting_layer: null,
+    evidence: { skipped_by_safety_bound: true },
+  });
+
+  it("derives completed, failed and interrupted from the outcome and the runner's markers", () => {
+    expect(executionStatus(execution())).toBe("completed");
+    expect(executionStatus(execution({ outcome: "missed" }))).toBe("completed");
+    expect(executionStatus(execution({ outcome: "inconclusive" }))).toBe(
+      "completed",
+    );
+    expect(executionStatus(failed)).toBe("failed");
+    expect(
+      executionStatus(execution({ outcome: "evaluator_unavailable" })),
+    ).toBe("failed");
+    expect(executionStatus(interrupted)).toBe("interrupted");
+  });
+
+  it("puts a scenario never run and a deliberate safety-bound skip in no status", () => {
+    expect(executionStatus(null)).toBeNull();
+    expect(executionStatus(skipped)).toBeNull();
+    expect(executionStatus(execution({ outcome: null, state: "queued" }))).toBe(
+      null,
+    );
+  });
+
+  const scenarios = [
+    scenario("A-001", "direct_injection", execution()),
+    scenario("A-002", "pii", failed),
+    scenario("A-003", "pii", interrupted),
+    scenario("A-004", "pii", null),
+    scenario("A-005", "pii", skipped),
+  ];
+  const ids = (f: Partial<typeof NO_EXPLORER_FILTERS>) =>
+    filterScenarios(scenarios, { ...NO_EXPLORER_FILTERS, ...f }).map(
+      (s) => s.id,
+    );
+
+  it("filters by status and keeps every scenario under All", () => {
+    expect(ids({ status: "completed" })).toEqual(["A-001"]);
+    expect(ids({ status: "failed" })).toEqual(["A-002"]);
+    expect(ids({ status: "interrupted" })).toEqual(["A-003"]);
+    expect(ids({})).toHaveLength(5);
+  });
+
+  it("counts each status over the scenarios the other filters leave, so a chip says what it shows", () => {
+    expect(statusCounts(scenarios, NO_EXPLORER_FILTERS)).toEqual({
+      all: 5,
+      completed: 1,
+      failed: 1,
+      interrupted: 1,
+    });
+    expect(
+      statusCounts(scenarios, { ...NO_EXPLORER_FILTERS, status: "failed" }),
+    ).toEqual({ all: 5, completed: 1, failed: 1, interrupted: 1 });
+    expect(
+      statusCounts(scenarios, { ...NO_EXPLORER_FILTERS, query: "A-002" }),
+    ).toEqual({ all: 1, completed: 0, failed: 1, interrupted: 0 });
+  });
+
+  it("searches id, title, defense, category and latest result, every word, ignoring case", () => {
+    const s = scenario("DI-001", "direct_injection", execution());
+    expect(matchesQuery(s, "")).toBe(true);
+    expect(matchesQuery(s, "di-001")).toBe(true);
+    expect(matchesQuery(s, "prompt guard")).toBe(true);
+    expect(matchesQuery(s, "caught")).toBe(true);
+    expect(matchesQuery(s, "caught pii")).toBe(false);
+    expect(matchesQuery(scenario("X", "pii", null), "not run")).toBe(true);
   });
 });

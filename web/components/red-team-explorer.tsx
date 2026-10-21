@@ -1,16 +1,18 @@
 "use client";
 
 import {
-  ExpectationChip,
   ModeBadge,
   RedTeamOutcomeBadge,
   SeverityBadge,
+  ExpectationChip,
 } from "@/components/red-team-badges";
 import {
   CATEGORY_LABEL,
   CATEGORY_ORDER,
   OUTCOMES,
   OUTCOME_LABEL,
+  STATUSES,
+  STATUS_LABEL,
   STAGE_LABEL,
   filterScenarios,
   groupByLayer,
@@ -20,6 +22,7 @@ import {
   layerLabel,
   NO_EXPLORER_FILTERS,
   resolveDetail,
+  statusCounts,
   streaks,
   type Category,
   type ExecutionRecord,
@@ -34,6 +37,9 @@ import { useIsDesktop } from "@/lib/use-is-desktop";
 const SELECT =
   "border-border-strong bg-background-elevated text-text-primary hover:border-line-active focus-visible:border-accent min-h-11 w-full min-w-0 rounded-lg border px-3 text-base sm:text-sm";
 
+const CHIP =
+  "min-h-11 rounded-lg border px-4 text-base sm:text-sm transition-colors";
+
 const DOT: Record<Outcome, string> = {
   caught: "bg-positive",
   missed: "bg-failure",
@@ -42,7 +48,7 @@ const DOT: Record<Outcome, string> = {
   inconclusive: "border border-dashed border-text-tertiary",
 };
 
-function rowTone(s: ScenarioView): string {
+export function rowTone(s: ScenarioView): string {
   const last = s.last_execution;
   if (last === null || last.outcome === null) return "var(--text-tertiary)";
   if (last.outcome === "missed") return "var(--failure)";
@@ -72,21 +78,13 @@ function Row({
   scenario: s,
   history,
   selected,
-  selectMode,
-  checked,
-  disabledReason,
   onSelect,
-  onToggle,
   children,
 }: {
   scenario: ScenarioView;
   history: ExecutionRecord[];
   selected: boolean;
-  selectMode: boolean;
-  checked: boolean;
-  disabledReason: string | null;
   onSelect: () => void;
-  onToggle: () => void;
   children: React.ReactNode;
 }) {
   const last = s.last_execution;
@@ -100,38 +98,6 @@ function Row({
         className="row-reveal relative flex items-stretch"
         data-active={selected ? "true" : undefined}
       >
-        {selectMode ? (
-          <label className="relative flex h-auto min-h-11 w-11 shrink-0 items-center justify-center">
-            <input
-              type="checkbox"
-              checked={checked}
-              disabled={disabledReason !== null}
-              onChange={onToggle}
-              aria-label={
-                disabledReason ? `${s.id} ${disabledReason}` : `Select ${s.id}`
-              }
-              className="peer absolute inset-0 h-full w-11 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-            />
-            <span
-              aria-hidden="true"
-              className="border-border-strong peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:outline-accent h-5 w-5 rounded border peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-disabled:opacity-40"
-            />
-            <svg
-              viewBox="0 0 20 20"
-              aria-hidden="true"
-              className="text-background pointer-events-none absolute h-3.5 w-3.5 opacity-0 peer-checked:opacity-100"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-            >
-              <path
-                d="M4 10.5l4 4 8-9"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </label>
-        ) : null}
         <button
           type="button"
           aria-expanded={selected}
@@ -181,12 +147,11 @@ function Row({
   );
 }
 
-/**
- * The scenarios as lanes along a request's path, with filters on the fields the registry and
- * the latest stored result carry. Summary first: a row shows the title, severity, the latest
- * result and a one-line history. The detail opens on selection, beside the list on a wide
- * screen and under the row on a narrow one.
- */
+/** The scenarios as lanes along a request's path, with the four things an operator filters by
+ * on top: a status and a search. Severity, mode, category and latest result stay available
+ * behind one disclosure, so they never compete with the list. Summary first: a row shows the
+ * title, severity, the latest result and a one-line history. The detail answers selection
+ * beside the list on a wide screen and under the row on a narrow one. */
 export function RedTeamExplorer({
   scenarios,
   histories,
@@ -194,10 +159,6 @@ export function RedTeamExplorer({
   onFiltersChange,
   selectedId,
   onSelect,
-  selectMode,
-  selected,
-  onToggleSelected,
-  busy,
   renderDetail,
 }: {
   scenarios: ScenarioView[];
@@ -206,10 +167,6 @@ export function RedTeamExplorer({
   onFiltersChange: (next: ExplorerFilters) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  selectMode: boolean;
-  selected: Set<string>;
-  onToggleSelected: (id: string) => void;
-  busy: boolean;
   renderDetail: (s: ScenarioView) => React.ReactNode;
 }) {
   const desktop = useIsDesktop();
@@ -217,112 +174,155 @@ export function RedTeamExplorer({
   const lanes = groupByLayer(visible);
   const detail = resolveDetail(scenarios, visible, selectedId);
   const filtered = hasExplorerFilters(filters);
+  const counts = statusCounts(scenarios, filters);
+  const moreOpen = Boolean(
+    filters.severity || filters.mode || filters.category || filters.result,
+  );
 
   return (
     <div>
-      <div
-        role="search"
-        aria-label="Filter scenarios"
-        className="grid grid-cols-2 gap-3 lg:grid-cols-5"
-      >
-        <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
-          <span className="text-text-tertiary">Latest result</span>
-          <select
-            className={SELECT}
-            value={filters.result}
-            onChange={(e) =>
-              onFiltersChange({
-                ...filters,
-                result: e.target.value as ExplorerFilters["result"],
-              })
-            }
+      <div role="search" aria-label="Filter scenarios" className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div
+            role="group"
+            aria-label="Filter by status"
+            className="flex flex-wrap items-center gap-2"
           >
-            <option value="">All results</option>
-            {OUTCOMES.map((o) => (
-              <option key={o} value={o}>
-                {OUTCOME_LABEL[o]}
-              </option>
-            ))}
-            <option value="not_run">Not run</option>
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
-          <span className="text-text-tertiary">Severity</span>
-          <select
-            className={SELECT}
-            value={filters.severity}
-            onChange={(e) =>
-              onFiltersChange({
-                ...filters,
-                severity: e.target.value as Severity | "",
-              })
-            }
-          >
-            <option value="">All severities</option>
-            {(["critical", "high", "medium", "low"] as const).map((v) => (
-              <option key={v} value={v}>
-                {v[0].toUpperCase() + v.slice(1)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
-          <span className="text-text-tertiary">Mode</span>
-          <select
-            className={SELECT}
-            value={filters.mode}
-            onChange={(e) =>
-              onFiltersChange({
-                ...filters,
-                mode: e.target.value as Mode | "",
-              })
-            }
-          >
-            <option value="">All modes</option>
-            <option value="deterministic">Deterministic</option>
-            <option value="judge_assisted">Judge-assisted</option>
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
-          <span className="text-text-tertiary">Category</span>
-          <select
-            className={SELECT}
-            value={filters.category}
-            onChange={(e) =>
-              onFiltersChange({
-                ...filters,
-                category: e.target.value as Category | "",
-              })
-            }
-          >
-            <option value="">All categories</option>
-            {CATEGORY_ORDER.map((c) => (
-              <option key={c} value={c}>
-                {CATEGORY_LABEL[c]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="col-span-2 flex items-end lg:col-span-1">
-          {filtered ? (
-            <button
-              type="button"
-              onClick={() => onFiltersChange(NO_EXPLORER_FILTERS)}
-              className="border-border-strong text-text-primary hover:bg-surface min-h-11 w-full rounded-lg border px-3 text-base sm:text-sm"
-            >
-              Clear filters
-            </button>
-          ) : null}
+            {(["", ...STATUSES] as const).map((value) => {
+              const on = filters.status === value;
+              return (
+                <button
+                  key={value || "all"}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => onFiltersChange({ ...filters, status: value })}
+                  className={`${CHIP} ${on ? "border-line-active bg-surface-high text-text-primary" : "border-border-strong text-text-secondary hover:text-text-primary"}`}
+                >
+                  {value === "" ? "All" : STATUS_LABEL[value]}
+                  <span className="text-text-tertiary tabular-metric ml-2">
+                    {counts[value === "" ? "all" : value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <label className="flex min-w-0 grow items-center sm:max-w-xs">
+            <span className="sr-only">Search scenarios</span>
+            <input
+              type="search"
+              value={filters.query}
+              onChange={(e) =>
+                onFiltersChange({ ...filters, query: e.target.value })
+              }
+              placeholder="Search by id, title or defense"
+              autoComplete="off"
+              spellCheck={false}
+              className={`${SELECT} placeholder:text-text-tertiary`}
+            />
+          </label>
         </div>
+        <details className="group" open={moreOpen || undefined}>
+          <summary className="text-accent hover:text-text-primary inline-flex min-h-11 cursor-pointer items-center text-base underline-offset-4 group-open:underline sm:text-sm">
+            More filters
+          </summary>
+          <div className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
+              <span className="text-text-tertiary">Latest result</span>
+              <select
+                className={SELECT}
+                value={filters.result}
+                onChange={(e) =>
+                  onFiltersChange({
+                    ...filters,
+                    result: e.target.value as ExplorerFilters["result"],
+                  })
+                }
+              >
+                <option value="">All results</option>
+                {OUTCOMES.map((o) => (
+                  <option key={o} value={o}>
+                    {OUTCOME_LABEL[o]}
+                  </option>
+                ))}
+                <option value="not_run">Not run</option>
+              </select>
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
+              <span className="text-text-tertiary">Severity</span>
+              <select
+                className={SELECT}
+                value={filters.severity}
+                onChange={(e) =>
+                  onFiltersChange({
+                    ...filters,
+                    severity: e.target.value as Severity | "",
+                  })
+                }
+              >
+                <option value="">All severities</option>
+                {(["critical", "high", "medium", "low"] as const).map((v) => (
+                  <option key={v} value={v}>
+                    {v[0].toUpperCase() + v.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
+              <span className="text-text-tertiary">Mode</span>
+              <select
+                className={SELECT}
+                value={filters.mode}
+                onChange={(e) =>
+                  onFiltersChange({
+                    ...filters,
+                    mode: e.target.value as Mode | "",
+                  })
+                }
+              >
+                <option value="">All modes</option>
+                <option value="deterministic">Deterministic</option>
+                <option value="judge_assisted">Judge-assisted</option>
+              </select>
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-base sm:text-sm">
+              <span className="text-text-tertiary">Category</span>
+              <select
+                className={SELECT}
+                value={filters.category}
+                onChange={(e) =>
+                  onFiltersChange({
+                    ...filters,
+                    category: e.target.value as Category | "",
+                  })
+                }
+              >
+                <option value="">All categories</option>
+                {CATEGORY_ORDER.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_LABEL[c]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </details>
       </div>
-      <p
-        role="status"
-        className="text-text-secondary mt-3 text-base sm:text-sm"
-      >
-        Showing {visible.length} of {scenarios.length} scenarios.
-      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4">
+        <p role="status" className="text-text-secondary text-base sm:text-sm">
+          Showing {visible.length} of {scenarios.length} scenarios.
+        </p>
+        {filtered ? (
+          <button
+            type="button"
+            onClick={() => onFiltersChange(NO_EXPLORER_FILTERS)}
+            className="text-accent hover:text-text-primary min-h-11 text-base underline underline-offset-4 sm:text-sm"
+          >
+            Clear filters
+          </button>
+        ) : null}
+      </div>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-start">
+      <div className="mt-2 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-start">
         <div className="min-w-0">
           {lanes.length === 0 ? (
             <div className="border-border-strong rounded-xl border border-dashed px-6 py-12 text-center">
@@ -352,7 +352,6 @@ export function RedTeamExplorer({
                 </h3>
                 <ul className="border-border mt-2 border-t">
                   {lane.scenarios.map((s) => {
-                    const judge = s.mode === "judge_assisted";
                     const isSelected = s.id === selectedId;
                     return (
                       <Row
@@ -360,17 +359,7 @@ export function RedTeamExplorer({
                         scenario={s}
                         history={histories.get(s.id) ?? []}
                         selected={isSelected}
-                        selectMode={selectMode}
-                        checked={selected.has(s.id)}
-                        disabledReason={
-                          judge
-                            ? "runs alone and cannot be selected"
-                            : busy
-                              ? "cannot be selected while a run is active"
-                              : null
-                        }
                         onSelect={() => onSelect(s.id)}
-                        onToggle={() => onToggleSelected(s.id)}
                       >
                         {isSelected && !desktop ? (
                           <div className="swap-in border-border bg-background-elevated/40 border-t px-3 py-4">
@@ -390,7 +379,8 @@ export function RedTeamExplorer({
             {detail.kind === "open" ? (
               <div
                 key={detail.scenario.id}
-                className="swap-in border-border bg-background-elevated/50 rounded-xl border p-5"
+                style={{ ["--tone" as string]: rowTone(detail.scenario) }}
+                className="instrument bg-background-elevated/50 rounded-xl p-5"
               >
                 {renderDetail(detail.scenario)}
               </div>
@@ -413,8 +403,8 @@ export function RedTeamExplorer({
                 data-detail-state="none"
                 className="border-border-strong text-text-secondary rounded-xl border border-dashed p-6 text-base"
               >
-                Select a scenario to read its latest result, its history and the
-                definition it was written from.
+                Select a scenario to read what it expects, what was recorded and
+                which defense acted.
               </div>
             )}
           </div>

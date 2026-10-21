@@ -19,7 +19,6 @@ import {
   SAFETY_BOUND_MEANING,
   canInvestigate,
   expectedLabel,
-  formatCost,
   isSafetyBoundSkip,
   layerLabel,
   stageOf,
@@ -118,8 +117,8 @@ function LatestResult({ e }: { e: ExecutionRecord }) {
       <Facts evidence={e.evidence} />
       <p className="text-text-tertiary mt-3 text-base sm:text-sm">
         A recorded execution of the real defense on the scenario’s controlled
-        input. It is stored, not a fixture, and it is not a measure of how often
-        a real attacker would succeed.
+        input. It is stored, not a fixture. It shows whether this defense acts
+        on this input, not how often real attackers get through.
       </p>
       {e.trace_ref ? (
         <Link
@@ -186,18 +185,29 @@ function Definition({ scenario: s }: { scenario: ScenarioView }) {
   );
 }
 
+/** One part of the panel. Each enters a step after the one before it, so selecting a scenario
+ * reads as the panel being rebuilt around it and not as a swap. The stagger lives in
+ * .enter-up, which is off under reduced motion. */
+function Part({ i, children }: { i: number; children: React.ReactNode }) {
+  return (
+    <div className="enter-up" style={{ ["--i" as string]: i }}>
+      {children}
+    </div>
+  );
+}
+
 /**
- * One scenario, summary first. The latest result and its actions come before anything else.
- * The recorded executions and the stored definition sit behind two tabs, so a result and the
- * plan it was judged against are never read as the same thing.
+ * One scenario, summary first, and nothing on it starts work. The expectation written with the
+ * scenario and the latest recorded result sit side by side, then the defense that acted and
+ * the evidence it left. The recorded executions and the stored definition sit behind two tabs,
+ * so a result and the plan it was judged against are never read as the same thing. Running a
+ * scenario happens in the execution workflow, and this panel only offers to set one up.
  */
 export function RedTeamScenario({
   scenario: s,
   history,
   sessions,
-  busy,
-  persistence,
-  onRunOne,
+  onSetupRun,
   onOpenEvidence,
   onStarted,
 }: {
@@ -205,164 +215,125 @@ export function RedTeamScenario({
   /** Oldest first. */
   history: ExecutionRecord[];
   sessions: Summary[] | null;
-  busy: boolean;
-  persistence: boolean;
-  onRunOne: (id: string, judgeAssisted: boolean) => void;
+  onSetupRun: (id: string) => void;
   onOpenEvidence: (executionId: string) => void;
   onStarted: () => void;
 }) {
   const [tab, setTab] = useState<"executions" | "definition">("executions");
-  const [confirming, setConfirming] = useState(false);
   const tabsId = useId();
   const last = s.last_execution;
   const judge = s.mode === "judge_assisted";
   const stage = stageOf(s.target_layer);
-  const disabled = busy || !persistence;
 
   return (
     <article aria-label={`${s.id} ${s.title}`} className="space-y-5">
-      <header>
-        <p className="text-text-tertiary font-mono text-base sm:text-sm">
-          {s.id}, version {s.version}
-        </p>
-        <h3 className="text-text-primary mt-1 text-xl font-semibold tracking-tight text-balance">
-          {s.title}
-        </h3>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <SeverityBadge severity={s.severity} />
-          <ModeBadge mode={s.mode} />
-          <span className="text-text-secondary text-base sm:text-sm">
-            Tests {layerLabel(s.target_layer)}
-            {stage ? `, ${STAGE_LABEL[stage].toLowerCase()}` : ""}.{" "}
-            {CATEGORY_LABEL[s.category]}.
-          </span>
-        </div>
-      </header>
+      <Part i={0}>
+        <header>
+          <p className="text-text-tertiary font-mono text-base sm:text-sm">
+            {s.id}, version {s.version}
+          </p>
+          <h3 className="text-text-primary mt-1 text-xl font-semibold tracking-tight text-balance">
+            {s.title}
+          </h3>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <SeverityBadge severity={s.severity} />
+            <ModeBadge mode={s.mode} />
+            <span className="text-text-secondary text-base sm:text-sm">
+              Tests {layerLabel(s.target_layer)}
+              {stage ? `, ${STAGE_LABEL[stage].toLowerCase()}` : ""}.{" "}
+              {CATEGORY_LABEL[s.category]}.
+            </span>
+          </div>
+        </header>
+      </Part>
 
-      {last ? (
-        <LatestResult e={last} />
-      ) : (
-        <p className="border-border-strong text-text-secondary rounded-lg border border-dashed p-4 text-base">
-          This scenario has not been run, so there is no result to read.
-        </p>
-      )}
-
-      <div className="flex flex-wrap items-start gap-3">
+      <Part i={1}>
         {last ? (
-          <button
-            type="button"
-            onClick={() => onOpenEvidence(last.execution_id)}
-            aria-label={`Open evidence for ${s.id}, run ${last.run_id.slice(0, 8)}`}
-            className={`${BUTTON} border-border-strong text-text-primary hover:bg-surface`}
-          >
-            Open the full evidence
-          </button>
-        ) : null}
-        {judge ? (
-          confirming ? (
-            <div className="border-signal/40 bg-signal/5 max-w-md rounded-lg border p-3">
-              <p className="text-text-primary text-base leading-snug">
-                This run sends a fixed answer and its context to Gemini. It
-                spends model calls from the project credit and runs alone.
-                {last
-                  ? ` The latest stored run made ${last.gemini_calls} ${last.gemini_calls === 1 ? "call" : "calls"} at a recorded ${formatCost(last.cost_usd)}.`
-                  : " No earlier run is stored, so its cost is not known yet."}
-              </p>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    setConfirming(false);
-                    onRunOne(s.id, true);
-                  }}
-                  className={`${BUTTON} border-signal/60 text-text-primary hover:bg-signal/10`}
-                >
-                  Confirm and run
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirming(false)}
-                  className={`${BUTTON} border-border-strong text-text-primary hover:bg-surface`}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
+          <LatestResult e={last} />
+        ) : (
+          <p className="border-border-strong text-text-secondary rounded-lg border border-dashed p-4 text-base">
+            This scenario has not been run, so there is no result to read.
+          </p>
+        )}
+      </Part>
+
+      <Part i={2}>
+        <div className="flex flex-wrap items-start gap-3">
+          {last ? (
             <button
               type="button"
-              disabled={disabled}
-              onClick={() => setConfirming(true)}
+              onClick={() => onOpenEvidence(last.execution_id)}
+              aria-label={`Open evidence for ${s.id}, run ${last.run_id.slice(0, 8)}`}
               className={`${BUTTON} border-border-strong text-text-primary hover:bg-surface`}
             >
-              Run with Gemini judge
+              Open the full evidence
             </button>
-          )
-        ) : (
+          ) : null}
+          {last && canInvestigate(last) ? (
+            <InvestigateThis
+              execution={last}
+              sessions={sessions}
+              onStarted={onStarted}
+            />
+          ) : null}
           <button
             type="button"
-            disabled={disabled}
-            onClick={() => onRunOne(s.id, false)}
-            className={`${BUTTON} border-accent/60 bg-accent/10 text-text-primary hover:bg-accent/20`}
+            onClick={() => onSetupRun(s.id)}
+            className={`${BUTTON} border-border-strong text-text-secondary hover:text-text-primary hover:bg-surface`}
           >
-            Run {s.id}
+            Set up a run of {s.id}
           </button>
-        )}
-        {last && canInvestigate(last) ? (
-          <InvestigateThis
-            execution={last}
-            sessions={sessions}
-            onStarted={onStarted}
-          />
-        ) : null}
-      </div>
-      {judge ? (
-        <p className="text-text-tertiary text-base sm:text-sm">
-          Judge-assisted. Detection depends on the Gemini faithfulness judge, so
-          a run spends model calls, and it never runs as part of a group.
+        </div>
+        <p className="text-text-tertiary mt-2 text-base sm:text-sm">
+          {judge
+            ? "Judge-assisted. Detection depends on the Gemini faithfulness judge, so a run spends model calls and runs alone. "
+            : ""}
+          Setting up a run only opens the execution workflow. It starts nothing
+          until it is confirmed there.
         </p>
-      ) : null}
+      </Part>
 
-      <div>
-        <div
-          role="tablist"
-          aria-label="Scenario sections"
-          className="border-border flex gap-1 border-b"
-        >
-          {(
-            [
-              ["executions", `Recorded executions (${history.length})`],
-              ["definition", "Definition"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`${tabsId}-${id}-tab`}
-              aria-selected={tab === id}
-              aria-controls={`${tabsId}-${id}`}
-              onClick={() => setTab(id)}
-              className={`min-h-11 px-3 text-base transition-colors sm:text-sm ${tab === id ? "border-accent text-text-primary -mb-px border-b-2 font-medium" : "text-text-secondary hover:text-text-primary"}`}
-            >
-              {label}
-            </button>
-          ))}
+      <Part i={3}>
+        <div>
+          <div
+            role="tablist"
+            aria-label="Scenario sections"
+            className="border-border flex gap-1 border-b"
+          >
+            {(
+              [
+                ["executions", `Recorded executions (${history.length})`],
+                ["definition", "Definition"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`${tabsId}-${id}-tab`}
+                aria-selected={tab === id}
+                aria-controls={`${tabsId}-${id}`}
+                onClick={() => setTab(id)}
+                className={`min-h-11 px-3 text-base transition-colors sm:text-sm ${tab === id ? "border-accent text-text-primary -mb-px border-b-2 font-medium" : "text-text-secondary hover:text-text-primary"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div
+            role="tabpanel"
+            id={`${tabsId}-${tab}`}
+            aria-labelledby={`${tabsId}-${tab}-tab`}
+            className="pt-4"
+          >
+            {tab === "executions" ? (
+              <RedTeamHistory executions={history} onOpen={onOpenEvidence} />
+            ) : (
+              <Definition scenario={s} />
+            )}
+          </div>
         </div>
-        <div
-          role="tabpanel"
-          id={`${tabsId}-${tab}`}
-          aria-labelledby={`${tabsId}-${tab}-tab`}
-          className="pt-4"
-        >
-          {tab === "executions" ? (
-            <RedTeamHistory executions={history} onOpen={onOpenEvidence} />
-          ) : (
-            <Definition scenario={s} />
-          )}
-        </div>
-      </div>
+      </Part>
     </article>
   );
 }

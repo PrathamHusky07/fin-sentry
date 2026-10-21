@@ -527,7 +527,49 @@ export function groupByLayer(scenarios: ScenarioView[]): Lane[] {
 // Explorer filters. Every field is one the registry or the latest stored result carries.
 // ---------------------------------------------------------------------------
 
+/** What state a scenario's latest execution ended in, in the words an operator filters by.
+ * The store persists an outcome, not a status, so this is DERIVED from the outcome and the
+ * evidence markers the runner writes:
+ * - completed: the execution finished and the defense was assessed (caught, missed or
+ *   inconclusive).
+ * - interrupted: a gateway execution cut off before it recorded whether a request was sent,
+ *   which the runner marks continuation_unknown.
+ * - failed: the harness raised, or the evaluator could not run, so no verdict exists.
+ * A scenario never run, and one the runner deliberately did not run to bound cost, are in none
+ * of the three and only appear under All. */
+export type ScenarioStatus = "completed" | "failed" | "interrupted";
+
+export const STATUS_LABEL: Record<ScenarioStatus, string> = {
+  completed: "Completed",
+  failed: "Failed",
+  interrupted: "Interrupted",
+};
+
+export const STATUSES: readonly ScenarioStatus[] = [
+  "completed",
+  "failed",
+  "interrupted",
+];
+
+export function executionStatus(
+  e: ExecutionRecord | null,
+): ScenarioStatus | null {
+  if (e === null || e.outcome === null) return null;
+  if (isSafetyBoundSkip(e)) return null;
+  if (continuationState(e) === "unknown") return "interrupted";
+  if (
+    e.outcome === "execution_failed" ||
+    e.outcome === "evaluator_unavailable"
+  ) {
+    return "failed";
+  }
+  return "completed";
+}
+
 export interface ExplorerFilters {
+  status: ScenarioStatus | "";
+  /** Free text over a scenario's id, title, defense, category and latest result. */
+  query: string;
   result: Outcome | "not_run" | "";
   severity: Severity | "";
   mode: Mode | "";
@@ -535,6 +577,8 @@ export interface ExplorerFilters {
 }
 
 export const NO_EXPLORER_FILTERS: ExplorerFilters = {
+  status: "",
+  query: "",
   result: "",
   severity: "",
   mode: "",
@@ -542,7 +586,52 @@ export const NO_EXPLORER_FILTERS: ExplorerFilters = {
 };
 
 export function hasExplorerFilters(f: ExplorerFilters): boolean {
-  return Boolean(f.result || f.severity || f.mode || f.category);
+  return Boolean(
+    f.status ||
+    f.query.trim() ||
+    f.result ||
+    f.severity ||
+    f.mode ||
+    f.category,
+  );
+}
+
+/** DERIVED. Whether every word of the query appears in the scenario's id, title, defense
+ * layer, category or latest result, ignoring case. An empty query matches everything. */
+export function matchesQuery(s: ScenarioView, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const last = s.last_execution?.outcome ?? null;
+  const haystack = [
+    s.id,
+    s.title,
+    layerLabel(s.target_layer),
+    CATEGORY_LABEL[s.category],
+    last === null ? "not run" : OUTCOME_LABEL[last],
+  ]
+    .join(" ")
+    .toLowerCase();
+  return words.every((w) => haystack.includes(w));
+}
+
+/** DERIVED. How many scenarios sit in each status by their latest execution, over the
+ * scenarios that pass every other filter, so a chip's count is what pressing it would show. */
+export function statusCounts(
+  scenarios: ScenarioView[],
+  f: ExplorerFilters,
+): Record<ScenarioStatus | "all", number> {
+  const rest = filterScenarios(scenarios, { ...f, status: "" });
+  const counts: Record<ScenarioStatus | "all", number> = {
+    all: rest.length,
+    completed: 0,
+    failed: 0,
+    interrupted: 0,
+  };
+  for (const s of rest) {
+    const status = executionStatus(s.last_execution);
+    if (status !== null) counts[status] += 1;
+  }
+  return counts;
 }
 
 export function filterScenarios(
@@ -553,6 +642,9 @@ export function filterScenarios(
     if (f.severity && s.severity !== f.severity) return false;
     if (f.mode && s.mode !== f.mode) return false;
     if (f.category && s.category !== f.category) return false;
+    if (f.status && executionStatus(s.last_execution) !== f.status)
+      return false;
+    if (!matchesQuery(s, f.query)) return false;
     if (f.result) {
       const last = s.last_execution?.outcome ?? null;
       if (f.result === "not_run" ? last !== null : last !== f.result) {
