@@ -1,5 +1,96 @@
 # Build Log
 
+## 2026-10-21 (evening): Day 12 Session 2, Agent and Red Team rebuilt, footer, homepage cards
+
+Model: Sonnet 5.5, no escalation. Nothing was pushed. Session start: `main`, HEAD and `origin/main` both `eda86f6`. No frozen tool
+schema, guardrail rail, nine-tool surface, held-out case, Red Team scenario contract or planner spending behavior changed. No new
+runtime, service or store. No RAG run, investigator run or Red Team run was made, and no model call was made. The judge verdict
+counts (406 flash, 186 frontier) and the `rag-responses`, `judge-verdicts` and `rag-frontier-verdicts` high watermarks (551, 616,
+259) are the same before and after every test run of this session, and the Red Team store still holds 43 executions.
+
+### Part A: test isolation (`cc253e0`)
+Four tests publish a successful event to the live `rag-responses` topic, where the running flash consumer judges it with a real
+Gemini call: `test_fetch_trace_list_picks_latest_judge_verdict_when_trace_has_two_rows` and the three tests in
+`tests/integration/test_frontier_consumer.py` (their `integration` and `slow` marks never excluded them from a plain run). Last
+session's high watermark moved 547 to 551, which is those four events. They now carry a `live_topics` marker and are skipped
+unless `--run-live-topic-tests` is passed. Nothing they assert changed. The other 1,442 tests run as before.
+
+### Part B: the Agent page (`c4039c1`)
+The map is a new composition, not the homepage ring: the incident sits below an arc of six stages with a spoke to each, the
+sequence along the arc and one dashed loop from Assess back to Plan. Selecting a stage brings it forward and lights the four
+connections it really has. Hover and focus preview, click and Enter commit, arrows move. Only Plan is marked as model proposed.
+Under 1024 px it is a vertical outline that opens in place. Reduced motion keeps the state and removes the movement.
+Each stage panel says where the investigation can stop and where the stage shows up in a stored case, and says plainly that
+validation is not stored as an event.
+The cases are an explorer: status chips (All, Completed, Failed, Interrupted, with Running only when one is loaded) with counts,
+a record filter, and a summary beside the list built from the listing fields only. The case file has three labelled layers.
+Layer 2 compares hypotheses: the leader opens first, the others step back, and supporting evidence, counter-evidence, missing
+evidence and rivals are four separate blocks. Layer 3 opens with four readings: query results by state, a citation check, the
+budget consumed and why it stopped. The citation check re-traces each cited record to a stored query in the browser. The backend
+validates citations before storing a report, and the tile says a mismatch would mean the two disagree. Verified on the stored
+sessions: 3 of 3 and 2 of 2 cited records trace.
+The four record states are Live execution, Fixture replay, Historical reference and Unavailable record. The Amazon trace is
+checked live on the server (read only, 4 s timeout): found, not found, or not reachable, each worded differently. Today it is not
+found, and the card says the event log expired it under the earlier seven-day retention and that the preserved capture is what
+remains. The Historical card links to the capture on the landing page and claims no live record. An unknown case id is its own
+Unavailable state. The start form is unchanged and closed until opened.
+Copy was rewritten to the staff-engineer register, and the fixture budget tile says "scripted planner calls" because no model ran.
+
+### Part C: the Red Team page (`fb32139`)
+Filters. The brief names Completed, Failed and Interrupted. The Red Team store persists an outcome and not a status, and every
+stored execution is finished, so I derived the three from persisted fields and documented it in `lib/red-team.ts`: Completed is a
+verdict (caught, missed, inconclusive), Failed is a harness failure or an evaluator that could not run, Interrupted is the runner's
+own `continuation_unknown` marker. A scenario never run and a deliberate safety-bound skip appear only under All. Today that is
+10, 0 and 0. A free-text search covers id, title, defense, category and latest result. Severity, mode, category and latest result
+moved behind one "More filters" disclosure and still deep-link. No secondary live-versus-fixture control exists because no Red Team
+execution is a fixture. All of it is in the URL.
+The right panel rebuilds in four staged parts on selection (reduced motion removes them), carries the row's tone, and shows
+expected beside recorded, the defense that acted and the evidence facts. The execution history is one closed row ("43 recorded
+executions") that opens the existing grouped log. The known gap card is an instrument that rises and takes its tone on hover or focus.
+The workflow is separate. Running scenarios is behind "Run scenarios" and a review step that states what will happen, derived from
+the registry. It is not started by reading, hovering, selecting or setting up. Verified from the code, for "Run all deterministic":
+1. It runs the 9 deterministic scenarios: DI-001, HZ-001, MS-001 through the gateway route, and PII-001, IND-001, IND-002, OUT-001,
+   OUT-002, GAP-001 by calling the rails directly. OUT-003 is judge assisted and runs alone.
+2. The three gateway scenarios post a real request to the gateway's own `/v1/rag/query` in process. Only an event with status
+   success and an answer is judged, so a request an input rail blocks is not judged. A request no rail stops goes on to the model
+   path, where the flash judge can call Gemini. The runner sends at most one such request per run and skips the rest. The other six
+   publish no event and make no model call.
+3. It persists one run row and one execution row per scenario, and the cost of those continued requests is not recorded on the
+   execution.
+4. A repeat run adds new rows. Nothing updates or deletes a finished execution.
+5. Yes, the three gateway requests are recorded as ordinary events (the query carries `(ref RT-xxxxxxxx)`), so they appear in
+   Investigations and in the Live Operations counts, and nothing marks them as Red Team traffic.
+
+### Part D: footer and homepage cards (`21ed424`, `8501876`)
+One compact row on every route: mark, "Reliability and evaluation for production LLM systems.", the author and LinkedIn. The six
+duplicated links are gone. Root CLAUDE.md says not to host personal contact information on the deployed frontend. The LinkedIn
+link and name were requested explicitly and are one element to remove if that rule should win at deployment (Day 13).
+The five cards now open five different routes: Guard opens `/investigations?status=blocked`, Retrieve opens its stage on
+`/architecture`, Generate opens `/operations#activity-latency`, Judge opens `/overview#coverage-heading` and Agent opens `/agent`.
+Limitation: retrieval has no product view of its own, so Retrieve is the one card whose target is a section of the architecture
+page. Generate opens the end to end request latency chart, which includes the model call but is not a generation-only measure.
+
+### Verification
+`.venv/bin/python -m pytest -q -p no:cacheprovider` at `fb32139`: 1442 passed, 4 skipped (the guarded tests), 1 failed, 149 s.
+The failure is `test_disagreement_trace_ids_finds_the_real_amazon_hallucination_trace` with
+`assert '96bca4b5-f707-4a93-b421-2674032849b5' in set()`. Last session's 1446 passed plus 1 failed is the same 1,447 tests.
+ruff and mypy are clean (136 source files); `tests/integration/test_frontier_consumer.py` was already unformatted and was not
+reformatted. tsc, eslint, prettier and Vitest (163) are clean and `npm run build` passes with the dev server stopped and restarted
+after. Playwright, one worker, no failure limit: 223 passed, 8 failed. The 8 are the Amazon disagreement specs (Overview featured
+card and two interaction specs, the readouts spec, the disagreement lens, the drawer hover, Overview interactions and trace
+detail), each failing on a missing featured card or trace for the same cause as the pytest failure. One failure was mine: the
+architecture spec looked for the old Red Team heading, and it now looks for the new one. The Red Team run test was converted so
+that its one POST is intercepted, because a live run was out of scope. A real run of OUT-001 is a manual check. Four widths
+(375, 768, 1024, 1440) have no overflow, no target under 44 px and no console error on both pages and the footer.
+
+### Found and not fixed
+The stale frontier consumer (pid 99435, started Oct 8) is still running beside the current one and was not touched. The
+`SpendPanel` row label says "Model calls" on a fixture session while its note says no model was called. `tests/mcp/tools/tests-mcp-tools.zip`
+is still untracked. The seven-day expiry of the Amazon trace is why the featured card and eight specs stay red until a real
+disagreement exists again.
+
+Next is a dedicated demo-data session, then a separate performance and latency session.
+
 ## 2026-10-21: Day 12 Session 1, correctness gate, demo-data recovery, footer and homepage
 
 Model: Sonnet 5.5, no escalation. Nothing was pushed. Session start: `main`, HEAD and `origin/main` both `3b5f9fb`. No frozen tool
