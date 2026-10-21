@@ -84,12 +84,12 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "investigate",
-    label: "Investigate",
-    role: "Every execution kept",
+    label: "Agent",
+    role: "Reads the evidence",
     plane: "Evidence",
     tone: "neutral",
     detail:
-      "Each persisted execution is one row with its rail outcome, retrieved chunks, scores and reasoning. Nothing is grouped or sampled away.",
+      "The Incident Response Agent examines persisted evidence through read-only tools and either names a best-supported cause or abstains. Every execution stays stored as its own row, so nothing is grouped or sampled away.",
     related: ["judge", "guard", "mcp"],
     primary: true,
   },
@@ -100,7 +100,7 @@ export const CONCEPTS: Concept[] = [
     plane: "Evidence",
     tone: "neutral",
     detail:
-      "Five read tools expose failing traces, guardrail decisions, judge scores, injection search and the drift report to an engineer’s tooling.",
+      "Nine read-only tools expose failing traces, guardrail decisions, judge scores, injection search, the drift report, trace search and Red Team executions to an engineer’s tooling. The tool that would run Red Team scenarios is not registered.",
     related: ["investigate"],
     primary: false,
   },

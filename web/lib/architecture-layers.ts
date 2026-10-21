@@ -22,7 +22,7 @@ export interface Layer {
     | "evaluation-plane"
     | "event-infrastructure"
     | "operational-interface"
-    | "incident-investigator";
+    | "incident-response-agent";
   name: string;
   question: string;
   intro: string;
@@ -234,7 +234,7 @@ export const LAYERS: Layer[] = [
     question:
       "How does an engineer or an agent ask the platform what went wrong?",
     intro:
-      "The same persisted evidence is exposed twice: through an MCP server for tools and agents, and as screens for people. Both read what was recorded and neither changes it. The read tools exist today. The tool that would run Red Team scenarios is not registered yet.",
+      "The same persisted evidence is exposed twice: through an MCP server for tools and agents, and as screens for people. Both read what was recorded and neither changes it. The nine read tools exist today. The tool that would run Red Team scenarios is not registered yet.",
     outline: [
       {
         caption: "Read paths over the persisted evidence",
@@ -249,7 +249,7 @@ export const LAYERS: Layer[] = [
           },
           {
             label: "MCP server",
-            sub: "five read tools: failing traces, guardrail decisions, judge scores, injection search and the drift report",
+            sub: "nine read tools: failing traces, guardrail decisions, judge scores, injection search, the drift report, trace search, trace detail and two Red Team execution reads",
           },
           { label: "Engineer or agent", sub: "asks why a trace failed" },
         ],
@@ -282,11 +282,11 @@ export const LAYERS: Layer[] = [
     ],
   },
   {
-    id: "incident-investigator",
-    name: "Incident investigator",
+    id: "incident-response-agent",
+    name: "Incident Response Agent",
     question: "How does the platform examine an incident without guessing?",
     intro:
-      "When something goes wrong, a bounded investigator looks at the stored evidence. A model proposes competing hypotheses and the queries that would tell them apart. Code runs the queries, decides whether the records support each hypothesis, and reports only what it can cite. If the records do not support a cause, it says so.",
+      "When something goes wrong, the Incident Response Agent looks at the stored evidence inside fixed budgets. A model proposes competing hypotheses and the queries that would tell them apart. Code runs the queries, decides whether the records support each hypothesis, and reports only what it can cite. If the records do not support a cause, it says so.",
     outline: [
       {
         caption: "One investigation, run by code inside fixed budgets",
@@ -345,7 +345,7 @@ export const LAYERS: Layer[] = [
       },
       {
         term: "Why it uses nine read-only tools",
-        body: "The investigator uses every read tool the MCP server registers today, which includes the four added after the interface diagram above was drawn: trace search, trace detail, and the two Red Team execution reads. It has no tool that writes, and the one verification it proposes is never run.",
+        body: "The agent uses every read tool the MCP server registers today, which is all nine of the tools the interface diagram above shows, including trace search, trace detail and the two Red Team execution reads. It has no tool that writes, and the one verification it proposes is never run.",
       },
     ],
   },

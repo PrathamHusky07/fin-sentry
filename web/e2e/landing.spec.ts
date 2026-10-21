@@ -137,10 +137,26 @@ test.describe("Landing page", () => {
     await expect(node("MCP")).toHaveAttribute("data-state", "dim");
     await expect(node("Judge")).toHaveAttribute("data-state", "active");
     await expect(page.getByText("Touches", { exact: false })).toContainText(
-      "Generate, Calibrate, Investigate",
+      "Generate, Calibrate, Agent",
     );
     await page.mouse.move(5, 5);
     await expect(node("Guard")).toHaveAttribute("data-state", "rest");
+  });
+
+  test("the Agent node says what the agent reads and that every execution is kept", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const group = page.getByRole("group", {
+      name: /Fin-Sentry system constellation/,
+    });
+    await group.getByRole("button", { name: /^Agent\./ }).hover();
+    const body = page.locator("body");
+    await expect(body).toContainText(/examines persisted evidence/);
+    await expect(body).toContainText(/Every execution stays stored/);
+    await group.getByRole("button", { name: /^MCP\./ }).hover();
+    await expect(body).toContainText(/Nine read-only tools/);
+    await expect(body).not.toContainText(/five read/i);
   });
 
   test("an evidence frame reveals its action on hover and scrolls the capture", async ({

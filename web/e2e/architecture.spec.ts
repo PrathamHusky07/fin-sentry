@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
  * /architecture, /red-team and the sticky global shell. Static content,
  * so these assert structure and the corrected claims, not live numbers.
  */
-test("Architecture lays out four layers and keeps its claims source-accurate", async ({
+test("Architecture lays out five layers and keeps its claims source-accurate", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -22,6 +22,7 @@ test("Architecture lays out four layers and keeps its claims source-accurate", a
     "Evaluation plane",
     "Event infrastructure",
     "Operational interface",
+    "Incident Response Agent",
   ]) {
     await expect(
       page.getByRole("heading", { name: layer, level: 2 }),
@@ -38,7 +39,7 @@ test("Architecture lays out four layers and keeps its claims source-accurate", a
     /finsentry\/|Read from|docs\/adr|\.py\b/,
   );
   await expect(body).not.toContainText(/localhost|127\.0\.0\.1|:3000|:8000/);
-  // Four distinct diagrams: a pipeline, a topology, event lanes and a hub.
+  // Five distinct diagrams: a pipeline, a topology, event lanes, a hub and the agent's state machine.
   await expect(
     page.getByRole("list", { name: "The request path, left to right" }),
   ).toBeVisible();
@@ -51,6 +52,9 @@ test("Architecture lays out four layers and keeps its claims source-accurate", a
   }
   // The Red Team scenario tool is the one piece that is still not registered.
   await expect(body).toContainText("not registered");
+  // The MCP server registers nine read tools. No copy may still say five.
+  await expect(body).toContainText("nine read tools");
+  await expect(body).not.toContainText(/five read/i);
 
   expect(errors).toEqual([]);
 });
@@ -201,7 +205,7 @@ test("browser tab titles use one separator and no em-dash", async ({
   }
 });
 
-test.describe("the incident investigator layer", () => {
+test.describe("the Incident Response Agent layer", () => {
   test("is a fifth layer drawn as a control-flow state machine", async ({
     page,
   }) => {
@@ -212,7 +216,10 @@ test.describe("the incident investigator layer", () => {
     });
     await page.goto("/architecture");
     await expect(
-      page.getByRole("heading", { name: "Incident investigator", level: 2 }),
+      page.getByRole("heading", {
+        name: "Incident Response Agent",
+        level: 2,
+      }),
     ).toBeVisible();
     await expect(
       page
@@ -220,7 +227,7 @@ test.describe("the incident investigator layer", () => {
         .locator("li"),
     ).toHaveCount(5);
     const diagram = page.getByRole("img", {
-      name: /incident investigator as a control-flow state machine/i,
+      name: /Incident Response Agent as a control-flow state machine/i,
     });
     await diagram.scrollIntoViewIfNeeded();
     await expect(diagram).toBeVisible();
@@ -240,7 +247,7 @@ test.describe("the incident investigator layer", () => {
     page,
   }) => {
     await page.goto("/architecture");
-    const section = page.locator("section#incident-investigator");
+    const section = page.locator("section#incident-response-agent");
     const diagram = section.getByRole("img");
     await diagram.scrollIntoViewIfNeeded();
     await diagram.getByRole("button", { name: /^Assess\./ }).hover();
@@ -258,7 +265,7 @@ test.describe("the incident investigator layer", () => {
     page,
   }) => {
     await page.goto("/architecture");
-    const section = page.locator("section#incident-investigator");
+    const section = page.locator("section#incident-response-agent");
     const planner = section.getByRole("button", { name: /^Planner\./ });
     await planner.scrollIntoViewIfNeeded();
     await planner.focus();
@@ -276,7 +283,7 @@ test.describe("the incident investigator layer", () => {
   }) => {
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto("/architecture");
-    const section = page.locator("section#incident-investigator");
+    const section = page.locator("section#incident-response-agent");
     await section.scrollIntoViewIfNeeded();
     await expect(section.getByRole("img")).toBeHidden();
     await expect(section.getByText("Continue or stop")).toBeVisible();
@@ -287,4 +294,34 @@ test.describe("the incident investigator layer", () => {
     );
     expect(overflow).toBe(0);
   });
+});
+
+test("the interface hub draws all nine read tools and no scenario-running tool", async ({
+  page,
+}) => {
+  await page.goto("/architecture");
+  const diagram = page.getByRole("img", {
+    name: /operational interface as a hub/i,
+  });
+  await diagram.scrollIntoViewIfNeeded();
+  await expect(diagram).toHaveAccessibleName(/nine read tools/);
+  for (const tool of [
+    "Failing traces",
+    "Guardrail decisions",
+    "Judge scores",
+    "Injection search",
+    "Drift report",
+    "Trace search",
+    "Trace detail",
+    "Red Team executions",
+    "Red Team execution",
+  ]) {
+    await expect(
+      diagram.getByRole("button", { name: new RegExp(`^${tool}$`) }),
+    ).toHaveCount(1);
+  }
+  // The scenario tool stays dashed and unregistered.
+  await expect(
+    diagram.getByRole("button", { name: /^Scenario tool\./ }),
+  ).toBeVisible();
 });

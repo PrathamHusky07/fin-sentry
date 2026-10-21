@@ -104,7 +104,7 @@ function Constellation({
         ? {
             role: "group",
             "aria-label":
-              "Fin-Sentry system constellation. Seven concepts around the platform: guard, retrieve, generate, judge, calibrate, investigate and MCP.",
+              "Fin-Sentry system constellation. Seven concepts around the platform: guard, retrieve, generate, judge, calibrate, agent and MCP.",
           }
         : { "aria-hidden": true })}
     >

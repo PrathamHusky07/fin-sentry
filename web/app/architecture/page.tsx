@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EvaluationTopology } from "@/components/arch/evaluation-topology";
 import { EventLanes } from "@/components/arch/event-lanes";
-import { IncidentInvestigatorLoop } from "@/components/arch/investigator-loop";
+import { IncidentResponseAgentLoop } from "@/components/arch/investigator-loop";
 import { InterfaceHub } from "@/components/arch/interface-hub";
 import { RequestPipeline } from "@/components/arch/request-pipeline";
 import { LayerCards, LayerRail } from "@/components/arch/layer-nav";
@@ -18,7 +18,7 @@ const DIAGRAM: Record<Layer["id"], React.ReactNode> = {
   "evaluation-plane": <EvaluationTopology />,
   "event-infrastructure": <EventLanes />,
   "operational-interface": <InterfaceHub />,
-  "incident-investigator": <IncidentInvestigatorLoop />,
+  "incident-response-agent": <IncidentResponseAgentLoop />,
 };
 
 export default function ArchitecturePage() {
@@ -31,10 +31,10 @@ export default function ArchitecturePage() {
             How Fin-Sentry is built, and why
           </h1>
           <p className="text-text-secondary mt-6 max-w-2xl text-lg leading-relaxed text-pretty">
-            Five layers, from the request that arrives to the investigator that
-            examines an incident afterward. The read tools exist today, and the
-            tool that would run Red Team scenarios is not registered yet. Each
-            layer is drawn the way its data actually moves.
+            Five layers, from the request that arrives to the Incident Response
+            Agent that examines an incident afterward. The nine read tools exist
+            today, and the tool that would run Red Team scenarios is not
+            registered yet. Each layer is drawn the way its data actually moves.
           </p>
 
           <LayerCards />

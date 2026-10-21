@@ -205,9 +205,9 @@ export const NODES: Record<NodeId, ArchNode> = {
     id: "mcp",
     plane: "evidence",
     label: "MCP server",
-    sub: "five read tools",
+    sub: "nine read tools",
     summary:
-      "Exposes five read tools over the same evidence: failing traces, guardrail decisions, judge scores, injection search and the drift report.",
+      "Exposes nine read tools over the same evidence: failing traces, guardrail decisions, judge scores, injection search, the drift report, trace search, trace detail and two Red Team execution reads.",
     why: "Lets an engineer’s tooling ask the platform why something failed, with OpenTelemetry instrumentation. A red team scenario tool is not registered yet.",
     source: "finsentry/mcp/server.py",
   },

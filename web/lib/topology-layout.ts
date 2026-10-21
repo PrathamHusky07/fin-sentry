@@ -66,7 +66,7 @@ export const BOX: Record<NodeId, NodeBox> = {
     placement: "below",
   },
   investigation: station(760, 650, ["one row per", "execution"]),
-  mcp: station(1000, 650, ["five read tools"]),
+  mcp: station(1000, 650, ["nine read tools"]),
 };
 
 export interface PlaneBand {

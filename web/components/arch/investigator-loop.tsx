@@ -85,7 +85,7 @@ const CAPTIONS = {
 } as const;
 
 /**
- * Diagram 5, the incident investigator, drawn as a control-flow state machine. It is the
+ * Diagram 5, the Incident Response Agent, drawn as a control-flow state machine. It is the
  * one diagram on the page that loops. Code owns every state and every transition. The model
  * sits left of a hard line, the evidence boundary: it proposes hypotheses and the queries that
  * would tell them apart, and nothing it writes can be cited. Everything right of the line
@@ -99,8 +99,8 @@ const CAPTIONS = {
  * mcp_client.py and adapter.py (the nine read-only tools), and store.py and service.py (the
  * durable session). Those paths are comments here and never appear on the page.
  */
-export function IncidentInvestigatorLoop() {
-  const lane = LAYERS.find((l) => l.id === "incident-investigator");
+export function IncidentResponseAgentLoop() {
+  const lane = LAYERS.find((l) => l.id === "incident-response-agent");
   return (
     <div>
       <DiagramScope edges={EDGES} details={DETAILS}>
@@ -108,7 +108,7 @@ export function IncidentInvestigatorLoop() {
           <svg
             viewBox="0 0 1200 740"
             role="img"
-            aria-label="The incident investigator as a control-flow state machine. A trigger opens an investigation. Open reads the one critical source. Plan asks the model, which sits left of the evidence boundary, for rival hypotheses and the queries that tell them apart. Execute runs those queries through nine read-only tools. Assess reads each prediction against its own query's records and challenges the leader, and may loop back to Plan once. Validate checks every citation. The result is a diagnosis or an abstention, and four exits lead straight to an abstention."
+            aria-label="The Incident Response Agent as a control-flow state machine. A trigger opens an investigation. Open reads the one critical source. Plan asks the model, which sits left of the evidence boundary, for rival hypotheses and the queries that tell them apart. Execute runs those queries through nine read-only tools. Assess reads each prediction against its own query's records and challenges the leader, and may loop back to Plan once. Validate checks every citation. The result is a diagnosis or an abstention, and four exits lead straight to an abstention."
             className="h-auto w-full"
           >
             <ArrowDefs prefix={P} />

@@ -28,6 +28,10 @@ const EDGES: [string, string][] = [
   ["mcp", "tool-2"],
   ["mcp", "tool-3"],
   ["mcp", "tool-4"],
+  ["mcp", "tool-5"],
+  ["mcp", "tool-6"],
+  ["mcp", "tool-7"],
+  ["mcp", "tool-8"],
   ["mcp", "agent"],
   ["registry", "scenarioTool"],
   ["scenarioTool", "route"],
@@ -39,6 +43,10 @@ const TOOL_NAMES = [
   "Judge scores",
   "Injection search",
   "Drift report",
+  "Trace search",
+  "Trace detail",
+  "Red Team executions",
+  "Red Team execution",
 ];
 
 const DETAILS: Record<string, NodeDetail> = {
@@ -83,7 +91,7 @@ const DETAILS: Record<string, NodeDetail> = {
       `tool-${i}`,
       {
         title: name,
-        text: `One of the five read tools the MCP server registers. It reads the persisted evidence and changes nothing.`,
+        text: `One of the nine read tools the MCP server registers. It reads the persisted evidence and changes nothing.`,
       },
     ]),
   ),
@@ -93,7 +101,7 @@ const DETAILS: Record<string, NodeDetail> = {
  * Diagram 4, the operational interface, drawn as a hub with spokes. The
  * persisted evidence is the hub. Three screens for people read from it on
  * the left. On the right, the MCP server reads from it and fans out into
- * five read tools for an engineer or an agent. Nothing here writes back.
+ * nine read tools for an engineer or an agent. Nothing here writes back.
  * Red Team sits apart. Its registry and route run, so they are drawn solid.
  * The MCP tool that would start scenarios is not registered, so it stays
  * dashed and unconnected.
@@ -106,7 +114,7 @@ export function InterfaceHub() {
           <svg
             viewBox="0 0 1200 600"
             role="img"
-            aria-label="The MCP and operational interface as a hub. Persisted evidence sits in the center. On the left, the Overview, Live Operations and Investigations screens read it for people. On the right, the MCP server reads it and exposes five read tools to an engineer or agent. At the bottom, the Red Team scenario registry feeds the Red Team route, which runs. The MCP tool that would start scenarios is drawn dashed, because it is not registered."
+            aria-label="The MCP and operational interface as a hub. Persisted evidence sits in the center. On the left, the Overview, Live Operations and Investigations screens read it for people. On the right, the MCP server reads it and exposes nine read tools to an engineer or agent. At the bottom, the Red Team scenario registry feeds the Red Team route, which runs. The MCP tool that would start scenarios is drawn dashed, because it is not registered."
             className="h-auto w-full"
           >
             <ArrowDefs prefix={P} />
@@ -251,7 +259,7 @@ export function InterfaceHub() {
             </Label>
 
             {TOOL_NAMES.map((tool, i) => {
-              const y = 70 + i * 62;
+              const y = 56 + i * 38;
               return (
                 <g key={tool}>
                   <Box
@@ -259,7 +267,7 @@ export function InterfaceHub() {
                     x={980}
                     y={y}
                     w={200}
-                    h={44}
+                    h={32}
                     title={tool}
                     tone="evidence"
                   />
@@ -268,13 +276,13 @@ export function InterfaceHub() {
                     kind="read"
                     from="mcp"
                     to={`tool-${i}`}
-                    d={`M900,200 C940,200 940,${y + 22} 976,${y + 22}`}
+                    d={`M900,200 C940,200 940,${y + 16} 976,${y + 16}`}
                   />
                 </g>
               );
             })}
-            <Label x={1080} y={56}>
-              five read tools
+            <Label x={1080} y={38}>
+              nine read tools
             </Label>
 
             <Box

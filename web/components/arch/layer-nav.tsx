@@ -24,7 +24,7 @@ const TONE: Record<Layer["id"], { dot: string; ring: string; lift: string }> = {
     ring: "text-text-primary",
     lift: "lift-accent",
   },
-  "incident-investigator": {
+  "incident-response-agent": {
     dot: "bg-info",
     ring: "text-info",
     lift: "lift-accent",
