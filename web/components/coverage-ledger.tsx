@@ -41,7 +41,7 @@ export function CoverageLedger({ counts }: { counts: JudgeStateCounts }) {
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h2
           id="coverage-heading"
-          className="text-text-primary text-2xl font-semibold tracking-tight"
+          className="text-text-primary scroll-mt-24 text-2xl font-semibold tracking-tight"
         >
           Evaluation coverage
         </h2>

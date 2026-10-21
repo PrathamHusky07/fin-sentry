@@ -20,8 +20,8 @@ const STAGES: Stage[] = [
     id: "guard",
     title: "Guard",
     body: "Input rails check the question and output rails check the answer. A rail that errors stops the request.",
-    to: { stage: "input" },
-    cta: "See the rails",
+    to: { href: "/investigations?status=blocked" },
+    cta: "See blocked requests",
     tone: "accent",
   },
   {
@@ -36,16 +36,16 @@ const STAGES: Stage[] = [
     id: "generate",
     title: "Generate",
     body: "One model call answers in JSON under a time budget and a circuit breaker.",
-    to: { stage: "generation" },
-    cta: "See the bounded call",
+    to: { href: "/operations#activity-latency" },
+    cta: "See request latency",
     tone: "accent",
   },
   {
     id: "judge",
     title: "Judge",
     body: "A flash judge scores every delivered answer. About one in ten gets a frontier second opinion.",
-    to: { href: "/architecture#evaluation-plane" },
-    cta: "See the judges",
+    to: { href: "/overview#coverage-heading" },
+    cta: "See judge coverage",
     tone: "signal",
   },
   {
@@ -94,10 +94,12 @@ const TONE_HOVER = {
 } as const;
 
 /**
- * Five stages of one answer's life, in order. The first three open the request-path stage
- * they name on the architecture page, Judge opens the evaluation plane, and Agent opens the
- * Agent. Red Team sits below as its own line because it is not part of any request. Static
- * copy only: no counts, no status.
+ * Five stages of one answer's life, in order, each opening a different page. Guard opens the
+ * blocked requests with the rail that stopped each, Retrieve opens its stage on the
+ * architecture page (retrieval has no product view of its own, so that section is the one
+ * honest target), Generate opens the request latency chart, Judge opens the evaluation
+ * coverage and Agent opens the Agent. Red Team sits below as its own line because it is not
+ * part of any request. Static copy only: no counts, no status.
  */
 export function StageCards() {
   const desktop = useIsDesktop();

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { StageCards, stageHref } from "@/components/stage-cards";
 import { REQUEST_PATH, stageAnchor } from "@/lib/architecture-data";
 import { LAYERS } from "@/lib/architecture-layers";
+import { ROUTES } from "@/lib/routes";
 
 function hrefOf(markup: string, title: string): string {
   const card = new RegExp(
@@ -18,20 +19,29 @@ describe("stage card destinations", () => {
   const markup = renderToStaticMarkup(<StageCards />);
   const titles = ["Guard", "Retrieve", "Generate", "Judge", "Agent"];
 
-  it("sends Guard, Retrieve and Generate to their own request-path stage", () => {
-    // The server render carries the narrow outline ids, the ones a phone shows.
-    expect(hrefOf(markup, "Guard")).toBe("/architecture#stage-input-outline");
+  it("sends each stage to a different page that exists", () => {
+    expect(hrefOf(markup, "Guard")).toBe("/investigations?status=blocked");
+    // The server render carries the narrow outline id, the one a phone shows.
     expect(hrefOf(markup, "Retrieve")).toBe(
       "/architecture#stage-retrieval-outline",
     );
-    expect(hrefOf(markup, "Generate")).toBe(
-      "/architecture#stage-generation-outline",
-    );
+    expect(hrefOf(markup, "Generate")).toBe("/operations#activity-latency");
+    expect(hrefOf(markup, "Judge")).toBe("/overview#coverage-heading");
+    expect(hrefOf(markup, "Agent")).toBe("/agent");
+    expect(markup).not.toContain(">Investigate<");
+  });
+
+  it("opens five different routes, so no two cards point into one page", () => {
+    const routes = titles.map((t) => hrefOf(markup, t).split(/[?#]/)[0]);
+    expect(new Set(routes).size).toBe(titles.length);
+    for (const route of routes) {
+      expect(ROUTES.map((r) => r.href)).toContain(route);
+    }
   });
 
   it("picks the wide id on a wide viewport, where the outline id is not displayed", () => {
-    expect(stageHref({ stage: "input" }, true)).toBe(
-      "/architecture#stage-input",
+    expect(stageHref({ stage: "retrieval" }, true)).toBe(
+      "/architecture#stage-retrieval",
     );
     expect(stageHref({ stage: "retrieval" }, false)).toBe(
       "/architecture#stage-retrieval-outline",
@@ -39,21 +49,12 @@ describe("stage card destinations", () => {
     expect(stageHref({ href: "/agent" }, true)).toBe("/agent");
   });
 
-  it("sends Judge to the evaluation plane and Agent to the Agent route", () => {
-    expect(hrefOf(markup, "Judge")).toBe("/architecture#evaluation-plane");
-    expect(hrefOf(markup, "Agent")).toBe("/agent");
-    expect(markup).not.toContain(">Investigate<");
-  });
-
   it("points every in-page target at an id that exists on the architecture page", () => {
     const outlineAnchors = LAYERS.find(
       (l) => l.id === "request-path",
     )!.outline.flatMap((lane) => lane.steps.map((s) => s.anchor));
-    for (const stage of ["input", "retrieval", "generation"] as const) {
-      expect(outlineAnchors).toContain(stageAnchor(stage, "outline"));
-      expect(REQUEST_PATH).toContain(stage);
-    }
-    expect(LAYERS.map((l) => l.id)).toContain("evaluation-plane");
+    expect(outlineAnchors).toContain(stageAnchor("retrieval", "outline"));
+    expect(REQUEST_PATH).toContain("retrieval");
   });
 
   it("never gives two cards the same destination", () => {

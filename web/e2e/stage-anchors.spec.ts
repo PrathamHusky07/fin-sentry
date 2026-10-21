@@ -10,12 +10,13 @@ function stageLink(page: Page, title: string): Locator {
 }
 
 /**
- * The landing stage cards each open the part of the product that shows their stage.
- * Guard, Retrieve and Generate open their request-path stage on the architecture page, Judge
- * opens the evaluation plane, Agent opens the Agent, and Red Team is a separate line that
- * opens its own route. The wide pipeline and the narrow outline each carry their own copy of
- * a stage id, so every landing has to be a displayed element at the width under test. Needs
- * only the web app.
+ * The landing stage cards each open a different page that shows their stage. Guard opens the
+ * blocked requests, Retrieve opens its stage on the architecture page (the only place
+ * retrieval is explained), Generate opens the request latency chart, Judge opens the
+ * evaluation coverage, Agent opens the Agent, and Red Team is a separate line that opens its
+ * own route. The wide pipeline and the narrow outline each carry their own copy of a stage id,
+ * so the Retrieve landing has to be a displayed element at the width under test. Needs only
+ * the web app.
  */
 for (const width of [375, 768, 1024, 1440]) {
   const suffix = width >= 1024 ? "" : "-outline";
@@ -27,10 +28,10 @@ for (const width of [375, 768, 1024, 1440]) {
     }) => {
       await page.goto("/");
       const expected = [
-        `/architecture#stage-input${suffix}`,
+        "/investigations?status=blocked",
         `/architecture#stage-retrieval${suffix}`,
-        `/architecture#stage-generation${suffix}`,
-        "/architecture#evaluation-plane",
+        "/operations#activity-latency",
+        "/overview#coverage-heading",
         "/agent",
       ];
       const titles = ["Guard", "Retrieve", "Generate", "Judge", "Agent"];
@@ -42,36 +43,46 @@ for (const width of [375, 768, 1024, 1440]) {
           expected[i],
         );
       }
-      const hrefs = expected;
-      expect(new Set(hrefs).size).toBe(5);
+      const routes = expected.map((href) => href.split(/[?#]/)[0]);
+      expect(new Set(routes).size).toBe(5);
       await expect(page.getByText("Investigate", { exact: true })).toHaveCount(
         0,
       );
     });
 
-    for (const [title, stage] of [
-      ["Guard", "input"],
-      ["Retrieve", "retrieval"],
-      ["Generate", "generation"],
-    ] as const) {
-      test(`${title} lands on its own displayed stage`, async ({ page }) => {
-        await page.goto("/");
-        await stageLink(page, title).click();
-        await expect(page).toHaveURL(
-          new RegExp(`/architecture#stage-${stage}${suffix}$`),
-        );
-        const target = page.locator(`#stage-${stage}${suffix}`);
-        await expect(target).toBeVisible();
-        await expect(target).toBeInViewport({ ratio: 0.5 });
-      });
-    }
+    test("Guard opens the blocked requests, filtered", async ({ page }) => {
+      await page.goto("/");
+      await stageLink(page, "Guard").click();
+      await expect(page).toHaveURL(/\/investigations\?status=blocked/);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Investigations" }),
+      ).toBeVisible();
+    });
 
-    test("Judge opens the evaluation plane", async ({ page }) => {
+    test("Retrieve lands on its own displayed stage", async ({ page }) => {
+      await page.goto("/");
+      await stageLink(page, "Retrieve").click();
+      await expect(page).toHaveURL(
+        new RegExp(`/architecture#stage-retrieval${suffix}$`),
+      );
+      const target = page.locator(`#stage-retrieval${suffix}`);
+      await expect(target).toBeVisible();
+      await expect(target).toBeInViewport({ ratio: 0.5 });
+    });
+
+    test("Generate opens the request latency chart", async ({ page }) => {
+      await page.goto("/");
+      await stageLink(page, "Generate").click();
+      await expect(page).toHaveURL(/\/operations#activity-latency$/);
+      await expect(page.locator("#activity-latency")).toBeAttached();
+    });
+
+    test("Judge opens the evaluation coverage", async ({ page }) => {
       await page.goto("/");
       await stageLink(page, "Judge").click();
-      await expect(page).toHaveURL(/\/architecture#evaluation-plane$/);
+      await expect(page).toHaveURL(/\/overview#coverage-heading$/);
       await expect(
-        page.getByRole("heading", { name: "Evaluation plane" }),
+        page.getByRole("heading", { name: "Evaluation coverage" }),
       ).toBeInViewport();
     });
 
