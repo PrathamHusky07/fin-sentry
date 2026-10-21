@@ -65,7 +65,7 @@ test("Red Team renders the console, not a placeholder", async ({ page }) => {
     page.getByRole("heading", { name: "Red Team", level: 1 }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Defenses and their scenarios" }),
+    page.getByRole("heading", { name: /^Scenarios, in the order/ }),
   ).toBeVisible();
   await expect(page.getByText("Not built", { exact: true })).toHaveCount(0);
 });

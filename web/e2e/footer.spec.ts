@@ -17,7 +17,7 @@ const ROUTES = [
 
 const LINKEDIN = "https://www.linkedin.com/in/prathameshkulkarni23/";
 
-for (const width of [375, 768, 1440]) {
+for (const width of [375, 768, 1024, 1440]) {
   test.describe(`at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
 

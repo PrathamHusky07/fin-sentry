@@ -214,7 +214,8 @@ export function RedTeamExplorer({
               onChange={(e) =>
                 onFiltersChange({ ...filters, query: e.target.value })
               }
-              placeholder="Search by id, title or defense"
+              name="scenario-search"
+              placeholder="Try DI-001, Prompt Guard or missed…"
               autoComplete="off"
               spellCheck={false}
               className={`${SELECT} placeholder:text-text-tertiary`}
