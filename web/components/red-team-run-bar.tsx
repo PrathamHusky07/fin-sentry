@@ -4,7 +4,7 @@ import { shortId } from "@/lib/format";
 import { isSafetyBoundSkip, runProgress, type RunDetail } from "@/lib/red-team";
 
 const BUTTON =
-  "min-h-11 rounded-lg border px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  "min-h-11 rounded-lg border px-4 text-base font-medium transition-colors sm:text-sm disabled:cursor-not-allowed disabled:opacity-50";
 
 function RunProgress({ detail }: { detail: RunDetail }) {
   const { run } = detail;
@@ -67,37 +67,38 @@ function RunProgress({ detail }: { detail: RunDetail }) {
 }
 
 /**
- * Starts bounded runs and shows the active or latest one. One run is active
- * at a time, so every control is disabled while another run is in progress.
- * Judge-assisted scenarios are never part of "run all". They start from their
- * own row, behind a confirmation.
+ * Starts bounded runs and shows the active or latest one. One run is active at a time, so
+ * every control is disabled while another run is in progress. Judge-assisted scenarios are
+ * never part of "run all". They start from their own detail, behind a confirmation. Selecting
+ * several scenarios is an explicit mode, so a checkbox never appears unexplained.
  */
 export function RedTeamRunBar({
   deterministicCount,
+  selectMode,
   selectedCount,
   busy,
   persistenceAvailable,
   activeRun,
   startError,
   onRunAll,
+  onToggleSelectMode,
   onRunSelected,
 }: {
   deterministicCount: number;
+  selectMode: boolean;
   selectedCount: number;
   busy: boolean;
   persistenceAvailable: boolean;
   activeRun: RunDetail | null;
   startError: string | null;
   onRunAll: () => void;
+  onToggleSelectMode: () => void;
   onRunSelected: () => void;
 }) {
   const disabled = busy || !persistenceAvailable;
   return (
-    <section aria-labelledby="rt-run-heading" className="mt-12">
-      <h2 id="rt-run-heading" className="eyebrow">
-        Run
-      </h2>
-      <p className="text-text-secondary mt-3 max-w-3xl text-base leading-relaxed">
+    <div>
+      <p className="text-text-secondary max-w-3xl text-base leading-relaxed">
         A run fires its scenarios one at a time through the live defenses and
         stores one execution per scenario. Running a scenario again stores a new
         execution and keeps the earlier one.
@@ -113,19 +114,30 @@ export function RedTeamRunBar({
         </button>
         <button
           type="button"
-          onClick={onRunSelected}
-          disabled={disabled || selectedCount === 0}
-          className={`${BUTTON} border-border-strong text-text-primary hover:bg-surface`}
+          aria-pressed={selectMode}
+          onClick={onToggleSelectMode}
+          disabled={busy}
+          className={`${BUTTON} ${selectMode ? "border-line-active bg-surface-high text-text-primary" : "border-border-strong text-text-primary hover:bg-surface"}`}
         >
-          Run selected ({selectedCount})
+          Select scenarios to run together
         </button>
+        {selectMode ? (
+          <button
+            type="button"
+            onClick={onRunSelected}
+            disabled={disabled || selectedCount === 0}
+            className={`${BUTTON} border-border-strong text-text-primary hover:bg-surface`}
+          >
+            Run selected ({selectedCount})
+          </button>
+        ) : null}
         {busy ? (
-          <p role="status" className="text-text-secondary text-sm">
+          <p role="status" className="text-text-secondary text-base sm:text-sm">
             A run is in progress. Controls return when it ends.
           </p>
         ) : null}
         {!persistenceAvailable ? (
-          <p className="text-warning text-sm">
+          <p className="text-warning text-base sm:text-sm">
             Runs are disabled while the result store is unreachable.
           </p>
         ) : null}
@@ -136,6 +148,6 @@ export function RedTeamRunBar({
         </p>
       ) : null}
       {activeRun ? <RunProgress detail={activeRun} /> : null}
-    </section>
+    </div>
   );
 }

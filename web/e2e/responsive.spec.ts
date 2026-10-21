@@ -14,6 +14,7 @@ const ROUTES = [
   "/operations",
   "/investigations",
   "/architecture",
+  "/agent",
   "/red-team",
 ];
 const WIDTHS = [375, 768, 1440];

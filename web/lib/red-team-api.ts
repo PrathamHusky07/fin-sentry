@@ -1,9 +1,7 @@
 import { GATEWAY_URL } from "@/lib/config";
 import type {
-  Category,
   ExecutionList,
   ExecutionRecord,
-  Outcome,
   RunDetail,
   RunRecord,
   ScenarioList,
@@ -66,27 +64,6 @@ export const fetchRun = (runId: string) => call<RunDetail>(`/runs/${runId}`);
 export const fetchExecution = (executionId: string) =>
   call<ExecutionRecord>(`/executions/${executionId}`);
 
-export interface ExecutionFilters {
-  category: Category | "";
-  outcome: Outcome | "";
-  runId: string;
-}
-
-export function fetchExecutions(
-  filters: ExecutionFilters,
-  offset: number,
-  limit = 25,
-) {
-  const params = new URLSearchParams({
-    limit: String(limit),
-    offset: String(offset),
-  });
-  if (filters.category) params.set("category", filters.category);
-  if (filters.outcome) params.set("outcome", filters.outcome);
-  if (filters.runId) params.set("run_id", filters.runId);
-  return call<ExecutionList>(`/executions?${params.toString()}`);
-}
-
 export const startRun = (scenarioIds: string[] | null, allowJudge: boolean) =>
   call<RunDetail>("/runs", {
     method: "POST",
@@ -96,3 +73,29 @@ export const startRun = (scenarioIds: string[] | null, allowJudge: boolean) =>
       allow_judge_assisted: allowJudge,
     }),
   });
+
+/** The most executions the console loads for history. The API returns newest first, so a
+ * longer history keeps the newest and the page says it was cut. */
+export const MAX_LOADED_EXECUTIONS = 500;
+
+export interface LoadedExecutions {
+  executions: ExecutionRecord[];
+  truncated: boolean;
+}
+
+/** Every stored execution, page by page, newest first. The history, the streaks and the
+ * regressions are derived from this one read, so the console never shows a count that a
+ * second fetch could contradict. */
+export async function fetchAllExecutions(): Promise<LoadedExecutions> {
+  const executions: ExecutionRecord[] = [];
+  let offset = 0;
+  while (executions.length < MAX_LOADED_EXECUTIONS) {
+    const page = await call<ExecutionList>(
+      `/executions?limit=100&offset=${offset}`,
+    );
+    executions.push(...page.executions);
+    if (page.next_offset === null) return { executions, truncated: false };
+    offset = page.next_offset;
+  }
+  return { executions, truncated: true };
+}

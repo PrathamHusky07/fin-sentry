@@ -6,10 +6,13 @@ import { createPortal } from "react-dom";
 import { AsyncState, type AsyncStatus } from "@/components/async-state";
 import { CopyButton } from "@/components/copy-button";
 import { ModeBadge, RedTeamOutcomeBadge } from "@/components/red-team-badges";
+import { InvestigateThis } from "@/components/red-team-investigate";
 import { useDialogBehavior, useIsClient } from "@/components/trace-drilldown";
 import { formatUtcSeconds, shortId } from "@/lib/format";
+import type { Summary } from "@/lib/incidents";
 import {
   CONTINUATION_LABEL,
+  canInvestigate,
   CONTINUATION_MEANING,
   EVALUATOR_LABEL,
   OUTCOME_MEANING,
@@ -275,10 +278,14 @@ export function EvidenceBody({
 export function RedTeamEvidence({
   executionId,
   executors,
+  sessions,
+  onStarted,
   onClose,
 }: {
   executionId: string;
   executors: Record<string, string>;
+  sessions: Summary[] | null;
+  onStarted: () => void;
   onClose: () => void;
 }) {
   const [record, setRecord] = useState<ExecutionRecord | null>(null);
@@ -356,6 +363,15 @@ export function RedTeamEvidence({
                 withMeaning
               />
               <ModeBadge mode={record.mode} />
+            </div>
+          ) : null}
+          {record && canInvestigate(record) ? (
+            <div className="mt-3">
+              <InvestigateThis
+                execution={record}
+                sessions={sessions}
+                onStarted={onStarted}
+              />
             </div>
           ) : null}
         </header>

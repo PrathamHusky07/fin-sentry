@@ -450,3 +450,426 @@ export function groupByCategory(
       .sort((a, b) => a.id.localeCompare(b.id)),
   })).filter((g) => g.scenarios.length > 0);
 }
+
+// ---------------------------------------------------------------------------
+// The defense lanes: where in a request's path each scenario's target layer sits.
+// ---------------------------------------------------------------------------
+
+export type Stage = "input" | "retrieval" | "output";
+
+export const STAGE_LABEL: Record<Stage, string> = {
+  input: "Input rails",
+  retrieval: "Retrieval",
+  output: "Output rails",
+};
+
+/** The target layers in the order a request meets them. A layer the registry adds that is
+ * not listed here is shown after these, under its own name, with no stage. */
+export const LAYER_ORDER: readonly string[] = [
+  "prompt-guard-2",
+  "llama-guard-3",
+  "pii-redaction",
+  "retrieval-rail",
+  "schema-enforcement",
+  "regulated-phrases",
+  "faithfulness",
+];
+
+const LAYER_STAGE: Record<string, Stage> = {
+  "prompt-guard-2": "input",
+  "llama-guard-3": "input",
+  "pii-redaction": "input",
+  "retrieval-rail": "retrieval",
+  "schema-enforcement": "output",
+  "regulated-phrases": "output",
+  faithfulness: "output",
+};
+
+export function stageOf(layer: string): Stage | null {
+  return LAYER_STAGE[layer] ?? null;
+}
+
+export interface Lane {
+  layer: string;
+  stage: Stage | null;
+  scenarios: ScenarioView[];
+}
+
+/** DERIVED from the registry's target_layer. Lanes follow the path of a request, scenarios
+ * inside a lane follow their id, and a lane with no scenario is omitted. */
+export function groupByLayer(scenarios: ScenarioView[]): Lane[] {
+  const layers = [
+    ...LAYER_ORDER,
+    ...[...new Set(scenarios.map((s) => s.target_layer))]
+      .filter((l) => !LAYER_ORDER.includes(l))
+      .sort(),
+  ];
+  return layers
+    .map((layer) => ({
+      layer,
+      stage: stageOf(layer),
+      scenarios: scenarios
+        .filter((s) => s.target_layer === layer)
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    }))
+    .filter((lane) => lane.scenarios.length > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Explorer filters. Every field is one the registry or the latest stored result carries.
+// ---------------------------------------------------------------------------
+
+export interface ExplorerFilters {
+  result: Outcome | "not_run" | "";
+  severity: Severity | "";
+  mode: Mode | "";
+  category: Category | "";
+}
+
+export const NO_EXPLORER_FILTERS: ExplorerFilters = {
+  result: "",
+  severity: "",
+  mode: "",
+  category: "",
+};
+
+export function hasExplorerFilters(f: ExplorerFilters): boolean {
+  return Boolean(f.result || f.severity || f.mode || f.category);
+}
+
+export function filterScenarios(
+  scenarios: ScenarioView[],
+  f: ExplorerFilters,
+): ScenarioView[] {
+  return scenarios.filter((s) => {
+    if (f.severity && s.severity !== f.severity) return false;
+    if (f.mode && s.mode !== f.mode) return false;
+    if (f.category && s.category !== f.category) return false;
+    if (f.result) {
+      const last = s.last_execution?.outcome ?? null;
+      if (f.result === "not_run" ? last !== null : last !== f.result) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// History. Executions of one scenario, oldest first, collapsed into runs of the same result.
+// ---------------------------------------------------------------------------
+
+function startedAt(e: ExecutionRecord): number {
+  return Date.parse(e.started_at ?? e.finished_at ?? "") || 0;
+}
+
+/** Oldest first. Executions without a start time (queued) sort last, in seq order. */
+export function oldestFirst(executions: ExecutionRecord[]): ExecutionRecord[] {
+  return [...executions].sort(
+    (a, b) =>
+      (a.started_at === null ? Infinity : startedAt(a)) -
+        (b.started_at === null ? Infinity : startedAt(b)) || a.seq - b.seq,
+  );
+}
+
+export function byScenario(
+  executions: ExecutionRecord[],
+): Map<string, ExecutionRecord[]> {
+  const map = new Map<string, ExecutionRecord[]>();
+  for (const e of oldestFirst(executions)) {
+    map.set(e.scenario_id, [...(map.get(e.scenario_id) ?? []), e]);
+  }
+  return map;
+}
+
+/** One result as the history tells it. Two executions are the same result when the scenario
+ * version, the outcome, the expectation and the safety-bound marker all agree. */
+export function resultKey(e: ExecutionRecord): string {
+  return [
+    e.scenario_version,
+    e.outcome ?? e.state,
+    e.expectation ?? "",
+    isSafetyBoundSkip(e) ? "skip" : "",
+  ].join("|");
+}
+
+export interface Streak {
+  key: string;
+  executions: ExecutionRecord[];
+  first: ExecutionRecord;
+  last: ExecutionRecord;
+}
+
+/** DERIVED. Consecutive executions with the same result collapse into one streak, so
+ * fourteen identical re-runs read as one line with a count and the dates they span. The
+ * individual executions stay on the streak and are never dropped. */
+export function streaks(oldest: ExecutionRecord[]): Streak[] {
+  const out: Streak[] = [];
+  for (const e of oldest) {
+    const tail = out[out.length - 1];
+    if (tail && tail.key === resultKey(e)) {
+      tail.executions.push(e);
+      tail.last = e;
+    } else {
+      out.push({ key: resultKey(e), executions: [e], first: e, last: e });
+    }
+  }
+  return out;
+}
+
+export type Change =
+  | "regression"
+  | "lost_result"
+  | "recovery"
+  | "expectation_lost"
+  | "expectation_regained"
+  | "new_version";
+
+export const CHANGE_LABEL: Record<Change, string> = {
+  regression: "Caught before, missed now",
+  lost_result: "Caught before, no result now",
+  recovery: "Missed before, caught now",
+  expectation_lost: "Matched before, differs now",
+  expectation_regained: "Differed before, matches now",
+  new_version: "New scenario version",
+};
+
+/** DERIVED. What changed between two consecutive finished executions of one scenario, or null
+ * when nothing a reader should be told about did. A regression is the signal the incident
+ * agent's red_team_miss trigger looks for: a defense that held and stopped holding. An outcome
+ * change outranks a version change, and a version change with the same result is reported
+ * because the later result is not a repeat of the earlier one. */
+export function changeBetween(
+  prev: ExecutionRecord,
+  next: ExecutionRecord,
+): Change | null {
+  if (prev.outcome === null || next.outcome === null) return null;
+  if (prev.outcome === "caught" && next.outcome === "missed") {
+    return "regression";
+  }
+  if (prev.outcome === "caught" && next.outcome !== "caught") {
+    return "lost_result";
+  }
+  if (prev.outcome === "missed" && next.outcome === "caught") {
+    return "recovery";
+  }
+  if (prev.expectation === "met" && next.expectation === "not_met") {
+    return "expectation_lost";
+  }
+  if (prev.expectation === "not_met" && next.expectation === "met") {
+    return "expectation_regained";
+  }
+  if (prev.scenario_version !== next.scenario_version) return "new_version";
+  return null;
+}
+
+/** DERIVED. The change that led into each streak, keyed by the streak's index. The first
+ * streak has none. */
+export function streakChanges(list: Streak[]): (Change | null)[] {
+  return list.map((s, i) =>
+    i === 0 ? null : changeBetween(list[i - 1].last, s.first),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// What needs attention.
+// ---------------------------------------------------------------------------
+
+export type AttentionKind =
+  | "regression"
+  | "missed"
+  | "known_gap"
+  | "differs"
+  | "lost_result"
+  | "unavailable"
+  | "failed"
+  | "skipped"
+  | "inconclusive";
+
+export interface AttentionItem {
+  scenario: ScenarioView;
+  kind: AttentionKind;
+  execution: ExecutionRecord;
+  /** The streak change that led to this result, when the history shows one. */
+  change: Change | null;
+}
+
+const ATTENTION_RANK: Record<AttentionKind, number> = {
+  regression: 0,
+  missed: 1,
+  differs: 2,
+  lost_result: 3,
+  known_gap: 4,
+  unavailable: 5,
+  failed: 6,
+  inconclusive: 7,
+  skipped: 8,
+};
+
+export const ATTENTION_LABEL: Record<AttentionKind, string> = {
+  regression: "Caught before, missed now",
+  missed: "Missed, and expected to be caught",
+  known_gap: "Known gap, still missed",
+  differs: "Caught, but not as expected",
+  lost_result: "Caught before, no result now",
+  unavailable: "Evaluator could not run",
+  failed: "Execution failed",
+  skipped: "Not run (safety bound)",
+  inconclusive: "Inconclusive",
+};
+
+/** DERIVED from the latest finished execution of each scenario and its history. A scenario
+ * that was caught as expected needs no attention and is omitted. A scenario never run is not
+ * an attention item, because no result exists to read. Ranked: a defense that stopped holding,
+ * then an unexpected miss, then a result that differs, then everything that says nothing about
+ * a defense. Within a rank, higher severity first, then id. */
+export function attentionItems(
+  scenarios: ScenarioView[],
+  history: Map<string, ExecutionRecord[]>,
+): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  for (const scenario of scenarios) {
+    const last = scenario.last_execution;
+    if (last === null || last.outcome === null) continue;
+    const list = streaks(history.get(scenario.id) ?? []);
+    const changes = streakChanges(list);
+    const index = list.findIndex((s) =>
+      s.executions.some((e) => e.execution_id === last.execution_id),
+    );
+    const change = index >= 0 ? changes[index] : null;
+    let kind: AttentionKind | null = null;
+    if (last.outcome === "missed") {
+      if (change === "regression") kind = "regression";
+      else if (last.expected.known_gap && last.expectation === "met") {
+        kind = "known_gap";
+      } else kind = "missed";
+    } else if (last.outcome === "caught") {
+      if (last.expectation === "not_met") kind = "differs";
+    } else if (last.outcome === "evaluator_unavailable") kind = "unavailable";
+    else if (last.outcome === "execution_failed") {
+      kind = isSafetyBoundSkip(last) ? "skipped" : "failed";
+    } else kind = "inconclusive";
+    if (kind === null) continue;
+    items.push({
+      scenario,
+      kind: change === "lost_result" ? "lost_result" : kind,
+      execution: last,
+      change,
+    });
+  }
+  return items.sort(
+    (a, b) =>
+      ATTENTION_RANK[a.kind] - ATTENTION_RANK[b.kind] ||
+      SEVERITY_ORDER[a.scenario.severity] -
+        SEVERITY_ORDER[b.scenario.severity] ||
+      a.scenario.id.localeCompare(b.scenario.id),
+  );
+}
+
+/** Whether an attention item is one a person can open an incident investigation on. The
+ * trigger is red_team_miss, so it is offered for a miss and for a caught result that differs
+ * from what was expected, and for nothing that says nothing about a defense. */
+export function canInvestigate(e: ExecutionRecord): boolean {
+  return (
+    e.state === "finished" &&
+    (e.outcome === "missed" || e.expectation === "not_met")
+  );
+}
+
+/** DERIVED. Executions counted by outcome, over everything loaded. */
+export function countExecutions(
+  executions: ExecutionRecord[],
+): Record<Outcome, number> {
+  const counts: Record<Outcome, number> = {
+    caught: 0,
+    missed: 0,
+    evaluator_unavailable: 0,
+    execution_failed: 0,
+    inconclusive: 0,
+  };
+  for (const e of executions) if (e.outcome !== null) counts[e.outcome] += 1;
+  return counts;
+}
+
+/** The sentence a reader gets first. It says what the stored results show and never infers
+ * that nothing is wrong from results that do not exist. */
+export function findingHeadline(
+  summary: LatestSummary,
+  items: AttentionItem[],
+): string {
+  if (summary.scenarioCount === 0) return "The scenario registry is empty.";
+  const run = summary.scenarioCount - summary.notRun;
+  if (run === 0) {
+    return "No scenario has been run, so there are no results to read yet.";
+  }
+  const count = (n: number, one: string, many: string) =>
+    `${n} ${n === 1 ? one : many}`;
+  const of = (kind: AttentionKind) =>
+    items.filter((i) => i.kind === kind).length;
+  const regressions = of("regression") + of("lost_result");
+  const unexpected = of("missed");
+  const differs = of("differs");
+  const gaps = of("known_gap");
+  const silent =
+    of("unavailable") + of("failed") + of("skipped") + of("inconclusive");
+  const parts: string[] = [];
+  if (regressions > 0) {
+    parts.push(
+      `${count(regressions, "scenario was", "scenarios were")} caught before and ${regressions === 1 ? "is" : "are"} not now.`,
+    );
+  }
+  if (unexpected > 0) {
+    parts.push(
+      `${count(unexpected, "scenario was", "scenarios were")} missed and expected to be caught.`,
+    );
+  }
+  if (differs > 0) {
+    parts.push(
+      `${count(differs, "result was", "results were")} caught by a different layer than expected.`,
+    );
+  }
+  if (parts.length === 0 && gaps > 0) {
+    parts.push(
+      `${count(gaps, "known gap remains", "known gaps remain")} open and still missed, as the scenario expected.`,
+    );
+  } else if (gaps > 0) {
+    parts.push(
+      `${count(gaps, "known gap is", "known gaps are")} still missed, as expected.`,
+    );
+  }
+  if (silent > 0) {
+    parts.push(
+      `${count(silent, "result says", "results say")} nothing about a defense.`,
+    );
+  }
+  const held = items.length === 0 ? run : summary.counts.caught - differs;
+  if (parts.length === 0) {
+    return `${run === 1 ? "The one scenario" : `All ${run} scenarios`} with a result held as expected.${summary.notRun > 0 ? ` ${summary.notRun} have not been run.` : ""}`;
+  }
+  parts.push(
+    `${count(Math.max(held, 0), "other scenario held", "other scenarios held")} as expected${summary.notRun > 0 ? `, and ${summary.notRun} ${summary.notRun === 1 ? "has" : "have"} not been run` : ""}.`,
+  );
+  return parts.join(" ");
+}
+
+/** The result a streak stands for, in lowercase words. */
+export function streakWord(s: Streak): string {
+  if (isSafetyBoundSkip(s.last)) return "not run (safety bound)";
+  return s.last.outcome
+    ? OUTCOME_LABEL[s.last.outcome].toLowerCase()
+    : "pending";
+}
+
+/** DERIVED. One line for a scenario's history: how many executions and whether the result
+ * ever changed. */
+export function historySummary(list: Streak[]): string {
+  const total = list.reduce((n, s) => n + s.executions.length, 0);
+  if (total === 0) return "Not run";
+  const word = `${total} ${total === 1 ? "execution" : "executions"}`;
+  if (list.length === 1) {
+    return total === 1
+      ? `1 execution, ${streakWord(list[0])}`
+      : `${word}, all ${streakWord(list[0])}`;
+  }
+  return `${word}, ${list.length} different results`;
+}
