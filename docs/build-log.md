@@ -1,5 +1,71 @@
 # Build Log
 
+## 2026-10-22: Day 12 Session 4, run password rotated, start routes gated, recovery rehearsed, UI completed (steps 0 to 5)
+
+Model: Sonnet 5.5, no escalation. Session start: `main`, HEAD and `origin/main` both `8febcdb`, working tree clean (the reported
+whitespace edit in `telemetry.py` was not present, so there was nothing to fold in). The five Phase 1 and Phase 2 commits
+(`75cbb00`, `16eaa99`, `209372a`, `bdaea71`, `8febcdb`) were confirmed on `origin/main`. Steps 0 to 5 made no model call and cost $0.00.
+No frozen contract, MCP tool, rail, held-out case, planner behavior, evidence boundary or archive design changed.
+
+### Run password rotated
+`RED_TEAM_RUN_PASSWORD` in the local `.env` was replaced with a new random value and the gateway on :8000 was restarted. Against the
+restarted gateway the old value answered 401 and the new one passed the gate. The new value was tested with `{"scenario_ids": []}`,
+which the run validator refuses with 422 after the gate, so no run could start (27 run rows before and after). The value is not in
+this file, the repository, a URL or a report. The deployed environment is configured separately from the local `.env`. No Cloud Run
+service or Vercel project exists for this project (the Cloud Run API is not enabled), so nothing deployed uses the variable yet.
+The deploy must set it on the gateway itself, or every run and every investigation start answers 503.
+
+### Start routes gated by risk tier
+Inventory of routes that start work: `POST /ops/redteam/runs`, `POST /ops/investigations`, `POST /v1/rag/query` and
+`POST /v1/chat/completions`. The Next proxy forwards only `/ops/*`, so the two `/v1` routes are not reachable through the web app.
+Reads (every GET, trace and investigation reads included) stay open. The two start routes share one gate and one failure counter
+(`finsentry/redteam/run_gate.py`, now with `refusal()`): `POST /ops/investigations` checks `X-Run-Password` before it touches the
+store, the planner or the tool server, so a refusal creates no session, no event and no model call. One count guards both routes, so
+a second route does not double the guesses. The Agent forms (`StartIncident`, `InvestigateThis`) have a run password field.
+The planner's cost reservation and the one-active-session rule are unchanged. New pytest: `tests/investigations/test_start_gate.py`
+(missing, wrong, empty, valid, unset, lockout, shared count, reads open, rejected writes nothing and builds no planner).
+**Legacy :8088.** The image behind nginx was built on 2026-10-07 and had no `run_gate.py` and no investigator, so
+`POST /ops/redteam/runs` answered 422 to `{"scenario_ids": []}`, which is the validator with no gate in front of it. The image was
+rebuilt and the three replicas recreated. Their environment holds no run password, so every start now answers 503 (checked with no
+password and with a wrong one, run rows unchanged at 27). nginx now binds `127.0.0.1:8088`, so the LAN address no longer reaches it.
+`POST /v1/rag/query` through :8088 is still open on purpose: it is the gateway's product route, and the Day 11 API-key work covers it.
+**Known limits.** The failure counter is per process and resets on restart, so it is not a global guarantee. Passing the local checks
+does not protect a deployment: the deploy needs the variable and its own review of `/v1/*`.
+
+### Recovery rehearsal (`python -m finsentry.archive recover`)
+Extends the archive code and builds no second system. It creates a disposable Postgres database and a disposable RisingWave database
+named `finsentry_recovery_<token>` and three replay topics `recovery-<token>-<topic>`, restores the committed archive into them,
+checks, and drops everything, including on failure. It never connects to the development database and never writes to a live
+topic. 17 checks pass: the restore inserts 325 / 425 / 186 stream records and 27 / 43 / 7 / 39 table rows, every restored row is
+byte-identical to its archived line, both foreign keys exist with no orphan, every flash and frontier verdict has its request, a
+second restore inserts 0, an edited row survives a restore, `init.sql` rebuilds 8 views, each source holds every record, the request
+view counts 325, the dashboard's trace routes return an archived delivered answer with its citation and an archived schema-enforcement
+block, and the Red Team and Agent routers return 27 runs, 43 executions (43 with an evidence payload), 7 investigations and 39
+events with no planner or tool session opened. Replay topics have names no consumer subscribes to, so no Gemini call is made. The pytest
+version also asserts the development row counts and the three live topic end offsets are the same before and after, and that no
+recovery database remains. The runbook (migrate, verify, materialize, init views, republish with consumers stopped, reconcile, start
+services) is in `docs/demo-archive/README.md`. A fresh Postgres needed `TEMPLATE template0` because the server's template1 has a
+collation version mismatch.
+
+### UI
+Hero: "Make every AI answer show its work." and four sentences, with the metadata aligned. Generate card: new `/generation` page
+from real data: the four limits (20 s call budget, 15 s attempt cap, 5-failure and 30 s breaker, 60 s request deadline) as code
+constants with a Vitest test that reads `gateway/main.py` and fails if any drifts, the replies the output schema rail rejected
+counted from the stored requests (325 read: 12 malformed JSON, 4 schema violation), a stored delivered answer, and an explicit "not
+stored" note for the model call's own duration. Only Retrieve opens the architecture diagram now. Product evidence: the capture is
+labeled historical and the frame's action opens the stored re-ask trace. Live Operations: a stale newest bucket is shown as "Last
+recorded activity" with its real date, time and age and dated axes, never as the last hour. Agent map: the Incident circle is larger
+and a Playwright test measures the label inside it (it fails on the old geometry). Reading a case file is rebuilt as a two-band
+interactive hierarchy (solid: returned, ran and matched nothing, best-supported hypothesis; dashed: empty and not verified, could not
+run, rejected, abstained), with the border rule pinned by a unit test and a computed-style test. "How it works" and "Reading a
+case" were kept separate: one is the mechanism and the other is how to read the result, and they do not overlap.
+
+### Verification
+pytest 1505 passed, 4 skipped, 0 failed in 183 s (the documented AMZN failure did not occur). ruff, ruff format and mypy (146
+files) clean on changed Python. tsc, eslint, prettier and Vitest (177) clean, `npm run build` passes with the dev server stopped and
+restarted after. Playwright, one worker: 254 passed, 3 skipped (the historical-disagreement specs), then the two specs that asserted
+the old Agent copy were updated and pass.
+
 ## 2026-10-21 (night): Day 12 Session 3, run password, map hover, hero (Phase 1)
 
 Model: Sonnet 5.5, no escalation. Session start: `main`, HEAD and `origin/main` both `851d20c`. Phase 1 made no model call and cost

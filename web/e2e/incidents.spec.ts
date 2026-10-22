@@ -297,7 +297,7 @@ test.describe("Incident investigations", () => {
         .getByRole("link", { name: "Agent", exact: true }),
     ).toHaveAttribute("aria-current", "page");
     await expect(
-      page.getByText("every claim cites the records behind it"),
+      page.getByText("cites the records behind every claim"),
     ).toBeVisible();
 
     // At this width the map is a drawing whose six stages are buttons.
@@ -349,10 +349,20 @@ test.describe("Incident investigations", () => {
   }) => {
     await page.goto("/agent");
     const guide = page.locator("#guide");
+    // The labels of all seven states are on screen. Each meaning opens when its state is kept.
     await expect(guide).toContainText("Ran, matched nothing");
     await expect(guide).toContainText("Empty, not verified");
     await expect(guide).toContainText("Could not run");
-    await expect(guide).toContainText("not a proven cause");
+    const states: [string, string][] = [
+      ["unverified_empty", "never read as absence"],
+      ["unavailable", "It is not an empty result"],
+      ["hypothesis", "not a proven cause"],
+      ["abstained", "complete result"],
+    ];
+    for (const [id, meaning] of states) {
+      await guide.locator(`[data-reading="${id}"]`).click();
+      await expect(guide.locator("#reading-detail")).toContainText(meaning);
+    }
   });
 
   test("a live red team trigger links back to its execution and a fixture one does not", async ({
