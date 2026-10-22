@@ -118,8 +118,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* No fades, growth or reveals for people who ask for none. */
+/* No fades, growth or reveals for people who ask for none. The travelling
+   dash on a selected path is motion alone, so it is not drawn at all. */
 @media (prefers-reduced-motion: reduce) {
+  .cn-flow {
+    display: none;
+  }
+
   *,
   ::before,
   ::after {
@@ -640,6 +645,39 @@ svg :focus-visible {
       animation: fade-in 1200ms var(--ease-soft) backwards;
       animation-delay: 1500ms;
     }
+
+    /* The hero text enters as one sequence: each line, the description and the
+       buttons, a little after the one before. */
+    .hero-in {
+      animation: rise 800ms var(--ease) backwards;
+      animation-delay: calc(60ms + var(--i, 0) * 110ms);
+    }
+
+    /* Two soft fields drift behind the hero. They move by transform only, so
+       the compositor does the work and the text never repaints. */
+    .hero-field-a {
+      animation: field-drift-a 28s var(--ease-soft) infinite alternate;
+      will-change: transform;
+    }
+
+    .hero-field-b {
+      animation: field-drift-b 34s var(--ease-soft) infinite alternate;
+      will-change: transform;
+    }
+
+    /* The core glow breathes once the intro has settled. */
+    .cn-breathe {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: cn-breathe 7s var(--ease-soft) 2.4s infinite alternate;
+    }
+
+    /* Energy along a selected path only. A resting diagram does not move. */
+    .cn-flow {
+      stroke-dasharray: 0.06 0.94;
+      pointer-events: none;
+      animation: cn-flow 2200ms linear infinite;
+    }
   }
 }
 
@@ -683,6 +721,34 @@ svg :focus-visible {
   }
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+@keyframes field-drift-a {
+  to {
+    transform: translate3d(9rem, 2.5rem, 0) scale(1.12);
+  }
+}
+
+@keyframes field-drift-b {
+  to {
+    transform: translate3d(-7rem, -3rem, 0) scale(1.1);
+  }
+}
+
+@keyframes cn-breathe {
+  to {
+    opacity: 0.55;
+    transform: scale(1.07);
+  }
+}
+
+@keyframes cn-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -1;
   }
 }
 
@@ -773,6 +839,45 @@ svg :focus-visible {
     ellipse 64% 70% at 50% 42%,
     #000 12%,
     transparent 76%
+  );
+}
+
+/* The drifting fields under the hero text. Placed and sized here, moved only
+   inside the no-preference query, so reduced motion keeps them in place. */
+.hero-field {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hero-field > span {
+  position: absolute;
+  border-radius: 9999px;
+}
+
+.hero-field-a {
+  top: 14%;
+  left: -10rem;
+  width: 48rem;
+  height: 30rem;
+  background: radial-gradient(
+    closest-side,
+    rgb(106 168 255 / 0.11),
+    transparent
+  );
+}
+
+.hero-field-b {
+  top: 42%;
+  right: -8rem;
+  width: 42rem;
+  height: 28rem;
+  background: radial-gradient(
+    closest-side,
+    rgb(92 212 230 / 0.09),
+    transparent
   );
 }
 

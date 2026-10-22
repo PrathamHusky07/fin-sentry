@@ -19,7 +19,10 @@ test.describe("Landing page", () => {
     await page.goto("/");
 
     await expect(
-      page.getByRole("heading", { name: /Make every AI answer/, level: 1 }),
+      page.getByRole("heading", {
+        name: "AI answers are easy. Defensible answers are engineered.",
+        level: 1,
+      }),
     ).toBeVisible();
     await expect(
       page.getByRole("group", { name: /Fin-Sentry system constellation/ }),
@@ -66,16 +69,23 @@ test.describe("Landing page", () => {
     page,
   }) => {
     await page.goto("/");
-    const intro = page.getByText(/sits in front of an LLM endpoint/);
-    await expect(intro).toContainText("two-tier judge");
+    const intro = page.getByText(
+      /Fin-Sentry is an AI reliability and evaluation platform/,
+    );
+    await expect(intro).toContainText("second-opinion judge");
+    await expect(intro).toContainText("calibrated independently");
     await expect(intro).toContainText("reference workload");
-    // The hero leads with the reliability, evaluation and agent story, makes no claim that
-    // every execution is preserved, and does not call financial RAG the only workload.
-    await expect(intro).toContainText("incident response agent");
-    await expect(intro).toContainText("reports only what they support");
-    await expect(intro).toContainText("remain inspectable");
+    // The hero leads with reliability, evaluation and incident reconstruction that can abstain,
+    // makes no claim that every execution is preserved, and does not call financial RAG the
+    // only workload.
+    await expect(intro).toContainText("incident agent");
+    await expect(intro).toContainText(
+      "abstains when they cannot support an explanation",
+    );
+    await expect(intro).toContainText("can be inspected");
     await expect(intro).not.toContainText("only workload");
     await expect(intro).not.toContainText(/every execution/i);
+    await expect(intro).not.toContainText("guarantee");
     await expect(intro).not.toContainText("—");
     // Four sentences at most.
     const sentences = ((await intro.innerText()).match(/\.(\s|$)/g) ?? [])
@@ -85,8 +95,12 @@ test.describe("Landing page", () => {
       "content",
       /evidence-bounded agent/,
     );
+    // The rejected framing is gone from the page and from the headline.
     await expect(page.locator("body")).not.toContainText(
-      /sits in front of a RAG endpoint/,
+      /sits in front of an? (LLM|RAG) endpoint/,
+    );
+    await expect(page.locator("body")).not.toContainText(
+      "Make every AI answer show its work",
     );
     const group = page.getByRole("group", {
       name: /Fin-Sentry system constellation/,
@@ -94,6 +108,55 @@ test.describe("Landing page", () => {
     await expect(group).toContainText("AI reliability and evaluation");
     await expect(group).not.toContainText("financial RAG");
     await expect(page).toHaveTitle("Fin-Sentry");
+  });
+
+  test("the first fold moves when motion is allowed and holds still when it is not", async ({
+    page,
+  }) => {
+    const fold = async () =>
+      page.evaluate(() => {
+        const name = (selector: string): string => {
+          const el = document.querySelector(selector);
+          return el ? getComputedStyle(el).animationName : "missing";
+        };
+        return {
+          line: name(".hero-in"),
+          fieldA: name(".hero-field-a"),
+          fieldB: name(".hero-field-b"),
+          breathe: name(".cn-breathe"),
+        };
+      });
+    const judge = (p: typeof page) =>
+      p
+        .getByRole("group", { name: /Fin-Sentry system constellation/ })
+        .getByRole("button", { name: /^Judge\./ });
+
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/");
+    const moving = await fold();
+    expect(moving.line).toBe("rise");
+    expect(moving.fieldA).toBe("field-drift-a");
+    expect(moving.fieldB).toBe("field-drift-b");
+    expect(moving.breathe).toBe("cn-breathe");
+    // Energy runs along the selected path only, and stops when the pointer leaves.
+    await expect(page.locator(".cn-flow")).toHaveCount(0);
+    await judge(page).hover();
+    expect(await page.locator(".cn-flow").count()).toBeGreaterThan(0);
+    await expect(page.locator(".cn-flow").first()).toBeVisible();
+    await page.mouse.move(5, 5);
+    await expect(page.locator(".cn-flow")).toHaveCount(0);
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    const still = await fold();
+    expect(still.fieldA).toBe("none");
+    expect(still.fieldB).toBe("none");
+    expect(still.breathe).toBe("none");
+    await judge(page).hover();
+    // The selection still lights its lines, but nothing travels along them.
+    for (const flow of await page.locator(".cn-flow").all()) {
+      await expect(flow).toBeHidden();
+    }
   });
 
   test("the decision navigator lists six decisions and selecting one changes the panel", async ({

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { BrowserFrame } from "@/components/browser-frame";
 import { DecisionNavigator } from "@/components/decision-navigator";
@@ -20,27 +21,44 @@ const SHOT = {
   investigations: { width: 1440, height: 2200 },
 } as const;
 
+// Position of an element in the hero entrance; globals.css turns it into a delay.
+function step(i: number): CSSProperties {
+  return { "--i": i } as CSSProperties;
+}
+
 export default function LandingPage() {
   return (
     <div className="flex flex-col">
       <section className="ctx ctx-hero">
+        <div aria-hidden="true" className="hero-field">
+          <span className="hero-field-a" />
+          <span className="hero-field-b" />
+        </div>
         <div className="mx-auto w-full max-w-7xl px-4 pt-10 pb-16 sm:px-8 sm:pt-12 sm:pb-20">
-          <h1 className="text-text-primary rise max-w-4xl text-4xl leading-[1.06] font-semibold tracking-tight sm:text-6xl">
-            <span className="block">Make every AI answer</span>
-            <span className="block">show its work.</span>
+          <h1 className="text-text-primary max-w-6xl text-4xl leading-[1.06] font-semibold tracking-tight sm:text-6xl">
+            <span className="hero-in block" style={step(0)}>
+              AI answers are easy.
+            </span>
+            <span className="hero-in block" style={step(1)}>
+              Defensible answers are engineered.
+            </span>
           </h1>
-          <div className="rise rise-2 mt-6 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-            <p className="text-text-secondary max-w-2xl text-lg leading-relaxed text-pretty">
-              Fin-Sentry sits in front of an LLM endpoint and guards the
-              question, the retrieved text and the answer. Delivered answers are
-              scored by a two-tier judge on a separate plane, and the second
-              tier is calibrated against labeled data. When something fails, an
-              incident response agent reconstructs it from read-only records and
-              reports only what they support. The reference workload is
-              financial RAG over SEC filings, and recorded Red Team and agent
-              runs remain inspectable.
+          <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+            <p
+              className="text-text-secondary hero-in max-w-2xl text-lg leading-relaxed text-pretty"
+              style={step(2)}
+            >
+              Fin-Sentry is an AI reliability and evaluation platform that
+              guards the question, the retrieved text and the answer. Delivered
+              answers are scored by a first judge, and a second-opinion judge,
+              calibrated independently against labeled data, reviews a sample of
+              them. When an answer fails, an incident agent reconstructs what
+              happened from read-only records and abstains when they cannot
+              support an explanation. The reference workload is financial RAG
+              over SEC filings, and the recorded Red Team and agent runs can be
+              inspected.
             </p>
-            <div className="flex flex-wrap gap-3">
+            <div className="hero-in flex flex-wrap gap-3" style={step(3)}>
               <Link
                 href="/overview"
                 className="bg-text-primary text-background hover:bg-text-primary/90 inline-flex min-h-12 items-center rounded-lg px-6 text-base font-medium shadow-[0_10px_30px_-12px_var(--glow-accent)] transition-[background-color,box-shadow] duration-[var(--dur-base)] hover:shadow-[0_14px_36px_-12px_var(--glow-accent)]"

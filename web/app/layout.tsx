@@ -22,7 +22,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "Fin-Sentry",
   description:
-    "Fin-Sentry guards an LLM endpoint, scores its answers with a two-tier judge and investigates failures with an evidence-bounded agent. The reference workload is financial RAG over SEC filings, and recorded Red Team and agent runs remain inspectable.",
+    "Fin-Sentry guards the question, the retrieved text and the answer, scores delivered answers with a two-tier judge and reconstructs failures with an evidence-bounded agent that abstains when the records fall short. The reference workload is financial RAG over SEC filings, and recorded Red Team and agent runs can be inspected.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -69,6 +69,25 @@ function order(i: number): CSSProperties {
   return { "--i": i } as CSSProperties;
 }
 
+/**
+ * A short bright dash that travels along a line the reader has selected. It is
+ * drawn only for lit lines and only when the visitor allows motion, so the
+ * resting diagram stays still and the selection reads as energy on its path.
+ */
+function FlowPulse({ d }: { d: string }) {
+  return (
+    <path
+      d={d}
+      fill="none"
+      stroke="var(--text-primary)"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      pathLength={1}
+      className="cn-flow"
+    />
+  );
+}
+
 interface Handlers {
   onHover: (id: ConceptId | null) => void;
   onFocus: (id: ConceptId | null) => void;
@@ -154,40 +173,61 @@ function Constellation({
             CONCEPTS.findIndex((c) => c.id === b),
         );
         const adjacent = gap === 1 || gap === CONCEPTS.length - 1;
+        const d = linkPath(
+          layout,
+          placed[a],
+          placed[b],
+          adjacent ? 0.34 : 0.22,
+        );
+        const state = linkState(a, b, active);
         return (
-          <path
-            key={`${a}-${b}`}
-            d={linkPath(layout, placed[a], placed[b], adjacent ? 0.34 : 0.22)}
-            fill="none"
-            stroke={TONE_COLOR[CONCEPT_BY_ID[a].tone]}
-            strokeWidth={linkState(a, b, active) === "lit" ? 2 : 1.25}
-            strokeLinecap="round"
-            pathLength={1}
-            data-state={linkState(a, b, active)}
-            data-kind={adjacent ? "edge" : "chord"}
-            className="cn-link cn-path"
-            style={order(i + CONCEPTS.length)}
-          />
+          <g key={`${a}-${b}`}>
+            <path
+              d={d}
+              fill="none"
+              stroke={TONE_COLOR[CONCEPT_BY_ID[a].tone]}
+              strokeWidth={state === "lit" ? 2 : 1.25}
+              strokeLinecap="round"
+              pathLength={1}
+              data-state={state}
+              data-kind={adjacent ? "edge" : "chord"}
+              className="cn-link cn-path"
+              style={order(i + CONCEPTS.length)}
+            />
+            {state === "lit" ? <FlowPulse d={d} /> : null}
+          </g>
         );
       })}
 
-      {CONCEPTS.map((concept, i) => (
-        <path
-          key={`spoke-${concept.id}`}
-          d={spokePath(layout, placed[concept.id])}
-          fill="none"
-          stroke={TONE_COLOR[concept.tone]}
-          strokeWidth={spokeState(concept.id, active) === "lit" ? 2.25 : 1.25}
-          strokeLinecap="round"
-          pathLength={1}
-          data-state={spokeState(concept.id, active)}
-          className="cn-link cn-path"
-          style={order(i)}
-        />
-      ))}
+      {CONCEPTS.map((concept, i) => {
+        const d = spokePath(layout, placed[concept.id]);
+        const state = spokeState(concept.id, active);
+        return (
+          <g key={`spoke-${concept.id}`}>
+            <path
+              d={d}
+              fill="none"
+              stroke={TONE_COLOR[concept.tone]}
+              strokeWidth={state === "lit" ? 2.25 : 1.25}
+              strokeLinecap="round"
+              pathLength={1}
+              data-state={state}
+              className="cn-link cn-path"
+              style={order(i)}
+            />
+            {state === "lit" ? <FlowPulse d={d} /> : null}
+          </g>
+        );
+      })}
 
       <g className="cn-mark">
-        <circle cx={cx} cy={cy} r={core * 2.1} fill={`url(#${uid}-core)`} />
+        <circle
+          className="cn-breathe"
+          cx={cx}
+          cy={cy}
+          r={core * 2.1}
+          fill={`url(#${uid}-core)`}
+        />
         <circle
           cx={cx}
           cy={cy}
@@ -420,7 +460,8 @@ function Caption({ id }: { id: ConceptId | null }) {
  * never draws a flow. Pointing at, focusing or tapping a concept lifts it,
  * lights the lines to what it touches and lets the rest recede. Everything
  * it says is a claim from the system model; there are no counts and no
- * traffic. The reveal is one-shot CSS and is removed by reduced motion.
+ * traffic. The reveal is one-shot CSS, the core breathes slowly and a selected
+ * path carries a travelling dash. Reduced motion removes all of it.
  */
 export function HeroConstellation() {
   const [hovered, setHovered] = useState<ConceptId | null>(null);
