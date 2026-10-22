@@ -74,13 +74,22 @@ function linkPath(link: MapLink): { d: string; arrow: string | null } {
   };
 }
 
-function StagePanel({ stage }: { stage: Stage }) {
+function StagePanel({
+  stage,
+  previewing = false,
+}: {
+  stage: Stage;
+  /** True while the pointer or keyboard focus is on a stage that is not the selected one. */
+  previewing?: boolean;
+}) {
   const index = INDEX[stage.id];
   return (
     <div
       id="agent-step-detail"
       role="region"
-      aria-live="polite"
+      // A preview follows the pointer, so announcing each one would talk over the person.
+      // Focus already speaks the stage's own label, and a committed selection is announced.
+      aria-live={previewing ? "off" : "polite"}
       aria-label={`Stage ${index + 1}: ${stage.title}`}
       style={{ ["--tone" as string]: TONE[stage.actor] }}
       className="instrument border-line bg-background-elevated/70 swap-in grid gap-6 rounded-xl p-5 sm:p-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:gap-10"
@@ -96,6 +105,11 @@ function StagePanel({ stage }: { stage: Stage }) {
           >
             {ACTOR_LABEL[stage.actor]}
           </span>
+          {previewing ? (
+            <span className="text-text-tertiary text-sm">
+              Preview. Click or press Enter to keep this stage.
+            </span>
+          ) : null}
         </div>
         <h3 className="text-text-primary mt-2 text-2xl font-semibold tracking-tight">
           {stage.title}
@@ -150,12 +164,15 @@ function Legend() {
  * incident to each, the sequence along the arc and the one loop back to Plan. */
 function MapDrawing({
   selected,
+  preview,
   onSelect,
+  onPreview,
 }: {
   selected: StageId;
+  preview: StageId | null;
   onSelect: (id: StageId) => void;
+  onPreview: (id: StageId | null) => void;
 }) {
-  const [preview, setPreview] = useState<StageId | null>(null);
   const [keyboard, setKeyboard] = useState<StageId | null>(null);
   const refs = useRef(new Map<StageId, SVGGElement>());
   const active = preview ?? selected;
@@ -167,7 +184,33 @@ function MapDrawing({
       role="group"
       aria-label="Investigation map. How one investigation runs, from a trigger to a conclusion or an abstention. It shows the mechanism and is not a record of any one run."
       className="im h-auto w-full overflow-visible"
+      style={{ ["--im-tone" as string]: TONE[stageById(active).actor] }}
     >
+      <defs>
+        <linearGradient id="im-face" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style={{ stopColor: "var(--surface-high)" }} />
+          <stop offset="1" style={{ stopColor: "var(--surface)" }} />
+        </linearGradient>
+        <radialGradient id="im-wash">
+          <stop
+            offset="0"
+            style={{ stopColor: "var(--im-tone)", stopOpacity: 0.12 }}
+          />
+          <stop
+            offset="1"
+            style={{ stopColor: "var(--im-tone)", stopOpacity: 0 }}
+          />
+        </radialGradient>
+      </defs>
+      <ellipse
+        aria-hidden="true"
+        cx={MAP.width / 2}
+        cy={250}
+        rx={480}
+        ry={190}
+        fill="url(#im-wash)"
+        pointerEvents="none"
+      />
       {LINKS.map((link) => {
         const { d, arrow } = linkPath(link);
         const state = linkState(link, active);
@@ -256,6 +299,7 @@ function MapDrawing({
             className="cn-inner"
             data-state={state}
             data-keyboard={keyboard === stage.id}
+            style={{ ["--tone" as string]: tone }}
             tabIndex={0}
             role="button"
             aria-label={`${i + 1}. ${stage.title}. ${ACTOR_LABEL[stage.actor]}. ${stage.short}`}
@@ -263,20 +307,20 @@ function MapDrawing({
             aria-controls="agent-step-detail"
             onClick={() => onSelect(stage.id)}
             onPointerEnter={(e) => {
-              if (e.pointerType === "mouse") setPreview(stage.id);
+              if (e.pointerType === "mouse") onPreview(stage.id);
             }}
             onPointerLeave={(e) => {
-              if (e.pointerType === "mouse") setPreview(null);
+              if (e.pointerType === "mouse") onPreview(null);
             }}
             onFocus={(e) => {
               if (e.currentTarget.matches(":focus-visible")) {
                 setKeyboard(stage.id);
-                setPreview(stage.id);
+                onPreview(stage.id);
               }
             }}
             onBlur={() => {
               setKeyboard(null);
-              setPreview(null);
+              onPreview(null);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -313,12 +357,13 @@ function MapDrawing({
               strokeWidth={2}
             />
             <rect
+              className="im-body"
               x={x - w / 2}
               y={y - h / 2}
               width={w}
               height={h}
               rx={14}
-              fill="var(--surface)"
+              fill="url(#im-face)"
               stroke={tone}
               strokeOpacity={state === "rest" ? 0.55 : 0.95}
               strokeWidth={1.6}
@@ -428,15 +473,25 @@ function MapOutline({
  */
 export function InvestigationMap() {
   const [selected, setSelected] = useState<StageId>("trigger");
+  const [preview, setPreview] = useState<StageId | null>(null);
   const desktop = useIsDesktop();
-  const stage = stageById(selected);
+  // The description follows the drawing: a hovered or focused stage shows at once and the
+  // committed selection returns when the pointer or focus leaves. Narrow screens have no
+  // hover, so the selected stage alone decides there.
+  const shown = desktop && preview ? preview : selected;
+  const stage = stageById(shown);
 
   return (
     <div>
       {desktop ? (
         <>
           <div className="mt-2">
-            <MapDrawing selected={selected} onSelect={setSelected} />
+            <MapDrawing
+              selected={selected}
+              preview={preview}
+              onSelect={setSelected}
+              onPreview={setPreview}
+            />
           </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-x-8 gap-y-2">
             <Legend />
@@ -445,7 +500,7 @@ export function InvestigationMap() {
             </p>
           </div>
           <div className="mt-5">
-            <StagePanel stage={stage} />
+            <StagePanel stage={stage} previewing={shown !== selected} />
           </div>
         </>
       ) : (

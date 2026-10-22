@@ -1032,8 +1032,43 @@ svg :focus-visible {
   opacity: 0.06;
 }
 
-/* The investigation map reuses the constellation states. Under reduced motion a stage
-   that comes forward keeps its halo and brighter border but does not move or grow. */
+/* The investigation map reuses the constellation states and adds depth. Every stage has a
+   lit face. The one in front takes a tint and a shadow in its own tone, the connections it
+   really has take that tone, thicken and glow, and everything else stays quiet, so the eye
+   has a single place to land. The glow belongs to the active stage and its lines only. */
+.im .cn-inner .im-body {
+  transition:
+    fill var(--dur-base) var(--ease-soft),
+    filter var(--dur-base) var(--ease);
+}
+
+.im .cn-inner[data-state="active"] .im-body {
+  fill: color-mix(in srgb, var(--tone) 13%, var(--surface-high));
+  filter: drop-shadow(
+    0 12px 14px color-mix(in srgb, var(--tone) 28%, transparent)
+  );
+}
+
+.im .cn-link path {
+  transition:
+    stroke var(--dur-base) var(--ease-soft),
+    stroke-width var(--dur-base) var(--ease-soft);
+}
+
+.im .cn-link[data-state="lit"] path {
+  stroke: var(--im-tone);
+  stroke-width: 2.4;
+  filter: drop-shadow(
+    0 0 3px color-mix(in srgb, var(--im-tone) 60%, transparent)
+  );
+}
+
+.im .cn-link[data-state="lit"] polygon {
+  fill: var(--im-tone);
+}
+
+/* Under reduced motion a stage that comes forward keeps its halo and brighter border but
+   does not move or grow. */
 @media (prefers-reduced-motion: reduce) {
   .im .cn-inner[data-state="active"] {
     transform: none;

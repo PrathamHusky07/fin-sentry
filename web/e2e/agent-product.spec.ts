@@ -101,6 +101,53 @@ test.describe("the investigation map, wide", () => {
     await expect(node("2. Plan")).toBeFocused();
   });
 
+  test("hovering or focusing a stage changes the description before any click, and leaving restores the selection", async ({
+    page,
+  }) => {
+    const seen = watch(page);
+    await page.goto("/agent");
+    const map = page.locator("#lifecycle svg.im");
+    const node = (n: string) =>
+      map.locator(`[role="button"][aria-label^="${n}"]`);
+    const panel = page.locator("#agent-step-detail");
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 1: Trigger/);
+
+    // Pointer: standing on a stage shows that stage's description at once. Nothing is clicked.
+    await node("2. Plan").hover();
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 2: Plan/);
+    await expect(panel).toContainText("competing hypotheses");
+    await expect(panel).toContainText("Preview. Click or press Enter");
+    await expect(node("1. Trigger")).toHaveAttribute("aria-pressed", "true");
+    await expect(node("2. Plan")).toHaveAttribute("aria-pressed", "false");
+    await node("4. Assess").hover();
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 4: Assess/);
+
+    // Leaving restores the committed selection.
+    await page.mouse.move(2, 2);
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 1: Trigger/);
+    await expect(panel).not.toContainText("Preview. Click or press Enter");
+
+    // A click commits, and the commitment survives the pointer leaving.
+    await node("2. Plan").click();
+    await page.mouse.move(2, 2);
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 2: Plan/);
+    await expect(node("2. Plan")).toHaveAttribute("aria-pressed", "true");
+
+    // Keyboard focus previews exactly as hover does, and Enter commits.
+    await page.keyboard.press("ArrowRight");
+    await expect(node("3. Execute")).toBeFocused();
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 3: Execute/);
+    await expect(node("2. Plan")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowRight");
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 4: Assess/);
+    await page.keyboard.press("Enter");
+    await expect(node("4. Assess")).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.click(2, 2);
+    await expect(panel).toHaveAttribute("aria-label", /^Stage 4: Assess/);
+    expect(seen.posts).toEqual([]);
+    expect(seen.issues).toEqual([]);
+  });
+
   test("reduced motion keeps the state and removes the movement", async ({
     page,
   }) => {
