@@ -69,6 +69,19 @@ test.describe("Landing page", () => {
     const intro = page.getByText(/AI reliability and evaluation platform/);
     await expect(intro).toContainText("production LLM systems");
     await expect(intro).toContainText("reference workload");
+    // The hero leads with the reliability, evaluation and agent story, makes no claim that
+    // every execution is preserved, and no longer calls financial RAG the only workload.
+    await expect(intro).toContainText("incident response agent");
+    await expect(intro).toContainText("supported explanation");
+    await expect(intro).toContainText("proven cause");
+    await expect(intro).toContainText("recorded executions remain inspectable");
+    await expect(intro).not.toContainText("only workload");
+    await expect(intro).not.toContainText(/every execution/i);
+    await expect(intro).not.toContainText("—");
+    await expect(page.locator('head meta[name="description"]')).toHaveAttribute(
+      "content",
+      /evidence-bounded agent investigates failures/,
+    );
     await expect(page.locator("body")).not.toContainText(
       /sits in front of a RAG endpoint/,
     );

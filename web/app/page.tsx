@@ -31,12 +31,16 @@ export default function LandingPage() {
           <div className="rise rise-2 mt-6 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <p className="text-text-secondary max-w-2xl text-lg leading-relaxed text-pretty">
               Fin-Sentry is an AI reliability and evaluation platform for
-              production LLM systems. It guards each request and scores each
-              response with judges that run off the request path. It calibrates
-              the second-opinion judge against labeled data and keeps every
-              execution inspectable. Financial RAG over SEC filings is the
-              reference workload used to prove it, and the only workload
-              demonstrated here.
+              production LLM systems. Guardrails check each request from input
+              to output, and each answer is traced to the filing text behind it.
+              A two-tier judge scores delivered answers on a separate evaluation
+              plane, and its second tier is calibrated against labeled data.
+              When something fails, an incident response agent reconstructs it
+              from read-only sources and separates a supported explanation from
+              a proven cause. A Red Team suite attacks the defenses on demand,
+              and its recorded executions remain inspectable with traceable
+              evidence. Financial RAG over SEC filings is the reference
+              workload.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link
