@@ -1,0 +1,14 @@
+{
+  "disagreement": {
+    "origin": "historical",
+    "app_trace_id": "96bca4b5-f707-4a93-b421-2674032849b5",
+    "capture": "docs/demo-seed/amzn-disagreement-v1.json",
+    "note": "The original flash 1.000 versus frontier 0.000 trace. It expired from the event log. Change origin to live and the id to a stored trace only when a real flash and frontier disagreement exists in the store."
+  },
+  "reask": {
+    "app_trace_id": "0bb26bf9-858d-49fc-a677-56fecd18a48e",
+    "asked_on": "2026-10-22",
+    "frontier_sampled": false,
+    "note": "The same Amazon question asked again. A new trace, answered by the same pipeline. The frontier judge was not sampled for it, so it holds no disagreement."
+  }
+}

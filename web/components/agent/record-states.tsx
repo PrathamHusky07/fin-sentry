@@ -2,6 +2,7 @@ import Link from "next/link";
 import { RECORD_STATE, type RecordState } from "@/lib/agent-view";
 import {
   AMAZON_TRACE_ID,
+  RERUN_TRACE_ID,
   type LiveLookup,
   type StoredCounts,
 } from "@/lib/agent-data";
@@ -90,9 +91,12 @@ function lookupText(lookup: LiveLookup): { head: string; body: string } {
 export function RecordStates({
   counts,
   lookup,
+  rerun,
 }: {
   counts: StoredCounts | null;
   lookup: LiveLookup;
+  /** A live lookup of the trace made when the same question was asked again. */
+  rerun: LiveLookup;
 }) {
   const gone = lookupText(lookup);
   return (
@@ -168,6 +172,22 @@ export function RecordStates({
         <p className="text-text-tertiary mt-2 font-mono text-sm break-all">
           {AMAZON_TRACE_ID}
         </p>
+        {lookup === "unavailable" && rerun === "available" ? (
+          <p
+            className="text-text-secondary mt-3 text-base leading-relaxed"
+            data-rerun="available"
+          >
+            The same question was asked again and is stored as a different
+            trace. It is not the original and shows no disagreement, because the
+            frontier judge was not sampled for it.{" "}
+            <Link
+              href={`/investigations?trace=${RERUN_TRACE_ID}`}
+              className={LINK}
+            >
+              Open the new trace
+            </Link>
+          </p>
+        ) : null}
       </Card>
     </ul>
   );

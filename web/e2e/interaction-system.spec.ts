@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { DISAGREEMENT_IS_LIVE } from "./demo-record";
 
 /**
  * The interaction system on Live Operations and Overview, asserted as
@@ -213,7 +214,11 @@ test.describe("Overview interaction system", () => {
     const state = page.getByRole("region", { name: "System state" });
     await expect(state).toBeVisible();
     await expect(state.getByText(/\d+ of \d+/)).toBeVisible();
-    await expect(page.locator("#featured-heading")).toContainText(/amazon/i);
+    if (DISAGREEMENT_IS_LIVE) {
+      await expect(page.locator("#featured-heading")).toContainText(/amazon/i);
+    } else {
+      await expect(page.locator("#featured-heading")).toHaveCount(0);
+    }
     expect(w.problems).toEqual([]);
   });
 
@@ -226,9 +231,14 @@ test.describe("Overview interaction system", () => {
     await expect(page.locator("#coverage-heading")).toHaveCount(1);
     await expect(state.locator("a[href='#coverage-heading']")).toHaveCount(1);
 
+    // The disagreement readout leads to the lens only while a disagreement is stored.
     const disagreement = state.locator(
       "a[href='/investigations?disagreement=true']",
     );
+    if (!DISAGREEMENT_IS_LIVE) {
+      await expect(disagreement).toHaveCount(0);
+      return;
+    }
     await expect(disagreement).toHaveCount(1);
     await disagreement.click();
     await expect(page).toHaveURL(/\/investigations\?disagreement=true$/);
@@ -255,9 +265,14 @@ test.describe("Overview interaction system", () => {
     page,
   }) => {
     await page.goto("/overview");
-    await expect(page.locator("#featured-heading")).toBeVisible();
+    if (DISAGREEMENT_IS_LIVE) {
+      await expect(page.locator("#featured-heading")).toBeVisible();
+    }
     const before = await layoutOf(page);
-    for (const sel of [".state-field", "#featured-heading"]) {
+    const targets = DISAGREEMENT_IS_LIVE
+      ? [".state-field", "#featured-heading"]
+      : [".state-field"];
+    for (const sel of targets) {
       const target = page.locator(sel).first();
       const box = await target.boundingBox();
       if (!box) throw new Error(`${sel} has no box`);

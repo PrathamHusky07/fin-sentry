@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
-
-const AMAZON_TRACE_ID = "96bca4b5-f707-4a93-b421-2674032849b5";
+import {
+  DISAGREEMENT_IS_LIVE,
+  DISAGREEMENT_TRACE_ID as AMAZON_TRACE_ID,
+  NO_LIVE_DISAGREEMENT,
+} from "./demo-record";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -15,6 +18,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 test("the Amazon disagreement is reachable and renders the real Flash 1.000 vs Frontier 0.000 scores with reasoning", async ({
   page,
 }) => {
+  test.skip(!DISAGREEMENT_IS_LIVE, NO_LIVE_DISAGREEMENT);
   const errors: string[] = [];
   const failedRequests: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

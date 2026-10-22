@@ -6,7 +6,12 @@ import { InvestigationMap } from "@/components/agent/investigation-map";
 import { RecordStates } from "@/components/agent/record-states";
 import { SectionRail } from "@/components/incidents/section-rail";
 import { StartIncident } from "@/components/incidents/start-incident";
-import { AMAZON_TRACE_ID, lookupTrace, storedCounts } from "@/lib/agent-data";
+import {
+  AMAZON_TRACE_ID,
+  RERUN_TRACE_ID,
+  lookupTrace,
+  storedCounts,
+} from "@/lib/agent-data";
 
 export const metadata: Metadata = {
   title: "Agent | Fin-Sentry",
@@ -23,12 +28,13 @@ const SECTIONS = [
  * The Incident Response Agent: how one investigation runs, then every stored case. Nothing on
  * this route starts an investigation or calls a model. Only the start form, closed until it is
  * opened, can, and only on submit. The two reads this page makes on the server are a
- * listing of stored cases and a lookup of one trace, both read only.
+ * listing of stored cases and two lookups of one trace each, all read only.
  */
 export default async function AgentPage() {
-  const [counts, lookup] = await Promise.all([
+  const [counts, lookup, rerun] = await Promise.all([
     storedCounts(),
     lookupTrace(AMAZON_TRACE_ID),
+    lookupTrace(RERUN_TRACE_ID),
   ]);
   return (
     <div className="ctx ctx-forensic mobile-readable flex-1">
@@ -116,7 +122,7 @@ export default async function AgentPage() {
             Every case and every cited record is one of four kinds. The page
             names the kind and never shows one in place of another.
           </p>
-          <RecordStates counts={counts} lookup={lookup} />
+          <RecordStates counts={counts} lookup={lookup} rerun={rerun} />
         </section>
 
         <section

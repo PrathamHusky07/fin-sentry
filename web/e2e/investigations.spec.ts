@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import {
+  DISAGREEMENT_IS_LIVE,
+  DISAGREEMENT_TRACE_ID,
+  NO_LIVE_DISAGREEMENT,
+} from "./demo-record";
 
 /**
  * /investigations -- search, filter, pagination, the disagreement lens,
@@ -57,6 +62,11 @@ test.describe("Investigations", () => {
     await page.waitForTimeout(500);
 
     const rows = page.locator("table tbody tr");
+    if (!DISAGREEMENT_IS_LIVE) {
+      // No disagreement is stored, so the lens must return no rows and invent none.
+      await expect(rows).toHaveCount(0);
+      return;
+    }
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(
       /Amazon's FY2024 net income attributable to shareholders/i,
@@ -160,9 +170,8 @@ test.describe("Investigations", () => {
   test("the drawer lights the hovered judge, links chunks to quotes and opens path stages", async ({
     page,
   }) => {
-    await page.goto(
-      "/investigations?trace=96bca4b5-f707-4a93-b421-2674032849b5",
-    );
+    test.skip(!DISAGREEMENT_IS_LIVE, NO_LIVE_DISAGREEMENT);
+    await page.goto(`/investigations?trace=${DISAGREEMENT_TRACE_ID}`);
     const dialog = page.getByRole("dialog", { name: "Trace detail" });
     await expect(dialog).toBeVisible();
 

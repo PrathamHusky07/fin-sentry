@@ -15,9 +15,11 @@ the real database rather than a fake cursor.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +27,8 @@ from finsentry.dashboard.app import _dao, _fetch_disagreement_trace_ids, _fetch_
 from finsentry.events.schema import JudgeVerdictEvent, RagResponseEvent
 from finsentry.events.topics import JUDGE_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
 
+_ROOT = Path(__file__).resolve().parents[2]
+_DEMO_RECORD = _ROOT / "web" / "lib" / "demo-record.json"
 _BOOTSTRAP = "localhost:19092"
 
 
@@ -205,21 +209,28 @@ async def test_fetch_trace_list_picks_latest_judge_verdict_when_trace_has_two_ro
         await _dao.close()
 
 
-async def test_disagreement_trace_ids_finds_the_real_amazon_hallucination_trace() -> None:
-    """The real cross-tier disagreement in today's data: flash scored
-    trace 96bca4b5-f707-4a93-b421-2674032849b5 (AMZN FY2024 net income)
-    1.0/complete; the real gemini-rubric frontier judge scored it 0.0,
-    catching a hallucination flash missed (see docs/build-log.md and
-    docs/internal/day9-frontend-data-contract.md). This is a snapshot
-    assertion against live, mutable data -- it documents a specific known
-    trace rather than a structural invariant, so it's expected to need an
-    update if that trace is ever purged from RisingWave."""
+async def test_the_configured_disagreement_is_live_or_a_valid_historical_capture() -> None:
+    """The demonstration disagreement is named in web/lib/demo-record.json, not in this test.
+    The original Amazon trace (flash 1.0, frontier 0.0) expired from the event log, so the
+    record is marked historical. While it is, the live disagreement query must not claim it,
+    and the preserved capture must still be a valid, labelled record of that pair of scores.
+    When the file names a live trace, that trace must be in the query's result."""
+    record = json.loads(_DEMO_RECORD.read_text())["disagreement"]
     await _dao.open()
     try:
         assert _dao.connected, "RisingWave not reachable -- start docker-compose.dev.yml"
-
         disagreement_ids = await _fetch_disagreement_trace_ids()
-
-        assert "96bca4b5-f707-4a93-b421-2674032849b5" in disagreement_ids
     finally:
         await _dao.close()
+
+    if record["origin"] == "live":
+        assert record["app_trace_id"] in disagreement_ids
+        return
+    assert record["origin"] == "historical"
+    assert record["app_trace_id"] not in disagreement_ids
+    capture = json.loads((_ROOT / record["capture"]).read_text())
+    assert capture["app_trace_id"] == record["app_trace_id"]
+    assert capture["status"].startswith("HISTORICAL")
+    fields = capture["recovered_fields"]
+    assert fields["flash_judge"]["faithfulness_score"] == 1.0
+    assert fields["frontier_judge"]["faithfulness_score"] == 0.0

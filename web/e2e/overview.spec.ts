@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DISAGREEMENT_IS_LIVE, NO_LIVE_DISAGREEMENT } from "./demo-record";
 
 /**
  * /overview -- the command center. Real stack required. Checks the nav's
@@ -41,13 +42,18 @@ test("Overview renders the command center sections with no console errors", asyn
     page.getByRole("heading", { name: "Recent investigations" }),
   ).toHaveCount(0);
 
-  // The Amazon disagreement is featured with its real answer and scores.
-  const featured = page.getByRole("region", {
-    name: /Amazon's FY2024 net income/,
-  });
-  await expect(featured).toContainText("1.000");
-  await expect(featured).toContainText("0.000");
-  await expect(featured).toContainText(/not readily available/);
+  // A stored disagreement is featured with its real answer and scores. With none stored the
+  // card is absent, never a placeholder.
+  if (DISAGREEMENT_IS_LIVE) {
+    const featured = page.getByRole("region", {
+      name: /Amazon's FY2024 net income/,
+    });
+    await expect(featured).toContainText("1.000");
+    await expect(featured).toContainText("0.000");
+    await expect(featured).toContainText(/not readily available/);
+  } else {
+    await expect(page.locator("#featured-heading")).toHaveCount(0);
+  }
 
   // Overview is not Live Operations: none of the live readouts belong here.
   await expect(page.getByText("Latency (avg / p95)")).toHaveCount(0);
@@ -69,6 +75,7 @@ test.describe("Overview interactions", () => {
   test("the Amazon disagreement lights the hovered judge, dims the other and shows that judge's record", async ({
     page,
   }) => {
+    test.skip(!DISAGREEMENT_IS_LIVE, NO_LIVE_DISAGREEMENT);
     await page.goto("/overview");
     const featured = page.getByRole("region", {
       name: /Amazon's FY2024 net income/,

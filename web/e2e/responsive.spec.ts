@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { RERUN_TRACE_ID } from "./demo-record";
 
 /**
  * One sequential pass over every route at the three widths the project
@@ -98,9 +99,8 @@ for (const width of WIDTHS) {
     test("the trace drawer contains focus and closes on Escape", async ({
       page,
     }) => {
-      await page.goto(
-        "/investigations?trace=96bca4b5-f707-4a93-b421-2674032849b5",
-      );
+      // Any stored trace opens the drawer. The re-asked Amazon trace is a real one.
+      await page.goto(`/investigations?trace=${RERUN_TRACE_ID}`);
       const dialog = page.getByRole("dialog", { name: "Trace detail" });
       await expect(dialog).toBeVisible();
       for (let i = 0; i < 30; i++) {

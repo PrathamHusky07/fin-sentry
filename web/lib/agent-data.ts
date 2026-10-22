@@ -1,9 +1,15 @@
 import { GATEWAY_URL } from "@/lib/config";
+import demoRecord from "@/lib/demo-record.json";
 import type { Origin } from "@/lib/incidents";
 
-/** The Amazon judge disagreement the landing page shows as a capture. Its live trace expired
- * from the event log, and this id is how the Agent page checks whether that is still true. */
-export const AMAZON_TRACE_ID = "96bca4b5-f707-4a93-b421-2674032849b5";
+/** The configured demonstration disagreement (lib/demo-record.json). Today it is the Amazon
+ * judge disagreement the landing page shows as a capture. Its live trace expired from the event
+ * log, and this id is how the Agent page checks whether that is still true. */
+export const AMAZON_TRACE_ID = demoRecord.disagreement.app_trace_id;
+
+/** The same question asked again after the expiry: a new, complete trace in the store that is
+ * not the original and holds no disagreement, because the frontier judge was not sampled. */
+export const RERUN_TRACE_ID = demoRecord.reask.app_trace_id;
 
 export type LiveLookup = "available" | "unavailable" | "unknown";
 

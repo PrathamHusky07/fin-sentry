@@ -4,6 +4,7 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { DISAGREEMENT_TRACE_ID } from "./demo-record";
 
 /**
  * /agent as a forensic product: the mechanism map, the case explorer with its summary, the
@@ -289,9 +290,7 @@ test.describe("the four record states", () => {
     ).resolves.toEqual(["live", "fixture", "historical", "unavailable"]);
 
     // The lookup is real: ask the gateway the same question the page asked.
-    const trace = await request.get(
-      "/ops/traces/96bca4b5-f707-4a93-b421-2674032849b5",
-    );
+    const trace = await request.get(`/ops/traces/${DISAGREEMENT_TRACE_ID}`);
     const body = (await trace.json()) as { found: boolean };
     const card = page.locator('#records [data-record-state="unavailable"]');
     await expect(card.locator("[data-lookup]")).toHaveAttribute(
