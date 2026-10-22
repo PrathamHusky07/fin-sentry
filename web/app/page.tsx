@@ -31,22 +31,34 @@ export default function LandingPage() {
     <div className="flex flex-col">
       <section className="ctx ctx-hero">
         <div aria-hidden="true" className="hero-field">
-          <span className="hero-field-a" />
-          <span className="hero-field-b" />
+          <div className="hero-depth">
+            <span className="hero-field-a" />
+            <span className="hero-field-b" />
+            <span className="hero-field-c" />
+            <span className="hero-aurora" />
+          </div>
+          <span className="hero-scan">
+            <span className="hero-scan-dots">
+              <span className="hero-scan-band" />
+            </span>
+          </span>
         </div>
         <div className="mx-auto w-full max-w-7xl px-4 pt-10 pb-16 sm:px-8 sm:pt-12 sm:pb-20">
           <h1 className="text-text-primary max-w-6xl text-4xl leading-[1.06] font-semibold tracking-tight sm:text-6xl">
             <span className="hero-in block" style={step(0)}>
-              AI answers are easy.
+              Score the answer.
             </span>
             <span className="hero-in block" style={step(1)}>
-              Defensible answers are engineered.
+              Audit the judge.
+            </span>
+            <span className="hero-in block" style={step(2)}>
+              Explain the failure from the record.
             </span>
           </h1>
           <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <p
               className="text-text-secondary hero-in max-w-2xl text-lg leading-relaxed text-pretty"
-              style={step(2)}
+              style={step(3)}
             >
               Fin-Sentry is an AI reliability and evaluation platform that
               guards the question, the retrieved text and the answer. Delivered
@@ -58,7 +70,7 @@ export default function LandingPage() {
               over SEC filings, and the recorded Red Team and agent runs can be
               inspected.
             </p>
-            <div className="hero-in flex flex-wrap gap-3" style={step(3)}>
+            <div className="hero-in flex flex-wrap gap-3" style={step(4)}>
               <Link
                 href="/overview"
                 className="bg-text-primary text-background hover:bg-text-primary/90 inline-flex min-h-12 items-center rounded-lg px-6 text-base font-medium shadow-[0_10px_30px_-12px_var(--glow-accent)] transition-[background-color,box-shadow] duration-[var(--dur-base)] hover:shadow-[0_14px_36px_-12px_var(--glow-accent)]"

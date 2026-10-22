@@ -88,6 +88,25 @@ function FlowPulse({ d }: { d: string }) {
   );
 }
 
+/**
+ * A slow beam behind the diagram, centered on the core and as wide as the orbit is tall. It is
+ * decoration only: it sits behind every node and line, takes no pointer and no focus, and the
+ * stylesheet draws it only where motion is allowed.
+ */
+function Sweep({ layout }: { layout: ConstellationLayout }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="hero-sweep"
+      style={{
+        left: `${(layout.cx / layout.w) * 100}%`,
+        top: `${(layout.cy / layout.h) * 100}%`,
+        width: `${((2 * Math.min(layout.rx, layout.ry) * 1.1) / layout.w) * 100}%`,
+      }}
+    />
+  );
+}
+
 interface Handlers {
   onHover: (id: ConceptId | null) => void;
   onFocus: (id: ConceptId | null) => void;
@@ -484,7 +503,8 @@ export function HeroConstellation() {
         }
       }}
     >
-      <div className="mx-auto hidden max-w-[1200px] lg:block">
+      <div className="relative isolate mx-auto hidden max-w-[1200px] lg:block">
+        <Sweep layout={WIDE} />
         <Constellation
           layout={WIDE}
           active={active}
@@ -494,7 +514,8 @@ export function HeroConstellation() {
           interactive
         />
       </div>
-      <div className="mx-auto max-w-[420px] lg:hidden">
+      <div className="relative isolate mx-auto max-w-[420px] lg:hidden">
+        <Sweep layout={COMPACT} />
         <Constellation
           layout={COMPACT}
           active={active}

@@ -20,7 +20,7 @@ test.describe("Landing page", () => {
 
     await expect(
       page.getByRole("heading", {
-        name: "AI answers are easy. Defensible answers are engineered.",
+        name: "Score the answer. Audit the judge. Explain the failure from the record.",
         level: 1,
       }),
     ).toBeVisible();
@@ -102,6 +102,7 @@ test.describe("Landing page", () => {
     await expect(page.locator("body")).not.toContainText(
       "Make every AI answer show its work",
     );
+    await expect(page.locator("body")).not.toContainText("AI answers are easy");
     const group = page.getByRole("group", {
       name: /Fin-Sentry system constellation/,
     });
@@ -123,6 +124,10 @@ test.describe("Landing page", () => {
           line: name(".hero-in"),
           fieldA: name(".hero-field-a"),
           fieldB: name(".hero-field-b"),
+          fieldC: name(".hero-field-c"),
+          aurora: name(".hero-aurora"),
+          scan: name(".hero-scan-band"),
+          sweep: name(".hero-sweep"),
           breathe: name(".cn-breathe"),
         };
       });
@@ -137,6 +142,10 @@ test.describe("Landing page", () => {
     expect(moving.line).toBe("rise");
     expect(moving.fieldA).toBe("field-drift-a");
     expect(moving.fieldB).toBe("field-drift-b");
+    expect(moving.fieldC).toBe("field-drift-c");
+    expect(moving.aurora).toBe("aurora-flow");
+    expect(moving.scan).toBe("scan-sweep");
+    expect(moving.sweep).toBe("sweep-turn");
     expect(moving.breathe).toBe("cn-breathe");
     // Energy runs along the selected path only, and stops when the pointer leaves.
     await expect(page.locator(".cn-flow")).toHaveCount(0);
@@ -151,6 +160,10 @@ test.describe("Landing page", () => {
     const still = await fold();
     expect(still.fieldA).toBe("none");
     expect(still.fieldB).toBe("none");
+    expect(still.fieldC).toBe("none");
+    expect(still.aurora).toBe("none");
+    expect(still.scan).toBe("none");
+    expect(still.sweep).toBe("none");
     expect(still.breathe).toBe("none");
     await judge(page).hover();
     // The selection still lights its lines, but nothing travels along them.
@@ -158,6 +171,44 @@ test.describe("Landing page", () => {
       await expect(flow).toBeHidden();
     }
   });
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 375, height: 812 },
+  ]) {
+    test(`the rendered first fold at ${viewport.width}px changes over time with motion and is identical without it`, async ({
+      page,
+    }) => {
+      test.setTimeout(45_000);
+      await page.setViewportSize(viewport);
+      const snap = async () =>
+        page.screenshot({
+          clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
+        });
+      const headingBox = () =>
+        page.getByRole("heading", { level: 1 }).boundingBox();
+
+      // The intro settles within about two and a half seconds. After that only the ambient
+      // layers can change a pixel.
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.goto("/");
+      await page.waitForTimeout(3500);
+      const first = await snap();
+      const box = await headingBox();
+      await page.waitForTimeout(4000);
+      const second = await snap();
+      expect(Buffer.compare(first, second)).not.toBe(0);
+      // The text does not move while the background does.
+      expect(await headingBox()).toEqual(box);
+
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/");
+      await page.waitForTimeout(1500);
+      const still = await snap();
+      await page.waitForTimeout(4000);
+      expect(Buffer.compare(still, await snap())).toBe(0);
+    });
+  }
 
   test("the decision navigator lists six decisions and selecting one changes the panel", async ({
     page,

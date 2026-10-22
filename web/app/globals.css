@@ -715,16 +715,50 @@ svg :focus-visible {
       animation-delay: calc(60ms + var(--i, 0) * 110ms);
     }
 
-    /* Two soft fields drift behind the hero. They move by transform only, so
-       the compositor does the work and the text never repaints. */
+    /* The fields behind the hero live on their own, apart from the diagram. Three lights drift,
+       swell and breathe at different paces, an aurora band flows behind the headline, and a
+       band of light crosses the dot lattice so the dots brighten as it passes. Everything moves
+       by transform or opacity alone, so the compositor does the work and the text never
+       repaints. None of it is defined under reduced motion, so that stays still. */
     .hero-field-a {
-      animation: field-drift-a 28s var(--ease-soft) infinite alternate;
-      will-change: transform;
+      animation: field-drift-a 26s var(--ease-soft) infinite alternate;
+      will-change: transform, opacity;
     }
 
     .hero-field-b {
-      animation: field-drift-b 34s var(--ease-soft) infinite alternate;
+      animation: field-drift-b 31s var(--ease-soft) infinite alternate;
+      will-change: transform, opacity;
+    }
+
+    .hero-field-c {
+      animation: field-drift-c 37s var(--ease-soft) infinite alternate;
+      will-change: transform, opacity;
+    }
+
+    .hero-aurora {
+      animation: aurora-flow 21s var(--ease-soft) infinite alternate;
+      will-change: transform, opacity;
+    }
+
+    .hero-scan-band {
+      animation: scan-sweep 17s var(--ease-soft) 1.2s infinite;
+      will-change: transform, opacity;
+    }
+
+    /* A beam turns behind the constellation, centered on its core. */
+    .hero-sweep {
+      animation: sweep-turn 24s linear infinite;
       will-change: transform;
+    }
+
+    /* The lights sit a little deeper than the page, so they trail the scroll. Where the
+       browser cannot tie an animation to scroll, they simply stay put. */
+    @supports (animation-timeline: scroll()) {
+      .hero-depth {
+        animation: hero-depth linear both;
+        animation-timeline: scroll(root block);
+        animation-range: 0 100vh;
+      }
     }
 
     /* The core glow breathes once the intro has settled. */
@@ -788,13 +822,64 @@ svg :focus-visible {
 
 @keyframes field-drift-a {
   to {
-    transform: translate3d(9rem, 2.5rem, 0) scale(1.12);
+    transform: translate3d(11rem, 3rem, 0) scale(1.18);
+    opacity: 0.6;
   }
 }
 
 @keyframes field-drift-b {
   to {
-    transform: translate3d(-7rem, -3rem, 0) scale(1.1);
+    transform: translate3d(-9rem, -3.5rem, 0) scale(1.14);
+    opacity: 0.55;
+  }
+}
+
+@keyframes field-drift-c {
+  to {
+    transform: translate3d(-6rem, 3rem, 0) scale(1.25);
+    opacity: 0.5;
+  }
+}
+
+@keyframes aurora-flow {
+  from {
+    transform: translate3d(-8%, -1.5rem, 0);
+    opacity: 0.55;
+  }
+  to {
+    transform: translate3d(8%, 2rem, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes scan-sweep {
+  0% {
+    transform: translate3d(-45%, 0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  58% {
+    transform: translate3d(330%, 0, 0);
+    opacity: 1;
+  }
+  66%,
+  100% {
+    transform: translate3d(330%, 0, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes sweep-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes hero-depth {
+  to {
+    transform: translate3d(0, 7rem, 0);
   }
 }
 
@@ -904,8 +989,9 @@ svg :focus-visible {
   );
 }
 
-/* The drifting fields under the hero text. Placed and sized here, moved only
-   inside the no-preference query, so reduced motion keeps them in place. */
+/* The fields under the hero text. Placed and sized here, moved only inside the no-preference
+   query, so reduced motion keeps the lights in place at the same strength. The depth layer is
+   taller than the field so its scroll trail never exposes an edge. */
 .hero-field {
   position: absolute;
   inset: 0;
@@ -914,33 +1000,141 @@ svg :focus-visible {
   pointer-events: none;
 }
 
-.hero-field > span {
+.hero-depth {
+  position: absolute;
+  inset: -7rem 0;
+}
+
+.hero-depth > span {
   position: absolute;
   border-radius: 9999px;
 }
 
 .hero-field-a {
-  top: 14%;
-  left: -10rem;
-  width: 48rem;
-  height: 30rem;
+  top: 18%;
+  left: -12rem;
+  width: 60rem;
+  height: 36rem;
   background: radial-gradient(
     closest-side,
-    rgb(106 168 255 / 0.11),
+    rgb(106 168 255 / 0.3),
+    rgb(106 168 255 / 0.1) 55%,
     transparent
   );
 }
 
 .hero-field-b {
-  top: 42%;
-  right: -8rem;
-  width: 42rem;
-  height: 28rem;
+  top: 46%;
+  right: -10rem;
+  width: 52rem;
+  height: 34rem;
   background: radial-gradient(
     closest-side,
-    rgb(92 212 230 / 0.09),
+    rgb(92 212 230 / 0.22),
+    rgb(92 212 230 / 0.07) 55%,
     transparent
   );
+}
+
+.hero-field-c {
+  top: 4%;
+  left: 36%;
+  width: 44rem;
+  height: 22rem;
+  background: radial-gradient(
+    closest-side,
+    rgb(106 168 255 / 0.18),
+    transparent
+  );
+}
+
+/* A wide soft band behind the headline, tilted a little against the page. */
+.hero-aurora {
+  top: 12%;
+  left: -20%;
+  width: 140%;
+  height: 24rem;
+  border-radius: 0;
+  rotate: -7deg;
+  background: linear-gradient(
+    100deg,
+    transparent 8%,
+    rgb(106 168 255 / 0.2) 30%,
+    rgb(92 212 230 / 0.17) 52%,
+    rgb(106 168 255 / 0.12) 70%,
+    transparent 92%
+  );
+  mask-image: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    #000 30%,
+    transparent 76%
+  );
+}
+
+/* Lights the dot lattice as a band passes. The lattice and its fade are static masks, and
+   only the band inside them moves, on the same 30px grid as the resting dots. */
+.hero-scan {
+  position: absolute;
+  inset: 0;
+  mask-image: radial-gradient(
+    ellipse 64% 70% at 50% 42%,
+    #000 12%,
+    transparent 76%
+  );
+}
+
+.hero-scan-dots {
+  position: absolute;
+  inset: 0;
+  mask-image: radial-gradient(#000 1px, transparent 1.4px);
+  mask-size: 30px 30px;
+}
+
+.hero-scan-band {
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 34%;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(150 205 255 / 0.85) 50%,
+    transparent
+  );
+}
+
+/* The beam behind the constellation. It is not drawn under reduced motion, because a frozen
+   beam would read as a stray wedge of light. */
+.hero-sweep {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  translate: -50% -50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 236deg,
+    rgb(92 212 230 / 0) 236deg,
+    rgb(92 212 230 / 0.16) 336deg,
+    rgb(160 220 255 / 0.34) 357deg,
+    rgb(160 220 255 / 0) 360deg
+  );
+  mask-image: radial-gradient(
+    closest-side,
+    transparent 20%,
+    #000 38%,
+    #000 94%,
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-sweep {
+    display: none;
+  }
 }
 
 /* Topology: technical and structured. A fine rule grid fades at the
