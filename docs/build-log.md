@@ -1,5 +1,42 @@
 # Build Log
 
+## 2026-10-21 (night): Day 12 Session 3, run password, map hover, hero (Phase 1)
+
+Model: Sonnet 5.5, no escalation. Session start: `main`, HEAD and `origin/main` both `851d20c`. Phase 1 made no model call and cost
+$0.00: the `rag-responses` high watermark (551) and the judge verdict count (406, $3.52 recorded to date) are the same before and after
+the full pytest run. No frozen contract, MCP tool, rail, held-out case or planner behavior changed.
+
+### Red Team run password (`81afa24`)
+`POST /ops/redteam/runs` is the only route that starts a run, and it now checks the `X-Run-Password` header against the server-only
+`RED_TEAM_RUN_PASSWORD` variable before it reads, resolves or writes anything (`finsentry/redteam/run_gate.py`). A missing or wrong
+password answers 401 and creates no run row, execution row, event or model call. With the variable unset or empty every run answers
+503 and `GET /ops/redteam/run-gate` reports `runs_enabled: false`, which the page shows as "Runs are disabled". Five failures inside
+ten minutes lock the gate for every caller, a correct password included, and the answer is 429 with `Retry-After`. The count is
+global because behind the same-origin proxy every browser reaches the gateway from one address, and it lives in the gateway process,
+so a second gateway process would keep its own. The comparison is constant time. The value is never logged, echoed or stored by the
+page (header only, component state only). `.env.example` carries the key with no value. Proven live against the restarted gateway
+(401 for both a missing and a wrong password, 27 runs and 43 executions before and after) and by 13 new pytest cases.
+Not covered: the stale Docker gateway image behind nginx on :8088 predates the gate and still serves `/ops/redteam/runs`; the
+Agent start route `POST /ops/investigations` spends Gemini and has no password. Both are reported, not changed.
+
+### Agent map, Generate card, hero (`8e33ebf`, `f5237f2`, `78c1075`)
+The map's description now follows hover and keyboard focus at once and returns to the committed stage when they leave (the highlight
+already did, the panel followed click only). Narrow screens still follow the selected stage. A new Playwright test fails on the old
+component and passes on the new one. The stage in front has a lit face, a shadow and a wash in its own tone, and its real
+connections take that tone and thicken. Generate opens `/architecture#stage-generation`, the stage that states the 20 second budget,
+the 15 second cap and the breaker (checked against `gateway/main.py`). The request latency chart it opened before covers the whole
+request. Retrieve and Generate therefore share the architecture page, so the old "five different routes" test became "five different
+destinations, and only Retrieve and Generate share a page". The hero now leads with guardrails, traceable evidence, the two-tier
+judge, the incident response agent and Red Team, says recorded executions remain inspectable, and no longer calls financial RAG the
+only workload.
+
+### Verification
+pytest 1455 passed, 4 skipped, 1 failed in 148 s. The failure is the known AMZN test, `assert '96bca4b5-f707-4a93-b421-2674032849b5'
+in set()`. tsc, eslint, prettier, Vitest (163), ruff and mypy (137 files) are clean and `npm run build` passes with the dev server
+stopped and restarted after. Playwright, one worker: 226 passed, 8 failed, the same eight Amazon specs as Session 2. Four widths (375,
+768, 1024, 1440), with and without reduced motion, on the home page, the Agent map and the Red Team review: no overflow, no target
+under 44 px, the password field is 16 px. The only console entry is the browser's own line for the deliberate 401 on a wrong password.
+
 ## 2026-10-21 (evening): Day 12 Session 2, Agent and Red Team rebuilt, footer, homepage cards
 
 Model: Sonnet 5.5, no escalation. Nothing was pushed. Session start: `main`, HEAD and `origin/main` both `eda86f6`. No frozen tool
