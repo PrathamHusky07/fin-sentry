@@ -36,8 +36,8 @@ const STAGES: Stage[] = [
     id: "generate",
     title: "Generate",
     body: "One model call answers in JSON under a time budget and a circuit breaker.",
-    to: { href: "/operations#activity-latency" },
-    cta: "See request latency",
+    to: { stage: "generation" },
+    cta: "See how generation is bounded",
     tone: "accent",
   },
   {
@@ -94,12 +94,15 @@ const TONE_HOVER = {
 } as const;
 
 /**
- * Five stages of one answer's life, in order, each opening a different page. Guard opens the
- * blocked requests with the rail that stopped each, Retrieve opens its stage on the
- * architecture page (retrieval has no product view of its own, so that section is the one
- * honest target), Generate opens the request latency chart, Judge opens the evaluation
- * coverage and Agent opens the Agent. Red Team sits below as its own line because it is not
- * part of any request. Static copy only: no counts, no status.
+ * Five stages of one answer's life, in order, each opening its own destination. Guard opens
+ * the blocked requests with the rail that stopped each, Judge opens the evaluation coverage
+ * and Agent opens the Agent. Retrieve and Generate have no product view of their own: no
+ * stored data isolates a retrieval or a model call, so each opens its own stage on the
+ * architecture page, where the real constants are stated (the 20 second budget, the 15
+ * second cap per attempt and the circuit breaker that opens after five failures). The
+ * request latency chart this card used to open covers the whole request, not generation.
+ * Red Team sits below as its own line because it is not part of any request. Static copy
+ * only: no counts, no status.
  */
 export function StageCards() {
   const desktop = useIsDesktop();

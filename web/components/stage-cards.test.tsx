@@ -25,18 +25,25 @@ describe("stage card destinations", () => {
     expect(hrefOf(markup, "Retrieve")).toBe(
       "/architecture#stage-retrieval-outline",
     );
-    expect(hrefOf(markup, "Generate")).toBe("/operations#activity-latency");
+    expect(hrefOf(markup, "Generate")).toBe(
+      "/architecture#stage-generation-outline",
+    );
     expect(hrefOf(markup, "Judge")).toBe("/overview#coverage-heading");
     expect(hrefOf(markup, "Agent")).toBe("/agent");
     expect(markup).not.toContain(">Investigate<");
   });
 
-  it("opens five different routes, so no two cards point into one page", () => {
+  it("opens a real route for every card, and only Retrieve and Generate share a page", () => {
+    // Neither has a product view, so each opens its own stage on the architecture page.
     const routes = titles.map((t) => hrefOf(markup, t).split(/[?#]/)[0]);
-    expect(new Set(routes).size).toBe(titles.length);
     for (const route of routes) {
       expect(ROUTES.map((r) => r.href)).toContain(route);
     }
+    const shared = titles.filter(
+      (_, i) => routes.filter((r) => r === routes[i]).length > 1,
+    );
+    expect(shared).toEqual(["Retrieve", "Generate"]);
+    expect(routes[1]).toBe("/architecture");
   });
 
   it("picks the wide id on a wide viewport, where the outline id is not displayed", () => {
@@ -53,8 +60,10 @@ describe("stage card destinations", () => {
     const outlineAnchors = LAYERS.find(
       (l) => l.id === "request-path",
     )!.outline.flatMap((lane) => lane.steps.map((s) => s.anchor));
-    expect(outlineAnchors).toContain(stageAnchor("retrieval", "outline"));
-    expect(REQUEST_PATH).toContain("retrieval");
+    for (const stage of ["retrieval", "generation"] as const) {
+      expect(outlineAnchors).toContain(stageAnchor(stage, "outline"));
+      expect(REQUEST_PATH).toContain(stage);
+    }
   });
 
   it("never gives two cards the same destination", () => {
