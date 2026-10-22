@@ -1,5 +1,66 @@
 # Build Log
 
+## 2026-10-22 (night): Day 12 Session 5, hero, Amazon evidence, record states, Live Operations scope
+
+Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `40064e3`, tree clean. The RAG-fill commits (`21cfaa0`,
+`f9dc413`, `40064e3`) were already on `origin/main`. No model call and no RAG request were made. Cost $0.00. No frozen contract, MCP
+tool, rail, held-out case, planner behavior, archive design, recovery module or password gate changed. The constellation composition
+did not change.
+
+Earlier sessions kept the old copy because the e2e specs asserted it. This session changed the copy and the assertions together.
+
+### Hero (`33c8fa3`)
+Headline: "AI answers are easy. Defensible answers are engineered." The description keeps four sentences and drops the thin-wrapper
+framing: an AI reliability and evaluation platform that guards the question, the retrieved text and the answer, a first judge plus an
+independently calibrated second-opinion judge on a sample, an incident agent that abstains when records cannot support an
+explanation, and financial RAG over SEC filings as the reference workload. `layout.tsx` metadata follows. `landing.spec.ts` now asserts
+the new headline and copy and that the old strings are gone.
+
+First-fold motion uses existing tokens only. The hero text enters line by line. Two soft light fields drift behind it by transform
+alone. The core glow breathes after the intro. A selected path carries a travelling dash, drawn only for lit lines. Every new
+animation sits inside `prefers-reduced-motion: no-preference`, and the dash is `display: none` under reduce. A new spec asserts that
+the animation names are set with motion allowed and are `none` under reduce, and that the dash appears on hover and disappears on leave.
+
+### Amazon evidence (`a7133f9`)
+The store holds no flash versus frontier disagreement (134 traces were frontier-sampled, 110 carry a real frontier row, and none of those has a score gap of 0.5 or more), so
+the link can only open the re-ask trace. The label is "Open the Amazon trace". The caption lost every date and the word "stored". It
+says the frontier judge read the same context, found the figure and scored the answer zero, and that the capture is a historical
+example whose link opens the same question asked again without a frontier score. `product-evidence.spec.ts` asserts the label, the copy,
+no dates and no "disagreement" link name.
+
+### Record states (`5461e20`)
+`record-states.tsx` is one balanced set: head with a solid or dashed mark, a one-line statement of what the border says, the meaning,
+one real instance and one action. Solid still means says something about the platform and dashed still means says nothing. Hover and
+focus raise a card, draw a rail in its tone, step the arrow forward and quiet the siblings. Hover is guarded for touch. The Amazon cards
+follow the landing copy and the unavailable card keeps its live lookup. Spec assertions moved to the new copy, plus new checks for
+border style, balance (longest card under 1.5 times the shortest), sibling quieting and reduced motion.
+
+### Live Operations (`7702b2c`)
+The one-minute rollup `mv_request_throughput_1m` reads only the `rag_events` source, which is the `rag-responses` topic, and the
+gateway emits to it only from `/v1/rag/query`. `/health` emits nothing, and even a request blocked at an input rail would add a
+`rag-responses` row. So no lightweight request can refresh the bucket without writing evidence or mixing a non-RAG latency into a RAG
+metric. No request was sent and the newest bucket is unchanged (2026-10-22 20:00 UTC, avg 15016 ms, p95 12213 ms).
+Closest honest alternative: a separately labelled gateway health check, the median of three timed `GET /health` calls made by the web
+server when the page renders. It read 8.7 ms in the first check. The three bucket readouts now say they time RAG queries, retrieval and
+generation included. Unit tests cover the median, the error status and the unreachable gateway (null, never a fast number).
+Evidence before and after the session: `rag-responses` 578, `judge-verdicts` 643, `rag-frontier-verdicts` 259 high watermarks and 333
+stored traces, all identical.
+
+### Tap targets (`53080ad`)
+The all-pages sweep found diagram nodes under 44px at 1024: two topology bars (52 to 56 units), the calibration node (40 to 44) and the
+nine MCP tool pills, which now yield to the outline below 1280. Skip to content (focus only) and the Operations readout labels (an
+overlay makes the whole cell the target) are not counted.
+
+### Gates
+`tsc`, `eslint .`, `prettier --check .`, Vitest 181 passed. Production build passed with the dev server stopped, then restarted.
+Playwright full suite 260 passed, 3 skipped (the pre-existing skips that wait for a live disagreement). pytest 1508 passed, 4 skipped.
+Responsive sweep of 11 pages at 375, 768, 1024 and 1440: no horizontal overflow, no console error or warning, no tap target under 44px.
+No Python changed.
+
+### Not done, left for the deploy session
+fill.py frontier-spend undercount, the homepage candidate bypassing `--unasked-only`, recovery cleanup not failure-safe, the 17 versus 18
+recovery-check count, the stale "325 evaluations" in the README, and the JPM complete count from `archive coverage`.
+
 ## 2026-10-22: Day 12 Session 4, run password rotated, start routes gated, recovery rehearsed, UI completed (steps 0 to 5)
 
 Model: Sonnet 5.5, no escalation. Session start: `main`, HEAD and `origin/main` both `8febcdb`, working tree clean (the reported
