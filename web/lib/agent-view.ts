@@ -12,7 +12,7 @@ import {
 } from "@/lib/incidents";
 
 /**
- * What the Agent pages derive beyond lib/incidents.ts: the mechanism map, the four record
+ * What the Agent pages derive beyond lib/incidents.ts: the mechanism map, the three record
  * states, and the three-layer case file. Provenance (see ../CLAUDE.md):
  * - PERSISTED: nothing here is stored by this file.
  * - DERIVED: queryTally, citationTrace, rivalsOf, missingFor and conclusion, each computed from
@@ -219,9 +219,9 @@ export function stagePosition(index: number): { x: number; y: number } {
   return { x, y: cy - ry * Math.sqrt(1 - t * t) };
 }
 
-// The four record states.
+// The three record states.
 
-export type RecordState = "live" | "fixture" | "historical" | "unavailable";
+export type RecordState = "live" | "fixture" | "historical";
 
 export const RECORD_STATE: Record<
   RecordState,
@@ -241,11 +241,6 @@ export const RECORD_STATE: Record<
     label: "Historical reference",
     meaning:
       "A preserved capture of a real record, labelled historical. It is not replayed into the pipeline and it is not a current reading.",
-  },
-  unavailable: {
-    label: "Unavailable record",
-    meaning:
-      "The live record cannot be retrieved. The page says so and shows nothing in its place.",
   },
 };
 

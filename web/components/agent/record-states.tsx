@@ -1,11 +1,6 @@
 import Link from "next/link";
 import { RECORD_STATE, type RecordState } from "@/lib/agent-view";
-import {
-  AMAZON_TRACE_ID,
-  RERUN_TRACE_ID,
-  type LiveLookup,
-  type StoredCounts,
-} from "@/lib/agent-data";
+import { AMAZON_TRACE_ID, type StoredCounts } from "@/lib/agent-data";
 
 // The border carries the meaning and nothing else may change it: solid says
 // something about the platform now, dashed says nothing about it.
@@ -31,12 +26,6 @@ const STYLE: Record<
     mark: "text-text-secondary",
     solid: false,
   },
-  unavailable: {
-    border: "border-failure/50 border-dashed",
-    tone: "var(--failure)",
-    mark: "text-failure",
-    solid: false,
-  },
 };
 
 const LINK =
@@ -54,7 +43,7 @@ function ShortId({ id }: { id: string }) {
 /**
  * One kind of record. The head says what the kind is, the body is the one real instance of it
  * and the foot is the single action. Every card has the same three parts at the same weight,
- * so the four read as one set. Hover or focus brings a card forward, draws a rail in its tone
+ * so the three read as one set. Hover or focus brings a card forward, draws a rail in its tone
  * and lets its siblings recede. The border style is never touched by any of that.
  */
 function Card({
@@ -63,14 +52,12 @@ function Card({
   support,
   id,
   foot,
-  lookup,
 }: {
   state: RecordState;
   fact: string;
   support: string;
   id?: string | null;
   foot: React.ReactNode;
-  lookup?: LiveLookup;
 }) {
   const s = STYLE[state];
   return (
@@ -113,10 +100,7 @@ function Card({
         {RECORD_STATE[state].meaning}
       </p>
       <div className="border-border mt-4 flex flex-1 flex-col gap-1 border-t pt-4">
-        <p
-          className="text-text-primary text-base leading-snug font-medium"
-          data-lookup={lookup}
-        >
+        <p className="text-text-primary text-base leading-snug font-medium">
           {fact}
         </p>
         <p className="text-text-secondary text-base leading-relaxed">
@@ -140,29 +124,6 @@ function Go({ href, children }: { href: string; children: React.ReactNode }) {
   );
 }
 
-/** What the live lookup of the original Amazon trace returned, in words. */
-function lookupText(lookup: LiveLookup): { fact: string; support: string } {
-  if (lookup === "available") {
-    return {
-      fact: "The original Amazon record is available.",
-      support:
-        "A live lookup found it, so it is no longer unavailable. Investigations opens it.",
-    };
-  }
-  if (lookup === "unavailable") {
-    return {
-      fact: "The original Amazon record cannot be retrieved.",
-      support:
-        "A live lookup just now found no trace under its id. It aged out of the event log.",
-    };
-  }
-  return {
-    fact: "The lookup could not be made.",
-    support:
-      "The gateway did not answer, so whether the record exists is not known.",
-  };
-}
-
 /** The stored count for a live or fixture card, or the honest reason there is none. */
 function counted(
   counts: StoredCounts | null,
@@ -182,22 +143,12 @@ function counted(
 }
 
 /**
- * The four kinds of record the Agent pages can show, each with what it means and one real
- * instance: how many stored investigations are live or fixture (counted from the listing),
- * the preserved Amazon disagreement capture, and a live lookup of that same execution. The
- * lookup decides whether the last card says "available", "unavailable" or "unknown", so a
- * record that aged out reads as a stated fact and never as a broken page.
+ * The three kinds of record the Agent pages can show, each with what it means and one real
+ * instance: how many stored investigations are live or fixture (counted from the listing) and
+ * the preserved Amazon disagreement capture. A record that cannot be retrieved is not a kind of
+ * record to browse, so it is stated where it happens, on the page for a case id nothing holds.
  */
-export function RecordStates({
-  counts,
-  lookup,
-  rerun,
-}: {
-  counts: StoredCounts | null;
-  lookup: LiveLookup;
-  /** A live lookup of the trace made when the same question was asked again. */
-  rerun: LiveLookup;
-}) {
+export function RecordStates({ counts }: { counts: StoredCounts | null }) {
   const live = counted(
     counts,
     "live",
@@ -208,11 +159,10 @@ export function RecordStates({
     "fixture",
     "Counted from the same listing. Fixtures are never mixed into the live count.",
   );
-  const gone = lookupText(lookup);
   const newestLive = counts?.newestLive ?? null;
   const newestFixture = counts?.newestFixture ?? null;
   return (
-    <ul className="rec-list grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <ul className="rec-list grid gap-4 lg:grid-cols-3">
       <Card
         state="live"
         {...live}
@@ -239,25 +189,6 @@ export function RecordStates({
         support="The flash judge scored it 1.000 and the frontier judge scored it 0.000."
         id={AMAZON_TRACE_ID}
         foot={<Go href="/#evidence-heading">See the capture</Go>}
-      />
-      <Card
-        state="unavailable"
-        {...gone}
-        lookup={lookup}
-        id={AMAZON_TRACE_ID}
-        foot={
-          lookup === "unavailable" && rerun === "available" ? (
-            <div data-rerun="available">
-              <p className="text-text-secondary text-base leading-relaxed">
-                Asked again, the same question is a separate trace without a
-                frontier score.
-              </p>
-              <Go href={`/investigations?trace=${RERUN_TRACE_ID}`}>
-                Open the Amazon trace
-              </Go>
-            </div>
-          ) : null
-        }
       />
     </ul>
   );

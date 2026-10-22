@@ -4,11 +4,10 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
-import { DISAGREEMENT_TRACE_ID } from "./demo-record";
 
 /**
  * /agent as a forensic product: the mechanism map, the case explorer with its summary, the
- * hypothesis comparison, and the four record states. Reads the real gateway and the stored
+ * hypothesis comparison, and the three record states. Reads the real gateway and the stored
  * sessions. Nothing here calls a model, and each test asserts that no POST was sent.
  */
 
@@ -272,10 +271,10 @@ test.describe("the hypothesis comparison", () => {
   });
 });
 
-test.describe("the four record states", () => {
+test.describe("the three record states", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("the border style keeps its meaning, the four read as one balanced set and holding one quiets the rest", async ({
+  test("the border style keeps its meaning, the three read as one balanced set and holding one quiets the rest", async ({
     page,
   }) => {
     await page.goto("/agent");
@@ -283,21 +282,15 @@ test.describe("the four record states", () => {
       page.locator(`#records [data-record-state="${state}"]`);
     // Solid says something about the platform now. Dashed says nothing about it.
     await expect(card("live")).toHaveCSS("border-top-style", "solid");
-    for (const state of ["fixture", "historical", "unavailable"]) {
+    for (const state of ["fixture", "historical"]) {
       await expect(card(state)).toHaveCSS("border-top-style", "dashed");
     }
     await expect(card("live")).toContainText(
       "Says something about the platform",
     );
-    await expect(card("unavailable")).toContainText(
+    await expect(card("historical")).toContainText(
       "Says nothing about the platform now",
     );
-
-    // The longest card is under one and a half times the shortest.
-    const lengths = await page
-      .locator("#records [data-record-state]")
-      .evaluateAll((els) => els.map((e) => (e.textContent ?? "").length));
-    expect(Math.max(...lengths) / Math.min(...lengths)).toBeLessThan(1.5);
 
     // Pointing at one brings it forward and lets the others recede. The border style stays.
     await card("fixture").scrollIntoViewIfNeeded();
@@ -319,6 +312,44 @@ test.describe("the four record states", () => {
     );
   });
 
+  for (const width of [1024, 1440]) {
+    test(`at ${width}px the three cards are equal columns of one rendered height with aligned actions`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/agent");
+      const cards = page.locator("#records [data-record-state]");
+      await expect(cards).toHaveCount(3);
+      const boxes = await cards.evaluateAll((els) =>
+        els.map((e) => {
+          const r = e.getBoundingClientRect();
+          const link = e.querySelector("a")?.getBoundingClientRect();
+          return {
+            top: r.top,
+            width: r.width,
+            height: r.height,
+            actionBottom: link ? link.bottom : null,
+          };
+        }),
+      );
+      // One row: the same top edge, so there is no orphan or empty fourth column.
+      expect(
+        Math.max(...boxes.map((b) => b.top)) -
+          Math.min(...boxes.map((b) => b.top)),
+      ).toBeLessThan(2);
+      // Equal columns and one rendered height, to within a pixel and a half.
+      const widths = boxes.map((b) => b.width);
+      const heights = boxes.map((b) => b.height);
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1.5);
+      expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1.5);
+      // The one action sits on the same line in every card.
+      const actions = boxes.map((b) => b.actionBottom);
+      expect(actions.every((a) => a !== null)).toBe(true);
+      const ys = actions as number[];
+      expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(1.5);
+    });
+  }
+
   test("under reduced motion the cards do not move or grow", async ({
     page,
   }) => {
@@ -330,32 +361,21 @@ test.describe("the four record states", () => {
     await expect(fixture).toHaveCSS("transform", "none");
   });
 
-  test("each is distinct and the expired Amazon record reads as unavailable, not broken", async ({
+  test("each is distinct and the preserved Amazon capture states its scores", async ({
     page,
-    request,
   }) => {
     const seen = watch(page);
     await page.goto("/agent");
     const states = page.locator("#records [data-record-state]");
-    await expect(states).toHaveCount(4);
+    await expect(states).toHaveCount(3);
     await expect(
       states.evaluateAll((els) =>
         els.map((e) => e.getAttribute("data-record-state")),
       ),
-    ).resolves.toEqual(["live", "fixture", "historical", "unavailable"]);
-
-    // The lookup is real: ask the gateway the same question the page asked.
-    const trace = await request.get(`/ops/traces/${DISAGREEMENT_TRACE_ID}`);
-    const body = (await trace.json()) as { found: boolean };
-    const card = page.locator('#records [data-record-state="unavailable"]');
-    await expect(card.locator("[data-lookup]")).toHaveAttribute(
-      "data-lookup",
-      body.found ? "available" : "unavailable",
+    ).resolves.toEqual(["live", "fixture", "historical"]);
+    await expect(page.locator("#records")).not.toContainText(
+      "Unavailable record",
     );
-    if (!body.found) {
-      await expect(card).toContainText("cannot be retrieved");
-      await expect(card).toContainText("aged out of the event log");
-    }
 
     // The preserved Amazon capture states the two scores and carries no provenance dates.
     const historical = page.locator(

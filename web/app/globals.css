@@ -489,7 +489,7 @@ svg :focus-visible {
     }
   }
 
-  /* The four record kinds. A card is an instrument, so it already wakes and
+  /* The three record kinds. A card is an instrument, so it already wakes and
      rises. On top of that a rail in its tone draws across its top edge, the
      arrow on its action steps forward, and while one card is held the others
      recede. Hover is guarded so a tap on a phone never leaves the set dimmed.

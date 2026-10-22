@@ -4,37 +4,8 @@ import type { Origin } from "@/lib/incidents";
 
 /** The configured demonstration disagreement (lib/demo-record.json). Today it is the Amazon
  * judge disagreement the landing page shows as a capture. Its live trace expired from the event
- * log, and this id is how the Agent page checks whether that is still true. */
+ * log, so the Agent page only links to the capture. */
 export const AMAZON_TRACE_ID = demoRecord.disagreement.app_trace_id;
-
-/** The same question asked again after the expiry: a new, complete trace in the store that is
- * not the original and holds no disagreement, because the frontier judge was not sampled. */
-export const RERUN_TRACE_ID = demoRecord.reask.app_trace_id;
-
-export type LiveLookup = "available" | "unavailable" | "unknown";
-
-/** Looks the trace up on the gateway, read only. "unavailable" means the gateway answered and
- * holds no such trace. "unknown" means the gateway could not be asked, which is not the same
- * thing, and the page says so. */
-export async function lookupTrace(appTraceId: string): Promise<LiveLookup> {
-  try {
-    const res = await fetch(
-      `${GATEWAY_URL}/ops/traces/${encodeURIComponent(appTraceId)}`,
-      { cache: "no-store", signal: AbortSignal.timeout(4000) },
-    );
-    if (res.status === 404) return "unavailable";
-    if (!res.ok) return "unknown";
-    const body: unknown = await res.json();
-    const found =
-      typeof body === "object" && body !== null
-        ? (body as Record<string, unknown>).found
-        : undefined;
-    if (found === true) return "available";
-    return found === false ? "unavailable" : "unknown";
-  } catch {
-    return "unknown";
-  }
-}
 
 export interface StoredCounts {
   live: number;

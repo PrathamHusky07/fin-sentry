@@ -51,14 +51,12 @@ test("the re-asked Amazon trace is a different, complete answer with no disagree
   expect(body.flash?.status).toBe("complete");
   expect(body.frontier?.sampled).toBe(false);
 
-  // The Agent page says so under the unavailable original and links to it, and claims no
-  // disagreement.
-  await page.goto("/agent");
-  const note = page.locator("[data-rerun='available']");
-  await expect(note).toBeVisible();
-  await expect(note).toContainText("separate trace");
-  await expect(note).toContainText("without a frontier score");
+  // The landing evidence caption links to it, and the Agent page no longer offers a record
+  // that cannot be retrieved as a card of its own.
+  await page.goto("/");
   await expect(
-    note.getByRole("link", { name: "Open the Amazon trace" }),
+    page.getByRole("link", { name: "Open the Amazon trace" }).first(),
   ).toHaveAttribute("href", `/investigations?trace=${RERUN_TRACE_ID}`);
+  await page.goto("/agent");
+  await expect(page.locator("[data-rerun]")).toHaveCount(0);
 });

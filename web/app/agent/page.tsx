@@ -6,12 +6,7 @@ import { ReadingACase } from "@/components/agent/reading-a-case";
 import { RecordStates } from "@/components/agent/record-states";
 import { SectionRail } from "@/components/incidents/section-rail";
 import { StartIncident } from "@/components/incidents/start-incident";
-import {
-  AMAZON_TRACE_ID,
-  RERUN_TRACE_ID,
-  lookupTrace,
-  storedCounts,
-} from "@/lib/agent-data";
+import { storedCounts } from "@/lib/agent-data";
 
 export const metadata: Metadata = {
   title: "Agent | Fin-Sentry",
@@ -27,15 +22,11 @@ const SECTIONS = [
 /**
  * The Incident Response Agent: how one investigation runs, then every stored case. Nothing on
  * this route starts an investigation or calls a model. Only the start form, closed until it is
- * opened, can, and only on submit. The two reads this page makes on the server are a
- * listing of stored cases and two lookups of one trace each, all read only.
+ * opened, can, and only on submit. The one read this page makes on the server is a listing
+ * of stored cases, and it is read only.
  */
 export default async function AgentPage() {
-  const [counts, lookup, rerun] = await Promise.all([
-    storedCounts(),
-    lookupTrace(AMAZON_TRACE_ID),
-    lookupTrace(RERUN_TRACE_ID),
-  ]);
+  const counts = await storedCounts();
   return (
     <div className="ctx ctx-forensic mobile-readable flex-1">
       <SectionRail sections={SECTIONS} />
@@ -117,10 +108,10 @@ export default async function AgentPage() {
             Where a record comes from
           </h2>
           <p className="text-text-secondary mt-2 mb-6 max-w-3xl text-base leading-relaxed">
-            Every case and cited record is one of four kinds, and the page never
-            shows one in place of another.
+            Every case and cited record is one of three kinds, and the page
+            never shows one in place of another.
           </p>
-          <RecordStates counts={counts} lookup={lookup} rerun={rerun} />
+          <RecordStates counts={counts} />
         </section>
 
         <section
