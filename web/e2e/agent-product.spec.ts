@@ -324,3 +324,71 @@ test.describe("the four record states", () => {
     ).toBeVisible();
   });
 });
+
+for (const width of [1024, 1440]) {
+  test.describe(`the Incident circle at ${width}px`, () => {
+    test.use({ viewport: { width, height: 900 } });
+
+    test("holds both of its labels completely inside", async ({ page }) => {
+      await page.goto("/agent");
+      const group = page.locator("#lifecycle svg.im g.cn-inner").first();
+      await expect(group).toBeVisible();
+      // The first inner group is the incident: a circle and two text lines. Every corner of
+      // each line's box must lie inside the circle, in the SVG's own units.
+      const fit = await group.evaluate((g) => {
+        const circle = g.querySelector("circle");
+        if (!circle) return null;
+        const cx = Number(circle.getAttribute("cx"));
+        const cy = Number(circle.getAttribute("cy"));
+        const r = Number(circle.getAttribute("r"));
+        return [...g.querySelectorAll("text")].map((t) => {
+          const b = (t as SVGTextElement).getBBox();
+          const corners = [
+            [b.x, b.y],
+            [b.x + b.width, b.y],
+            [b.x, b.y + b.height],
+            [b.x + b.width, b.y + b.height],
+          ];
+          const worst = Math.max(
+            ...corners.map(([x, y]) => Math.hypot(x - cx, y - cy)),
+          );
+          return { text: t.textContent, worst, r };
+        });
+      });
+      expect(fit).not.toBeNull();
+      expect(fit?.map((f) => f.text)).toEqual(["Incident", "scope and window"]);
+      for (const f of fit ?? []) {
+        expect(f.worst, `${f.text} reaches the circle edge`).toBeLessThan(f.r);
+      }
+    });
+  });
+}
+
+for (const width of [375, 768]) {
+  test.describe(`the incident box at ${width}px`, () => {
+    test.use({ viewport: { width, height: 900 } });
+
+    test("holds its text and the page does not overflow", async ({ page }) => {
+      await page.goto("/agent");
+      const box = page
+        .locator("#lifecycle")
+        .getByText("Every stage works on one incident");
+      await expect(box).toBeVisible();
+      const parent = await box.locator("xpath=..").boundingBox();
+      const text = await box.boundingBox();
+      expect(text && parent).toBeTruthy();
+      if (text && parent) {
+        expect(text.x).toBeGreaterThanOrEqual(parent.x);
+        expect(text.x + text.width).toBeLessThanOrEqual(
+          parent.x + parent.width,
+        );
+      }
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
+  });
+}

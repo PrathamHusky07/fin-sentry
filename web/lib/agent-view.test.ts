@@ -170,6 +170,8 @@ describe("the mechanism map", () => {
       expect(p.x + MAP.nodeW / 2).toBeLessThanOrEqual(MAP.width);
       expect(p.y - MAP.nodeH / 2).toBeGreaterThan(0);
       expect(p.y + MAP.nodeH / 2).toBeLessThan(MAP.incident.y - MAP.incident.r);
+      expect(MAP.incident.y + MAP.incident.r).toBeLessThanOrEqual(MAP.height);
+      expect(MAP.incident.x - MAP.incident.r).toBeGreaterThanOrEqual(0);
     }
     for (let i = 1; i < xs.length; i++) {
       expect(xs[i].x - xs[i - 1].x).toBeGreaterThan(MAP.nodeW);

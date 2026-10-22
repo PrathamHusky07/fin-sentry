@@ -264,10 +264,10 @@ function MapDrawing({
         />
         <text
           x={incident.x}
-          y={incident.y - 2}
+          y={incident.y - 4}
           textAnchor="middle"
           className="fill-text-primary"
-          fontSize={16}
+          fontSize={17}
           fontWeight={600}
         >
           Incident
@@ -277,7 +277,7 @@ function MapDrawing({
           y={incident.y + 16}
           textAnchor="middle"
           className="fill-text-tertiary"
-          fontSize={12}
+          fontSize={13}
         >
           scope and window
         </text>

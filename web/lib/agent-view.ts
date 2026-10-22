@@ -201,12 +201,12 @@ export function stepStage(id: StageId, delta: 1 | -1): StageId {
 
 export const MAP = {
   width: 1000,
-  height: 440,
+  height: 470,
   nodeW: 124,
   nodeH: 60,
   pitch: 150,
   firstX: 125,
-  incident: { x: 500, y: 378, r: 50 },
+  incident: { x: 500, y: 394, r: 64 },
   arc: { cx: 500, cy: 340, rx: 400, ry: 190 },
 } as const;
 
