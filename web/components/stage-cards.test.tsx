@@ -1,9 +1,10 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StageCards, stageHref } from "@/components/stage-cards";
 import { REQUEST_PATH, stageAnchor } from "@/lib/architecture-data";
 import { LAYERS } from "@/lib/architecture-layers";
-import { ROUTES } from "@/lib/routes";
 
 function hrefOf(markup: string, title: string): string {
   const card = new RegExp(
@@ -25,25 +26,24 @@ describe("stage card destinations", () => {
     expect(hrefOf(markup, "Retrieve")).toBe(
       "/architecture#stage-retrieval-outline",
     );
-    expect(hrefOf(markup, "Generate")).toBe(
-      "/architecture#stage-generation-outline",
-    );
+    expect(hrefOf(markup, "Generate")).toBe("/generation");
     expect(hrefOf(markup, "Judge")).toBe("/overview#coverage-heading");
     expect(hrefOf(markup, "Agent")).toBe("/agent");
     expect(markup).not.toContain(">Investigate<");
   });
 
-  it("opens a real route for every card, and only Retrieve and Generate share a page", () => {
-    // Neither has a product view, so each opens its own stage on the architecture page.
+  it("opens a real page for every card, and only Retrieve opens the architecture diagram", () => {
     const routes = titles.map((t) => hrefOf(markup, t).split(/[?#]/)[0]);
     for (const route of routes) {
-      expect(ROUTES.map((r) => r.href)).toContain(route);
+      expect(
+        existsSync(join(__dirname, "..", "app", route, "page.tsx")),
+        route,
+      ).toBe(true);
     }
-    const shared = titles.filter(
-      (_, i) => routes.filter((r) => r === routes[i]).length > 1,
-    );
-    expect(shared).toEqual(["Retrieve", "Generate"]);
-    expect(routes[1]).toBe("/architecture");
+    // Five cards, five different pages. No two share a page or a diagram.
+    expect(new Set(routes).size).toBe(titles.length);
+    const diagram = titles.filter((_, i) => routes[i] === "/architecture");
+    expect(diagram).toEqual(["Retrieve"]);
   });
 
   it("picks the wide id on a wide viewport, where the outline id is not displayed", () => {
@@ -60,10 +60,8 @@ describe("stage card destinations", () => {
     const outlineAnchors = LAYERS.find(
       (l) => l.id === "request-path",
     )!.outline.flatMap((lane) => lane.steps.map((s) => s.anchor));
-    for (const stage of ["retrieval", "generation"] as const) {
-      expect(outlineAnchors).toContain(stageAnchor(stage, "outline"));
-      expect(REQUEST_PATH).toContain(stage);
-    }
+    expect(outlineAnchors).toContain(stageAnchor("retrieval", "outline"));
+    expect(REQUEST_PATH).toContain("retrieval");
   });
 
   it("never gives two cards the same destination", () => {

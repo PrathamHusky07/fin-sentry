@@ -10,12 +10,13 @@ function stageLink(page: Page, title: string): Locator {
 }
 
 /**
- * The landing stage cards each open their own destination. Guard opens the blocked requests,
- * Retrieve and Generate open their own stages on the architecture page (the only place either
- * is explained), Judge opens the evaluation coverage, Agent opens the Agent, and Red Team is a
- * separate line that opens its own route. The wide pipeline and the narrow outline each carry
- * their own copy of a stage id, so the Retrieve and Generate landings have to be displayed
- * elements at the width under test. Needs only the web app.
+ * The landing stage cards each open their own destination, and no two share a diagram. Guard
+ * opens the blocked requests, Retrieve opens its stage on the architecture page (the only
+ * card that opens a diagram), Generate opens the generation page, Judge opens the evaluation
+ * coverage, Agent opens the Agent, and Red Team is a separate line that opens its own route.
+ * The wide pipeline and the narrow outline each carry their own copy of a stage id, so the
+ * Retrieve landing has to be a displayed element at the width under test. Needs only the web
+ * app.
  */
 for (const width of [375, 768, 1024, 1440]) {
   const suffix = width >= 1024 ? "" : "-outline";
@@ -29,7 +30,7 @@ for (const width of [375, 768, 1024, 1440]) {
       const expected = [
         "/investigations?status=blocked",
         `/architecture#stage-retrieval${suffix}`,
-        `/architecture#stage-generation${suffix}`,
+        "/generation",
         "/overview#coverage-heading",
         "/agent",
       ];
@@ -42,11 +43,11 @@ for (const width of [375, 768, 1024, 1440]) {
           expected[i],
         );
       }
-      // Five different destinations. Retrieve and Generate have no product view, so they are
-      // two different stages of the same architecture page.
-      expect(new Set(expected).size).toBe(5);
+      // Five different pages. Only Retrieve opens the architecture diagram, so no two cards
+      // reach the same diagram through different anchors.
       const routes = expected.map((href) => href.split(/[?#]/)[0]);
-      expect(routes.filter((r) => r === "/architecture")).toHaveLength(2);
+      expect(new Set(routes).size).toBe(5);
+      expect(routes.filter((r) => r === "/architecture")).toHaveLength(1);
       await expect(page.getByText("Investigate", { exact: true })).toHaveCount(
         0,
       );
@@ -72,17 +73,21 @@ for (const width of [375, 768, 1024, 1440]) {
       await expect(target).toBeInViewport({ ratio: 0.5 });
     });
 
-    test("Generate lands on its own displayed stage, which states the bounds", async ({
+    test("Generate opens the generation page, which states the bounds and the rejected replies", async ({
       page,
     }) => {
       await page.goto("/");
       await stageLink(page, "Generate").click();
-      await expect(page).toHaveURL(
-        new RegExp(`/architecture#stage-generation${suffix}$`),
-      );
-      const target = page.locator(`#stage-generation${suffix}`);
-      await expect(target).toBeVisible();
-      await expect(target).toBeInViewport({ ratio: 0.5 });
+      await expect(page).toHaveURL(/\/generation$/);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Generation" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "The bounds" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "What the schema rail rejected" }),
+      ).toBeVisible();
     });
 
     test("Judge opens the evaluation coverage", async ({ page }) => {
@@ -125,7 +130,7 @@ for (const width of [375, 768, 1024, 1440]) {
 }
 
 // Opening a stage anchor on the architecture page directly still scrolls to
-// that stage and marks it. Nothing on the landing page links here any more.
+// that stage and marks it. Only the Retrieve card links here now.
 for (const width of [375, 1440]) {
   test.describe(`architecture anchors at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
