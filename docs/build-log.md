@@ -57,6 +57,17 @@ rendered heights and aligned actions at 1024 and 1440.
 `recovery.py` checked that `init.sql` rebuilds 8 views. The new view makes it 9, so the literal changed. The check still asserts an
 exact count and the rehearsal passed, which also shows the new statement rebuilds cleanly.
 
+### Gates
+pytest 1522 passed and 4 skipped (the live-topic tests, off by default). Playwright 266 passed and 3 skipped (the skips need a live
+disagreement the store does not hold). Vitest 186 passed. `tsc`, `eslint`, `prettier`, `ruff check`, `ruff format` on changed files
+and `mypy` are clean, and the production build passes with 11 routes. The full Playwright run came before the last 16px text change,
+so `gateway-health.spec.ts` and the width sweep were rerun after it. The sweep covered `/`, `/overview`, `/operations`,
+`/investigations`, `/agent`, `/architecture`, `/generation` and `/red-team` at 375, 768, 1024 and 1440 and passed on overflow, console
+errors, one footer and 44px targets. Inline links inside a sentence and links whose `::after` overlay makes the whole cell the target
+are exempt from the 44px rule. Without that exemption the raw audit flags them on `/overview` and `/architecture`, which this session
+did not edit. The first full Playwright run stopped on two specs that still used the old "p95 latency" label and the four-card count.
+Both were updated to the new intent.
+
 ### Deploy readiness
 `docs/deploy-readiness.md` holds the secret audit, the Vercel settings, the tiered readiness report and the recommended demo path.
 `.env.example` is keys only. `web/package.json` sets `engines.node`.
