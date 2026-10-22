@@ -2,9 +2,10 @@
 The Red Team Console API, mounted on the gateway under /ops/redteam so the browser
 reaches it through the same-origin /ops rewrite the other console routes use.
 
-Routes: list scenarios, start a bounded run, list run history, read one run with its
-executions, list executions with filters, read one execution's evidence. Errors are
-short JSON with an `error` field. Nothing here returns a stack trace, a secret or raw
+Routes: list scenarios, start a bounded run (behind the run password, see run_gate),
+say whether runs are enabled, list run history, read one run with its executions, list
+executions with filters, read one execution's evidence. Errors are short JSON with an
+`error` field. Nothing here returns a stack trace, a secret or raw
 model output.
 """
 
@@ -17,7 +18,7 @@ from collections.abc import Callable
 from typing import Annotated
 
 import psycopg
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -32,6 +33,7 @@ from finsentry.redteam.records import (
     RunRequest,
 )
 from finsentry.redteam.registry import load_scenarios
+from finsentry.redteam.run_gate import HEADER, run_gate, runs_enabled
 from finsentry.redteam.runner import RunRejectedError, start_run
 
 log = logging.getLogger(__name__)
@@ -97,8 +99,25 @@ def build_router(get_deps: Callable[[], Deps]) -> APIRouter:
             ScenarioList(scenarios=views, persistence_available=available).model_dump(mode="json")
         )
 
+    @router.get("/run-gate")
+    async def get_run_gate() -> Response:
+        # Whether a run password is configured, so the page can say runs are disabled
+        # instead of asking for a password nothing will accept. It reveals nothing else.
+        return JSONResponse({"runs_enabled": runs_enabled()})
+
     @router.post("/runs", response_model=RunDetail, status_code=202)
-    async def create_run(request: RunRequest) -> Response:
+    async def create_run(
+        request: RunRequest,
+        password: Annotated[str | None, Header(alias=HEADER)] = None,
+    ) -> Response:
+        # The gate runs before anything is read, resolved or written: a refusal creates no
+        # run row, no execution row, no event and no model call.
+        decision = run_gate.check(password)
+        if not decision.allowed:
+            headers = {"Retry-After": str(decision.retry_after)} if decision.retry_after else None
+            return JSONResponse(
+                {"error": decision.error}, status_code=decision.status, headers=headers
+            )
         deps = get_deps()
         if not deps.database_url:
             return _unavailable()

@@ -12,8 +12,10 @@ import {
  * Three kinds of test live here and each says so:
  *
  * - REAL STACK tests read the live scenario registry and result store through the gateway.
- *   One starts a real run of OUT-001 (pure Python rails, no model calls). They need the
- *   gateway, dashboard and Postgres running.
+ *   None of them starts a run: every POST to /ops/redteam/runs is intercepted, because a run
+ *   needs the server-side run password and would write rows and fire the live defenses. The
+ *   gateway's refusal of a missing or wrong password is proven in tests/redteam/test_run_gate.py.
+ *   They need the gateway, dashboard and Postgres running.
  * - RENDERING tests feed the page fixtures that match the API contract, to see how each of
  *   the five outcomes, a regression and an outage are drawn. An evaluator outage and a
  *   harness failure cannot be produced on demand against the real stack, so these prove how
@@ -281,6 +283,7 @@ test("EXECUTION: reading never starts a run, and the workflow reviews, confirms 
   // wiring is proven with no run, no stored row and no event. A real run is a manual check.
   await page.setViewportSize(desktop);
   const started: unknown[] = [];
+  const passwords: (string | undefined)[] = [];
   const run = {
     run_id: "22222222-2222-2222-2222-222222222222",
     created_at: "2026-10-21T20:00:00Z",
@@ -297,6 +300,7 @@ test("EXECUTION: reading never starts a run, and the workflow reviews, confirms 
     const request = route.request();
     if (request.method() === "POST") {
       started.push(request.postDataJSON());
+      passwords.push(request.headers()["x-run-password"]);
       return route.fulfill({
         status: 202,
         contentType: "application/json",
@@ -343,13 +347,148 @@ test("EXECUTION: reading never starts a run, and the workflow reviews, confirms 
   await page
     .getByRole("button", { name: "Review run of selected (1)" })
     .click();
-  await page.getByRole("button", { name: "Confirm and run 1" }).click();
+  // Confirming needs the run password, so the button stays off until one is typed.
+  const confirm = page.getByRole("button", { name: "Confirm and run 1" });
+  await expect(confirm).toBeDisabled();
+  await page.getByLabel("Run password").fill("test-only-value");
+  await confirm.click();
   await expect(page.getByRole("heading", { name: "Run finished" })).toBeVisible(
     { timeout: 15_000 },
   );
   expect(started).toEqual([
     { scenario_ids: ["OUT-001"], allow_judge_assisted: false },
   ]);
+  // The password travels in a header only: not in the body, not in the URL.
+  expect(passwords).toEqual(["test-only-value"]);
+});
+
+const GATE_RUN = {
+  run_id: "33333333-3333-3333-3333-333333333333",
+  created_at: "2026-10-21T20:00:00Z",
+  finished_at: "2026-10-21T20:00:01Z",
+  status: "completed",
+  scenario_ids: ["OUT-001"],
+  allow_judge_assisted: false,
+  failure_reason: null,
+  total: 1,
+  finished: 1,
+  outcome_counts: { caught: 1 },
+};
+
+test("RUN PASSWORD: a wrong password shows the gateway's refusal, starts nothing and keeps the review open", async ({
+  page,
+}) => {
+  // The POST is intercepted and answers the way the gateway does: 401 unless the header
+  // matches. No run, no row and no model call happens. Server-side enforcement itself is
+  // proven in tests/redteam/test_run_gate.py.
+  await page.setViewportSize(desktop);
+  const attempts: (string | undefined)[] = [];
+  await page.route("**/ops/redteam/runs**", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") return route.continue();
+    const supplied = request.headers()["x-run-password"];
+    attempts.push(supplied);
+    if (supplied !== "right-test-value") {
+      return route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "The run password is missing or incorrect.",
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ run: GATE_RUN, executions: [] }),
+    });
+  });
+  await page.route(`**/ops/redteam/runs/${GATE_RUN.run_id}`, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ run: GATE_RUN, executions: [] }),
+    }),
+  );
+  await page.goto("/red-team");
+  await expect(page.locator("[data-scenario]").first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await openWorkflow(page);
+  await page.getByRole("checkbox", { name: "Select OUT-001" }).check();
+  await page
+    .getByRole("button", { name: "Review run of selected (1)" })
+    .click();
+  const review = page.getByRole("region", { name: "Confirm the run" });
+  const field = review.getByLabel("Run password");
+  await expect(field).toHaveAttribute("type", "password");
+  await field.fill("wrong-test-value");
+  await review.getByRole("button", { name: "Confirm and run 1" }).click();
+  await expect(review.getByRole("alert")).toContainText(
+    "The run password is missing or incorrect.",
+  );
+  // Still reviewing, no progress panel, nothing started.
+  await expect(review).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Run in progress" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Run finished" })).toHaveCount(
+    0,
+  );
+  expect(attempts).toEqual(["wrong-test-value"]);
+
+  // The right password then proceeds through the same path.
+  await field.fill("right-test-value");
+  await review.getByRole("button", { name: "Confirm and run 1" }).click();
+  await expect(page.getByRole("heading", { name: "Run finished" })).toBeVisible(
+    { timeout: 15_000 },
+  );
+  expect(attempts).toEqual(["wrong-test-value", "right-test-value"]);
+
+  // The password is not in the URL or in either browser storage.
+  expect(page.url()).not.toContain("test-value");
+  const stored = await page.evaluate(() =>
+    JSON.stringify([
+      Object.entries(localStorage),
+      Object.entries(sessionStorage),
+    ]),
+  );
+  expect(stored).not.toContain("test-value");
+});
+
+test("RUN PASSWORD: with no password configured the page says runs are disabled and offers no way to start one", async ({
+  page,
+}) => {
+  await page.setViewportSize(desktop);
+  const posts: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST") posts.push(r.url());
+  });
+  await page.route("**/ops/redteam/run-gate", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ runs_enabled: false }),
+    }),
+  );
+  await page.goto("/red-team");
+  await expect(page.locator("[data-scenario]").first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await openWorkflow(page);
+  await expect(
+    page.getByText("Runs are disabled on this deployment"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Review run of selected (0)" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^Review run of all deterministic/ }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", {
+      name: "Review run of OUT-003 with Gemini judge",
+    }),
+  ).toBeDisabled();
+  expect(posts).toEqual([]);
 });
 
 test("EXECUTION: a run that includes gateway scenarios says what they send before it can be confirmed", async ({

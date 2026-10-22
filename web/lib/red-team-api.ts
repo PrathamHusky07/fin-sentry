@@ -64,10 +64,26 @@ export const fetchRun = (runId: string) => call<RunDetail>(`/runs/${runId}`);
 export const fetchExecution = (executionId: string) =>
   call<ExecutionRecord>(`/executions/${executionId}`);
 
-export const startRun = (scenarioIds: string[] | null, allowJudge: boolean) =>
+/** Whether the gateway has a run password configured. When it does not, every run is refused,
+ * so the page says runs are disabled instead of asking for a password. */
+export const fetchRunGate = () =>
+  call<{ runs_enabled?: unknown }>("/run-gate").then((g) =>
+    typeof g.runs_enabled === "boolean" ? g.runs_enabled : null,
+  );
+
+/** Starts a run. The password goes in a request header, never in the URL or the body, and the
+ * gateway checks it before anything is created. The page never stores it. */
+export const startRun = (
+  scenarioIds: string[] | null,
+  allowJudge: boolean,
+  password: string,
+) =>
   call<RunDetail>("/runs", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-run-password": password,
+    },
     body: JSON.stringify({
       scenario_ids: scenarioIds,
       allow_judge_assisted: allowJudge,

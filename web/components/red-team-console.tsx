@@ -44,6 +44,7 @@ import {
   RedTeamApiError,
   fetchAllExecutions,
   fetchRun,
+  fetchRunGate,
   fetchRuns,
   fetchScenarios,
   startRun,
@@ -121,6 +122,9 @@ export function RedTeamConsole() {
   const [activeRun, setActiveRun] = useState<RunDetail | null>(null);
   const [starting, setStarting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Null until the gateway answers. Only a definite false disables the workflow, because the
+  // gateway enforces the password either way.
+  const [runsEnabled, setRunsEnabled] = useState<boolean | null>(null);
   const [executeOpen, setExecuteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(() =>
     Boolean(
@@ -146,6 +150,13 @@ export function RedTeamConsole() {
         if (cancelled) return;
         setOverviewError(message(err, "The Red Team API is unreachable."));
         setOverviewStatus("error");
+      });
+    fetchRunGate()
+      .then((enabled) => {
+        if (!cancelled) setRunsEnabled(enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setRunsEnabled(null);
       });
     fetchRuns()
       .then((history) => {
@@ -233,20 +244,28 @@ export function RedTeamConsole() {
     window.history.replaceState(null, "", qs ? `/red-team?${qs}` : "/red-team");
   }, [filters, explorerFilters, chosen, openExecution]);
 
-  async function start(ids: string[] | null, judgeAssisted: boolean) {
+  /** Resolves true when the gateway accepted the run. A refusal, such as a wrong password,
+   * resolves false with the gateway's message in `notice`, and nothing was started. */
+  async function start(
+    ids: string[] | null,
+    judgeAssisted: boolean,
+    password: string,
+  ): Promise<boolean> {
     setStarting(true);
     setNotice(null);
     try {
-      const detail = await startRun(ids, judgeAssisted);
+      const detail = await startRun(ids, judgeAssisted, password);
       setActiveRun(detail);
       setActiveRunId(detail.run.run_id);
       setSelected(new Set());
       setRefreshToken((n) => n + 1);
+      return true;
     } catch (err: unknown) {
       setNotice(message(err, "The run could not be started."));
       if (err instanceof RedTeamApiError && err.activeRunId) {
         setActiveRunId(err.activeRunId);
       }
+      return false;
     } finally {
       setStarting(false);
     }
@@ -502,9 +521,10 @@ export function RedTeamConsole() {
                 onOpenChange={setExecuteOpen}
                 busy={busy}
                 persistenceAvailable={persistence}
+                runsEnabled={runsEnabled}
                 activeRun={activeRun}
                 startError={notice}
-                onStart={(ids, judge) => void start(ids, judge)}
+                onStart={start}
               />
             </div>
           </section>

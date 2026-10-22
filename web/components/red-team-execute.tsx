@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Panel } from "@/components/panel";
 import { RedTeamOutcomeBadge } from "@/components/red-team-badges";
 import { shortId } from "@/lib/format";
@@ -91,17 +91,28 @@ export function consequences(chosen: ScenarioView[]) {
 function Review({
   chosen,
   judge,
+  submitting,
+  error,
   onConfirm,
   onCancel,
 }: {
   chosen: ScenarioView[];
   judge: boolean;
-  onConfirm: () => void;
+  submitting: boolean;
+  error: string | null;
+  onConfirm: (password: string) => void;
   onCancel: () => void;
 }) {
   const c = consequences(chosen);
   const only = chosen[0];
   const last = only?.last_execution ?? null;
+  // Held only in this component while the review is open. It is sent in a header on submit
+  // and never written to the URL, to storage or to a log.
+  const [password, setPassword] = useState("");
+  // The message belongs to this review only after it has submitted once.
+  const [attempted, setAttempted] = useState(false);
+  const shown = attempted && !submitting ? error : null;
+  const field = useRef<HTMLInputElement>(null);
   return (
     <section
       aria-label="Confirm the run"
@@ -148,22 +159,66 @@ function Review({
           </li>
         ) : null}
       </ul>
-      <div className="mt-4 flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={onConfirm}
-          className={`${BUTTON} border-warning/70 bg-warning/10 text-text-primary hover:bg-warning/20`}
+      <form
+        className="mt-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (password === "" || submitting) return;
+          setAttempted(true);
+          onConfirm(password);
+          field.current?.select();
+        }}
+      >
+        <label
+          htmlFor="run-password"
+          className="text-text-primary block text-base font-medium"
         >
-          {judge ? "Confirm and run" : `Confirm and run ${c.total}`}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className={`${BUTTON} border-border-strong text-text-primary hover:bg-surface`}
+          Run password
+        </label>
+        <p
+          id="run-password-help"
+          className="text-text-secondary mt-0.5 max-w-prose text-base sm:text-sm"
         >
-          Cancel
-        </button>
-      </div>
+          Starting a run needs the password the project operator set on the
+          gateway. The gateway checks it before anything is created, and a wrong
+          one starts nothing.
+        </p>
+        <input
+          ref={field}
+          id="run-password"
+          name="run-password"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          aria-describedby="run-password-help"
+          aria-invalid={shown ? true : undefined}
+          className="border-border-strong bg-background text-text-primary focus-visible:border-accent mt-2 min-h-11 w-full max-w-xs rounded-lg border px-3 font-mono text-base"
+        />
+        {shown ? (
+          <p role="alert" className="text-failure mt-2 text-base">
+            {shown}
+          </p>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="submit"
+            disabled={password === "" || submitting}
+            className={`${BUTTON} border-warning/70 bg-warning/10 text-text-primary hover:bg-warning/20`}
+          >
+            {judge ? "Confirm and run" : `Confirm and run ${c.total}`}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className={`${BUTTON} border-border-strong text-text-primary hover:bg-surface`}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
     </section>
   );
 }
@@ -183,6 +238,7 @@ export function RedTeamExecute({
   onOpenChange,
   busy,
   persistenceAvailable,
+  runsEnabled,
   activeRun,
   startError,
   onStart,
@@ -194,17 +250,25 @@ export function RedTeamExecute({
   onOpenChange: (open: boolean) => void;
   busy: boolean;
   persistenceAvailable: boolean;
+  /** False when the gateway has no run password configured, null while that is unknown. */
+  runsEnabled: boolean | null;
   activeRun: RunDetail | null;
   startError: string | null;
-  onStart: (ids: string[] | null, judgeAssisted: boolean) => void;
+  /** Resolves true when the gateway accepted the run, false when it refused. */
+  onStart: (
+    ids: string[] | null,
+    judgeAssisted: boolean,
+    password: string,
+  ) => Promise<boolean>;
 }) {
   const [review, setReview] = useState<{
     ids: string[] | null;
     judge: boolean;
   } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const deterministic = scenarios.filter((s) => s.mode === "deterministic");
   const judged = scenarios.filter((s) => s.mode === "judge_assisted");
-  const disabled = busy || !persistenceAvailable;
+  const disabled = busy || !persistenceAvailable || runsEnabled === false;
   const reviewChosen = review
     ? review.ids === null
       ? deterministic
@@ -331,11 +395,17 @@ export function RedTeamExecute({
             <Review
               chosen={reviewChosen}
               judge={review.judge}
+              submitting={submitting}
+              error={startError}
               onCancel={() => setReview(null)}
-              onConfirm={() => {
+              onConfirm={(password) => {
                 const { ids, judge } = review;
-                setReview(null);
-                onStart(ids, judge);
+                setSubmitting(true);
+                void onStart(ids, judge, password)
+                  .then((started) => {
+                    if (started) setReview(null);
+                  })
+                  .finally(() => setSubmitting(false));
               }}
             />
           ) : null}
@@ -353,7 +423,13 @@ export function RedTeamExecute({
               Runs are disabled while the result store is unreachable.
             </p>
           ) : null}
-          {startError ? (
+          {runsEnabled === false ? (
+            <p role="status" className="text-warning mt-3 text-base sm:text-sm">
+              Runs are disabled on this deployment because no run password is
+              configured on the gateway. Reading the results still works.
+            </p>
+          ) : null}
+          {startError && !review ? (
             <p role="alert" className="text-failure mt-3 text-base">
               {startError}
             </p>

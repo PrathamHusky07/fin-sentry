@@ -14,7 +14,9 @@ from finsentry.redteam import runner, store
 from finsentry.redteam.api import build_router
 from finsentry.redteam.classify import Observation
 from finsentry.redteam.deps import Deps
+from finsentry.redteam.run_gate import HEADER
 from tests.conftest import TEST_DATABASE_URL
+from tests.redteam.conftest import TEST_RUN_PASSWORD
 from tests.redteam.helpers import make_deps
 
 _CAUGHT = Observation(
@@ -33,7 +35,11 @@ async def _fake_execute(scenario: object, deps: object, execution_id: str) -> Ob
 def _client(deps: Deps) -> httpx.AsyncClient:
     app = FastAPI()
     app.include_router(build_router(lambda: deps))
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://t",
+        headers={HEADER: TEST_RUN_PASSWORD},
+    )
 
 
 @pytest.fixture
