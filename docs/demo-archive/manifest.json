@@ -1,0 +1,117 @@
+{
+  "committed_references": [
+    {
+      "path": "finsentry/redteam/scenarios.yml",
+      "sha256": "187d1ebf0ce4833c57072c6466e9454204eb843f17450dbfb77b2948b361027c"
+    },
+    {
+      "path": "docs/demo-seed/amzn-disagreement-v1.json",
+      "sha256": "601db2524203007df23b880051b5d5d0c9f0b6b58e3cf65d4d3d4cfd4e0243de"
+    },
+    {
+      "path": "docs/demo-seed/demo-questions-v1.json",
+      "sha256": "d0b4718dd72244b758221b89b591335bcf5b41e32bed3599b0e212613b6ea3e4"
+    }
+  ],
+  "created_at_utc": "2026-10-22T00:58:40+00:00",
+  "datasets": {
+    "investigation_events": {
+      "bytes": 44919,
+      "ids_sha256": "9473c80be476360893abc33a2f0d3adb15ea39740c4517c5bec2239b7f4563de",
+      "kind": "table",
+      "path": "postgres/investigation_events.jsonl",
+      "records": 39,
+      "sha256": "e9a63aeadabe417849548fe6aeb7098a39886aa7b04c0cc8bf24fcb10879d057",
+      "source": {
+        "database": "finsentry",
+        "table": "investigation_events"
+      }
+    },
+    "investigations": {
+      "bytes": 48891,
+      "ids_sha256": "0304d4ae1fea48ed815267b52bba34b072c9d0c04c965974efda5cef5f59692b",
+      "kind": "table",
+      "path": "postgres/investigations.jsonl",
+      "records": 7,
+      "sha256": "7d687bfa0d1bebe77bd9087d8ceeeec99924862a7ef0ad5493cabe111de7469d",
+      "source": {
+        "database": "finsentry",
+        "table": "investigations"
+      }
+    },
+    "judge-verdicts": {
+      "bytes": 333702,
+      "ids_sha256": "843b189a1668b476e52b76b33d8f7dcbb1529f15f1072bdadfbfd568596131bf",
+      "kind": "stream",
+      "path": "stream/judge-verdicts.jsonl",
+      "records": 406,
+      "sha256": "07ca0c20e904ee9f051f6432f48f2b01a8722d133669ad4ddffaf7a36daa5d71",
+      "source": {
+        "high_watermark": 616,
+        "log_start_offset": 210,
+        "partition": 0,
+        "topic": "judge-verdicts"
+      }
+    },
+    "rag-frontier-verdicts": {
+      "bytes": 169709,
+      "ids_sha256": "49e3c39ba66e0dbf8e78e9cf145a99b1c8e2cd22350d9389292ec77d9729aa93",
+      "kind": "stream",
+      "path": "stream/rag-frontier-verdicts.jsonl",
+      "records": 186,
+      "sha256": "696f361e096f63fbeb648cc7ff6d1f41e45d2f89daf94933d29ac4007f126a46",
+      "source": {
+        "high_watermark": 259,
+        "log_start_offset": 73,
+        "partition": 0,
+        "topic": "rag-frontier-verdicts"
+      }
+    },
+    "rag-responses": {
+      "bytes": 2495868,
+      "ids_sha256": "6b24aa03f8f92d9fa5d957151431f5e2e2a32900b22f85584daac965569be179",
+      "kind": "stream",
+      "path": "stream/rag-responses.jsonl",
+      "records": 306,
+      "sha256": "7ef225e68cc7e0f037023e22dbbc6ff92f197da593a68c8b27cc8ff81ade3682",
+      "source": {
+        "high_watermark": 551,
+        "log_start_offset": 245,
+        "partition": 0,
+        "topic": "rag-responses"
+      }
+    },
+    "red_team_executions": {
+      "bytes": 45034,
+      "ids_sha256": "68a4e2350519a00027c6f95775fab4a26ba7db9d2dcd2c97b4b79fec0edd2ce5",
+      "kind": "table",
+      "path": "postgres/red_team_executions.jsonl",
+      "records": 43,
+      "sha256": "5507d5a0f356174fad3ef5819b3e4226d4c2acad29f83a2061db92195939c9d6",
+      "source": {
+        "database": "finsentry",
+        "table": "red_team_executions"
+      }
+    },
+    "red_team_runs": {
+      "bytes": 7154,
+      "ids_sha256": "573481baac9d977771f5272e78adb00c9d90dc644ae8aed91132ecd5a09c4eac",
+      "kind": "table",
+      "path": "postgres/red_team_runs.jsonl",
+      "records": 27,
+      "sha256": "7ebf48bdc8a29367889584bf17db308ae35a0a67b8e77e264bb70d3967f664e0",
+      "source": {
+        "database": "finsentry",
+        "table": "red_team_runs"
+      }
+    }
+  },
+  "omitted": [
+    "Kafka record headers. None are used.",
+    "RisingWave tables and materialized views. They are derived from the three topics and are rebuilt from them.",
+    "The corpus, golden_set and hallucination_bench tables. They are reproducible from public sources by the ingestion scripts and are not demo evidence.",
+    "Original Kafka offsets as a restore target. A replay assigns new offsets. Each record keeps its original offset and timestamp as data.",
+    "Model weights and anything a model produced that no stored event or row carries."
+  ],
+  "schema_version": 1
+}
