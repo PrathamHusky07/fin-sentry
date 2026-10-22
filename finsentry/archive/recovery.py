@@ -254,7 +254,7 @@ async def stream_checks(directory: Path, bootstrap: str, token: str) -> list[Che
                 "SELECT count(*) FROM rw_catalog.rw_materialized_views WHERE schema_id ="
                 " (SELECT id FROM rw_catalog.rw_schemas WHERE name = 'public')",
             )
-        checks.append(Check("init.sql rebuilds the derived views", views == 8, f"{views} views"))
+        checks.append(Check("init.sql rebuilds the derived views", views == 9, f"{views} views"))
         with psycopg.connect(own_dsn, autocommit=True) as conn:
             for topic, source in SOURCES.items():
                 got = await _wait_for(
