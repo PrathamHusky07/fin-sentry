@@ -23,15 +23,58 @@ python -m finsentry.archive reconcile    # archive against the live topics, Risi
 python -m finsentry.archive materialize  # load into Postgres, idempotent, never overwrites a row
 python -m finsentry.archive republish --topic judge-verdicts --into <topic>
 python -m finsentry.archive coverage     # which demo questions have a complete stored execution
+python -m finsentry.archive recover      # rehearse the full restore in disposable databases
 ```
 
 ## Recovering the demo without rerunning RAG
 
-1. `python -m finsentry.db.migrate` creates the tables.
-2. `python -m finsentry.archive materialize` restores the Red Team and Agent rows and fills `stream_archive`.
-3. To make the stream records visible to the pages again, `republish` each topic into a freshly created topic of
-   the same name. Stop `finsentry.consumer.main` and the frontier consumer first. Every event on `rag-responses`
-   makes the flash consumer call Gemini, and `republish` refuses a live topic while a consumer is running.
+Run the order below on a machine that has the repository, Docker and nothing else. No step asks the gateway a
+question or calls Gemini.
+
+1. `docker compose -f docker-compose.dev.yml up -d postgres redpanda risingwave` starts the three stores.
+   Do not start the dashboard, the gateway or any `finsentry.consumer` process yet.
+2. `python -m finsentry.db.migrate` creates the tables, `stream_archive` included.
+3. `python -m finsentry.archive verify` checks the files against the manifest with no network.
+4. `python -m finsentry.archive materialize` restores the Red Team and Agent rows and fills `stream_archive`.
+   It is idempotent and never overwrites a row that already exists.
+5. `python scripts/init_risingwave.py` creates the three topics (one partition each), the RisingWave sources
+   and the eight views. `python scripts/demo_seed.py retention` then sets `retention.ms=-1` on the topics.
+6. `python -m finsentry.archive republish --topic <name> --into <name> --allow-live`, once per topic. The
+   flag is required because these are the live topic names. The command refuses to run while any
+   `finsentry.consumer` process exists. That refusal keeps a replay from running 325 Gemini evaluations,
+   because the flash consumer judges every event it reads from `rag-responses`. RisingWave reads the
+   topics from the earliest offset, so the views rebuild by themselves.
+7. `python -m finsentry.archive reconcile` compares the archive with the topics, RisingWave and Postgres.
+8. Start the dashboard, then the gateway, then the web app. Start the consumers last, and only if new
+   traffic is wanted. On a clean machine a consumer group has no committed offset and reads from the end
+   of the topic (the aiokafka default), so it does not judge the replay. On a machine where the group
+   already has committed offsets below the replay, a consumer would judge every replayed event, so
+   do not start it there.
+
+## Rehearsing the recovery
+
+`python -m finsentry.archive recover` runs the whole restore against disposable copies and prints one
+PASS or FAIL line per check. It creates a Postgres database and a RisingWave database named
+`finsentry_recovery_<token>` and three replay topics named `recovery-<token>-<topic>`. It does not connect to
+the development database, does not write to a live topic and does not change the archive. It drops
+everything it created, including when a check fails.
+
+It checks that:
+
+- the restore inserts the manifest's counts, and every restored row is byte-identical to its archived line;
+- the two foreign keys exist and nothing is orphaned;
+- every flash and frontier verdict has its request in the archive;
+- a second restore adds nothing and a restore never overwrites an edited row;
+- `init.sql` rebuilds the eight views, each source holds every archived record and the request view counts
+  every archived request;
+- the dashboard's trace routes return an archived delivered answer with its citations and an archived
+  block with its rail, read from the rebuilt views;
+- the Red Team and Agent routers return all 27 runs, 43 executions with evidence, 7 investigations and 39
+  timeline events, and no planner or tool session was opened.
+
+The replay topics have names no consumer subscribes to, so the rehearsal makes no Gemini call. The pytest
+version, `tests/archive/test_recovery.py`, also asserts that the development row counts and the live topic
+end offsets are the same before and after.
 
 ## What guarantees durability, and what does not
 

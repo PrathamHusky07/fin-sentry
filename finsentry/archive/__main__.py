@@ -10,6 +10,8 @@ python -m finsentry.archive <command>
     republish    put archived stream records back on a topic; a live topic needs --allow-live
                  and no running consumer
     coverage     the RAG coverage matrix, read only
+    recover      restore the archive into disposable Postgres and RisingWave databases, rebuild
+                 the views, read the records back through the application, then drop them all
     fill         ask the missing questions through the real gateway, one at a time, with a
                  memory check and a preventive spend cap before each request (--dry-run
                  prints the plan and asks nothing)
@@ -29,6 +31,7 @@ from finsentry.archive import coverage
 from finsentry.archive.export import DEFAULT_DIR, export
 from finsentry.archive.format import verify_archive
 from finsentry.archive.reconcile import reconcile
+from finsentry.archive.recovery import recover
 from finsentry.archive.restore import materialize, republish
 
 
@@ -41,7 +44,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="finsentry.archive", description=__doc__)
     ap.add_argument("--dir", type=Path, default=DEFAULT_DIR)
     sub = ap.add_subparsers(dest="command", required=True)
-    for name in ("export", "verify", "reconcile", "materialize", "coverage"):
+    for name in ("export", "verify", "reconcile", "materialize", "coverage", "recover"):
         sub.add_parser(name)
     fp = sub.add_parser("fill")
     fp.add_argument("--budget", type=float, required=True, help="Gemini spend cap in USD")
@@ -70,6 +73,11 @@ def main() -> int:
     elif args.command == "materialize":
         for name, count in materialize(args.dir, db).items():
             print(f"{name}: {count} inserted")
+    elif args.command == "recover":
+        checks = asyncio.run(recover(args.dir, db, _bootstrap()))
+        for check in checks:
+            print(f"{'PASS' if check.ok else 'FAIL'}  {check.name}: {check.detail}")
+        return 0 if all(c.ok for c in checks) else 1
     elif args.command == "republish":
         n = asyncio.run(
             republish(args.dir, args.topic, args.into, _bootstrap(), allow_live=args.allow_live)
