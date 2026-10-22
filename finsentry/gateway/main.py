@@ -50,6 +50,7 @@ from finsentry.investigator.api import build_router as build_investigation_route
 from finsentry.investigator.gemini_planner import GeminiPlanner
 from finsentry.investigator.mcp_client import connect_read_tools
 from finsentry.investigator.service import InvestigationDeps, stop_active
+from finsentry.observability.gateway_probe import GatewayProbeSummary, latest_summary
 from finsentry.observability.tracing import configure_tracer_provider, get_tracer, set_app_trace_id
 from finsentry.rails.input.llama_guard import LlamaGuard3Rail
 from finsentry.rails.input.pii_redaction import PiiRedactionRail
@@ -443,6 +444,20 @@ async def ops_throughput_history(limit: int = Query(60, ge=1, le=500)) -> Throug
     except httpx.HTTPError:
         log.warning("dashboard /metrics/throughput/history unreachable", exc_info=True)
         return JSONResponse({"error": "metrics service unreachable"}, status_code=503)  # type: ignore[return-value]
+
+
+@app.get("/ops/gateway-probe/latest", response_model=GatewayProbeSummary)
+async def ops_gateway_probe_latest() -> GatewayProbeSummary:
+    """The newest recorded gateway round-trip probe (finsentry.observability.gateway_probe).
+    Telemetry about reaching the gateway health route, not RAG latency, stored apart from the
+    product evidence. A failed read is a 503, never an empty summary."""
+    if not _DATABASE_URL:
+        return JSONResponse({"error": "DATABASE_URL not configured"}, status_code=503)  # type: ignore[return-value]
+    try:
+        return await asyncio.to_thread(latest_summary, _DATABASE_URL)
+    except psycopg.Error:
+        log.warning("gateway probe read failed", exc_info=True)
+        return JSONResponse({"error": "probe store unreachable"}, status_code=503)  # type: ignore[return-value]
 
 
 @app.get("/ops/calibration/health", response_model=CalibrationHealthResponse)

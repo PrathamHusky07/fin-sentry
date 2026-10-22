@@ -6,11 +6,13 @@ import { ActivityChart } from "@/components/activity-chart";
 import { CalibrationInstrument } from "@/components/calibration-instrument";
 import { ConnectionStrip } from "@/components/connection-strip";
 import { EvalTelemetry } from "@/components/eval-telemetry";
+import { GatewayProbeReadout } from "@/components/gateway-probe-readout";
 import { InView } from "@/components/in-view";
 import { PageHeader } from "@/components/page-header";
 import { PersistedThroughput } from "@/components/persisted-throughput";
 import { formatUtc, relativeTime } from "@/lib/format";
 import type { GatewayHealthCheck } from "@/lib/gateway-health";
+import type { GatewayProbeSummary } from "@/lib/gateway-probe";
 import type { ThroughputHistory } from "@/lib/metrics-snapshot";
 import { activityScope, mergeActivityBuckets } from "@/lib/throughput-history";
 import type { CalibrationHealthResponse, TraceListItem } from "@/lib/trace-api";
@@ -38,6 +40,7 @@ export function LiveOperations({
   newest,
   history,
   health,
+  probe,
 }: {
   calibration: CalibrationHealthResponse | null;
   /** The stored one-minute buckets, or null when the gateway did not return them. */
@@ -46,6 +49,8 @@ export function LiveOperations({
   newest: TraceListItem | null;
   /** The gateway health route timed by the web server, or null when it was not reachable. */
   health: GatewayHealthCheck | null;
+  /** The newest stored gateway round-trip probe, or null when its store did not answer. */
+  probe: GatewayProbeSummary | null;
 }) {
   const now = useNow();
   const { snapshot, receivedAt, connectionState, throughputHistory } =
@@ -77,18 +82,20 @@ export function LiveOperations({
       chart: "requests per bucket",
     },
     {
-      label: "Average latency",
+      label: "Average RAG latency",
       value: fmt(bucket?.avg_latency_ms),
       unit: "ms",
-      scope: "Mean latency of those queries, retrieval and generation included",
+      scope:
+        "End-to-end RAG (local model). Mean latency of those queries, retrieval and generation included",
       target: "#activity-latency",
       chart: "latency per bucket",
     },
     {
-      label: "p95 latency",
+      label: "p95 RAG latency",
       value: fmt(bucket?.p95_latency_ms),
       unit: "ms",
-      scope: "Approximate 95th percentile of those queries",
+      scope:
+        "End-to-end RAG (local model). 95th percentile of those queries, from the same requests as the average",
       target: "#activity-latency",
       chart: "latency per bucket",
     },
@@ -119,6 +126,7 @@ export function LiveOperations({
             aria-hidden="true"
             className="via-signal/50 absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent to-transparent"
           />
+          <GatewayProbeReadout probe={probe} now={now} />
           <h2 id="activity-heading" className="sr-only">
             Request activity
           </h2>
@@ -206,15 +214,15 @@ export function LiveOperations({
             className="border-border flex flex-col gap-1 border-t px-6 py-4 sm:flex-row sm:items-baseline sm:gap-6"
           >
             <p className="text-text-secondary shrink-0 text-sm">
-              Gateway health check
+              Checked just now by this page
               <span className="tabular-metric text-text-primary ml-3 text-lg font-semibold">
                 {health ? `${health.medianMs} ms` : "not measured"}
               </span>
             </p>
             <p className="text-text-tertiary text-sm leading-snug">
               {health
-                ? `Median of ${health.samples} requests to the gateway health route, timed by the web server at ${formatUtc(health.measuredAt)}. It runs no retrieval and no model, so it is the cost of reaching the gateway and not request latency.`
-                : "The gateway health route did not answer, so no round trip was timed. Nothing is shown in its place."}
+                ? `Median of ${health.samples} requests to the gateway health route, timed by the web server at ${formatUtc(health.measuredAt)} and not stored. It runs no retrieval and no model, so it is the cost of reaching the gateway and not request latency.`
+                : "The gateway health route did not answer within its time budget, so no round trip was timed. Nothing is shown in its place."}
             </p>
           </div>
         </section>
@@ -257,7 +265,10 @@ export function LiveOperations({
           </h2>
           <p className="text-text-secondary mt-2 mb-6 max-w-2xl text-base leading-relaxed">
             The latest one-minute buckets persisted by the metrics view. The
-            live bucket above is the newest row of the same view.
+            live bucket above is the newest row of the same view. A bucket shows
+            no p95 when the exact percentile view did not count the same
+            requests, which is the case for buckets whose events had already
+            expired from the stream when that view was added.
           </p>
           <PersistedThroughput history={history} />
         </section>

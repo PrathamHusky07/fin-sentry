@@ -46,4 +46,24 @@ describe("measureGatewayHealth", () => {
     });
     expect(result).toBeNull();
   });
+
+  it("gives up when the whole budget is spent, however many requests remain", async () => {
+    let started = 0;
+    const hangsUntilAborted: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        started += 1;
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("timed out", "TimeoutError")),
+        );
+      });
+    const began = Date.now();
+    const result = await measureGatewayHealth({
+      fetchFn: hangsUntilAborted,
+      budgetMs: 60,
+    });
+    expect(result).toBeNull();
+    // One request was waiting when the budget ran out, so no second or third wait followed it.
+    expect(started).toBe(1);
+    expect(Date.now() - began).toBeLessThan(1000);
+  });
 });

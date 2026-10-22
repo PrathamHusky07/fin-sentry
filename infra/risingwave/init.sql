@@ -2,7 +2,7 @@
 -- Run via scripts/init_risingwave.py (or psql directly against RisingWave port 4566).
 --
 -- Sources: three Redpanda topics consumed as append-only sources.
--- Materialized views: eight aggregations for the dashboard.
+-- Materialized views: nine aggregations for the dashboard.
 -- Aggregations use GROUP BY date_trunc(...) time buckets rather than event-time TUMBLE,
 -- so each event is visible immediately on sparse evaluation traffic
 -- (event-time watermarks do not advance without continuous input).
@@ -104,6 +104,7 @@ FORMAT PLAIN ENCODE JSON;
 -- Materialized views — teardown (reverse dependency order, re-run safe)
 -- ---------------------------------------------------------------------------
 
+DROP MATERIALIZED VIEW IF EXISTS mv_request_latency_exact_1m;
 DROP MATERIALIZED VIEW IF EXISTS mv_frontier_disagreement_1m;
 DROP MATERIALIZED VIEW IF EXISTS mv_frontier_verdict_rate_1m;
 DROP MATERIALIZED VIEW IF EXISTS mv_ticker_quality_1h;
@@ -119,6 +120,11 @@ DROP MATERIALIZED VIEW IF EXISTS mv_request_throughput_1m;
 -- ---------------------------------------------------------------------------
 
 -- 1. Request throughput: query count and status breakdown per 1-minute bucket.
+-- p95_latency_ms here is a sketch (APPROX_PERCENTILE, about 1% relative error) that returns a
+-- lower-rank value on a small bucket: three requests of 3000, 12200 and 29850 ms report a p95 of
+-- 12213 ms under a mean of 15017 ms. Readers take p95 from mv_request_latency_exact_1m instead.
+-- This view is not dropped and rebuilt on a live database, because the topic has expired older
+-- events and the stored buckets are the only copy of that history.
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_request_throughput_1m AS
 SELECT
     date_trunc('minute', timestamp_utc)                        AS window_start,
@@ -221,3 +227,16 @@ SELECT
     COUNT(*) AS disagreement_count
 FROM rag_frontier_verdicts
 GROUP BY date_trunc('minute', evaluation_ts), disagreement_classification;
+
+
+-- 9. Exact request latency per 1-minute bucket. Average and p95 come from the same rows, and the
+-- p95 is a true continuous 95th percentile, so it is never below the mean of a small bucket.
+-- request_count lets a reader confirm this view covered the same rows as mv_request_throughput_1m.
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_request_latency_exact_1m AS
+SELECT
+    date_trunc('minute', timestamp_utc)                        AS window_start,
+    COUNT(*)                                                   AS request_count,
+    AVG(total_latency_ms)                                      AS avg_latency_ms,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS p95_latency_ms
+FROM rag_events
+GROUP BY date_trunc('minute', timestamp_utc);

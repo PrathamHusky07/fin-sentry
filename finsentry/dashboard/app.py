@@ -1,7 +1,7 @@
 """
 Minimal evaluation dashboard.
 
-FastAPI app on port 8081. Queries the eight RisingWave materialized views
+FastAPI app on port 8081. Queries the RisingWave materialized views
 and renders a single-page HTML report. Designed for the interview demo:
 it shows current-window quality metrics without requiring a frontend build.
 
@@ -164,15 +164,26 @@ async def _risingwave_query_failed(_request: Request, _exc: RisingWaveQueryError
     )
 
 
+# One bucket of request throughput. Counts and the average come from mv_request_throughput_1m,
+# which holds history the topic has since expired. The p95 comes from mv_request_latency_exact_1m
+# (a true percentile over the same rows) and only where that view counted exactly the rows the
+# bucket counted. A bucket it cannot cover reports no p95, never the sketch value that
+# mv_request_throughput_1m stores, which can sit below the mean on a small bucket.
+_THROUGHPUT_COLUMNS = """l.total_requests, l.success_count, l.blocked_count, l.error_count,
+               ROUND(l.avg_latency_ms::numeric, 1) AS avg_latency_ms,
+               ROUND(e.p95_latency_ms::numeric, 1) AS p95_latency_ms,
+               l.window_start, l.window_end"""
+_THROUGHPUT_SOURCE = """mv_request_throughput_1m AS l
+        LEFT JOIN mv_request_latency_exact_1m AS e
+               ON e.window_start = l.window_start AND e.request_count = l.total_requests"""
+
+
 async def _fetch_metrics() -> dict[str, Any]:
     throughput = await _fetch_one(
-        """
-        SELECT total_requests, success_count, blocked_count, error_count,
-               ROUND(avg_latency_ms::numeric, 1) AS avg_latency_ms,
-               ROUND(p95_latency_ms::numeric, 1) AS p95_latency_ms,
-               window_start, window_end
-        FROM mv_request_throughput_1m
-        ORDER BY window_end DESC
+        f"""
+        SELECT {_THROUGHPUT_COLUMNS}
+        FROM {_THROUGHPUT_SOURCE}
+        ORDER BY l.window_end DESC
         LIMIT 1
         """
     )
@@ -443,11 +454,9 @@ async def throughput_history(limit: int = Query(60, ge=1, le=MAX_LIMIT)) -> Thro
     # so it is inlined. `limit` is int-typed and range-checked by Query above.
     rows = await _query_all(
         f"""
-        SELECT window_start, window_end, total_requests, success_count, blocked_count,
-               error_count, ROUND(avg_latency_ms::numeric, 1) AS avg_latency_ms,
-               ROUND(p95_latency_ms::numeric, 1) AS p95_latency_ms
-        FROM mv_request_throughput_1m
-        ORDER BY window_start DESC
+        SELECT {_THROUGHPUT_COLUMNS}
+        FROM {_THROUGHPUT_SOURCE}
+        ORDER BY l.window_start DESC
         LIMIT {int(limit)}
         """
     )

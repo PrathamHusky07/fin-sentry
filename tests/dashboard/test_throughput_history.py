@@ -74,7 +74,8 @@ async def test_the_query_reads_only_the_view_and_inlines_the_limit() -> None:
 
     sql = fetch.call_args.args[0]
     assert "FROM mv_request_throughput_1m" in sql
-    assert "ORDER BY window_start DESC" in sql
+    assert "LEFT JOIN mv_request_latency_exact_1m" in sql
+    assert "ORDER BY l.window_start DESC" in sql
     assert "LIMIT 25" in sql
     for write in ("INSERT", "UPDATE", "DELETE", "DROP"):
         assert write not in sql.upper()
