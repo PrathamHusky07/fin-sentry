@@ -37,6 +37,8 @@ MIN_FREE_PERCENT = 25
 PER_CALL_CEILING = 0.02  # the gateway's own per-call Gemini ceiling (cost_governance)
 TARGET_PER_COMPANY = 5
 VERDICT_WAIT_S = 150
+# A block by a rail is real pipeline output and costs nothing, so a few in a row are expected.
+MAX_CONSECUTIVE_INCOMPLETE = 8
 
 
 @dataclass(frozen=True)
@@ -114,11 +116,25 @@ def _wait_for_verdicts(trace_id: str, want_frontier: bool) -> Stored | None:
     return None
 
 
-def run(slots: list[Slot], cap: float, limit: int) -> None:
+def _latest_rail_cost() -> tuple[int, float]:
+    """The gateway's run total as the newest answered event recorded it, so the first request
+    of this run is charged only its own change and not everything the process spent before."""
+    with psycopg.connect(risingwave_dsn()) as conn:
+        row = conn.execute(
+            "SELECT (output_rail_trace_snapshot->'faithfulness'->'cost'->>'call_count')::int,"
+            " (output_rail_trace_snapshot->'faithfulness'->'cost'->>'run_total_usd')::float8"
+            " FROM rag_events WHERE status = 'success'"
+            " AND output_rail_trace_snapshot->'faithfulness'->'cost' IS NOT NULL"
+            " ORDER BY timestamp_utc DESC LIMIT 1"
+        ).fetchone()
+    return (int(row[0]), float(row[1])) if row else (0, 0.0)
+
+
+def run(slots: list[Slot], cap: float, limit: int, spent: float = 0.0) -> None:
     worst = PER_CALL_CEILING + max_flash_cost() + PER_CALL_CEILING
-    print(f"worst case per request ${worst:.4f}; cap ${cap:.2f}; {len(slots)} slots planned")
-    spent = 0.0
-    prev_calls, prev_total = 0, 0.0
+    print(f"worst case per request ${worst:.4f}; cap ${cap:.2f}; spent so far ${spent:.4f};")
+    print(f"{len(slots)} slots planned")
+    prev_calls, prev_total = _latest_rail_cost()
     failures = 0
     with httpx.Client(timeout=200.0) as client:
         for slot in slots[:limit]:
@@ -137,9 +153,10 @@ def run(slots: list[Slot], cap: float, limit: int) -> None:
             trace = str(body.get("retrieval_trace_id", ""))
             cost = body.get("output_rail_trace", {}).get("faithfulness", {}).get("cost", {})
             calls, total = int(cost.get("call_count", 0)), float(cost.get("run_total_usd", 0.0))
-            rail = max(total - prev_total, 0.0) if calls >= prev_calls and prev_calls else total
+            rail = max(total - prev_total, 0.0) if calls >= prev_calls else total
             prev_calls, prev_total = calls, total
-            stored = _wait_for_verdicts(trace, trace != "" and _expects_frontier(trace))
+            # A refused request returns no trace id, so there is nothing to wait for.
+            stored = _wait_for_verdicts(trace, _expects_frontier(trace)) if trace else None
             flash = float(
                 _scalar(
                     "SELECT coalesce(sum(total_cost_usd), 0) FROM judge_verdicts"
@@ -158,8 +175,8 @@ def run(slots: list[Slot], cap: float, limit: int) -> None:
                 f"{time.monotonic() - started:.0f}s memory {free}% -> {free_memory_percent()}%"
             )
             failures = 0 if done else failures + 1
-            if failures >= 2:
-                print("STOP: two requests in a row did not complete")
+            if failures >= MAX_CONSECUTIVE_INCOMPLETE:
+                print(f"STOP: {failures} requests in a row did not complete")
                 return
 
 
@@ -169,7 +186,7 @@ def _expects_frontier(trace_id: str) -> bool:
     return should_sample_for_frontier(trace_id)
 
 
-def main(cap: float, limit: int, dry_run: bool) -> None:
+def main(cap: float, limit: int, dry_run: bool, spent: float = 0.0) -> None:
     from finsentry.archive import coverage
 
     rows = coverage.matrix(load_stored(), None)
@@ -179,4 +196,4 @@ def main(cap: float, limit: int, dry_run: bool) -> None:
             print(f"{s.ticker}\t{s.label}\t{s.query}")
         print(f"{len(slots)} slots")
         return
-    run(slots, cap, limit)
+    run(slots, cap, limit, spent)

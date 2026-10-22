@@ -85,7 +85,7 @@ def load_stored() -> dict[tuple[str, str], list[Stored]]:
     with psycopg.connect(risingwave_dsn()) as conn:
         for t, q, ev, tr, st, ans, chunks, fl, fr in conn.execute(sql).fetchall():
             out.setdefault((str(t), str(q)), []).append(
-                Stored(str(ev), str(tr), str(st), bool(ans), bool(chunks), fl, int(fr))
+                Stored(str(ev), str(tr), str(st), bool(ans), bool(chunks), fl, int(fr or 0))
             )
     return out
 

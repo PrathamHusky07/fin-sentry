@@ -116,12 +116,11 @@ def _merge(directory: Path, rel: str, name: str, kind: str, fresh: list[str]) ->
     row present in both takes the source's current version, so a run that finished since the
     last export is archived as finished."""
     path = directory / rel
-    if not path.is_file():
-        return fresh
     by_id: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line:
-            by_id[dataset_ids(name, kind, [json.loads(line)])[0]] = line
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line:
+                by_id[dataset_ids(name, kind, [json.loads(line)])[0]] = line
     for line in fresh:
         by_id[dataset_ids(name, kind, [json.loads(line)])[0]] = line
     if kind == "stream":

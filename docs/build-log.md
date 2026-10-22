@@ -37,6 +37,52 @@ stopped and restarted after. Playwright, one worker: 226 passed, 8 failed, the s
 768, 1024, 1440), with and without reduced motion, on the home page, the Agent map and the Red Team review: no overflow, no target
 under 44 px, the password field is 16 px. The only console entry is the browser's own line for the deliberate 401 on a wrong password.
 
+### Phase 2 (committed, not pushed): data durability and bounded RAG
+**Inventory.** Only the three Redpanda topics were stream-only (306, 406 and 186 records, all still on the broker and in RisingWave,
+with `retention.ms=-1`). The Red Team (27 runs, 43 executions) and Agent (7 investigations, 39 events) data were already durable
+Postgres tables, so no second copy of them was built. New: migration 008 `stream_archive` (primary key topic plus the sha256 of
+the canonical value) for the topic records, and `docs/demo-archive/` (3 MB, JSONL plus `manifest.json` with schema version, counts,
+sizes, sha256, an id digest per file, the topic offsets, hashes of the committed references and a list of what is omitted). Code is
+`finsentry/archive/` (`python -m finsentry.archive export | verify | reconcile | materialize | republish | coverage | fill`).
+**Proof.** `reconcile` against the live sources: 325/425/186 topic records equal the archive and RisingWave counts, and every
+table's live digest equals the archive digest of the same rows (red_team_runs c88f7640f4b8, executions 5ddebbace199, investigations
+2fe700bfde27, events 986a5d0581db). `verify` reads the archive with no network. A repeat export is byte-identical, and an export
+merges and never drops a record. `materialize` into the live database inserted the topic rows and 0 Red Team or Agent rows (they
+exist, nothing is overwritten), and a second run inserted 0 everywhere. Pytest restores the committed archive into the test
+database, checks counts, ids and byte-identical rows, shows a second restore adds nothing, a modified row survives a restore, and
+only deleted rows are refilled. `republish` of the 406 judge verdicts into a scratch topic read back with identical content ids,
+and the scratch topic was deleted. A live topic is refused without `--allow-live` and while a consumer runs.
+**What does not guarantee durability.** Retention alone does not. Redpanda and Postgres are single Docker volumes on one machine.
+The git copy is the off-machine copy and exists only once pushed.
+**Coverage and RAG.** Of 41 candidate questions (the 40 committed seed questions plus the exact homepage question, read verbatim from
+`docs/demo-seed/amzn-disagreement-v1.json`) 3 had a complete stored execution (AAPL 1, MSFT 1, JPM 1, AMZN 0, NVDA 0). Most stored
+Oct 8 answers were incomplete (blocked, or a partial flash verdict). Nineteen requests were sent, one at a time, each preceded by a
+memory check (25% floor, observed 25% to 31%) and a preventive spend check (worst case $0.065 per request, cap $0.50). Three
+completed: the Amazon homepage question (trace `0bb26bf9-858d-49fc-a677-56fecd18a48e`, 19 s), AAPL-yoy_reasoning
+(`18468e3f`) and AMZN-direct_factual (`0368d1f9`). Sixteen were blocked by the output rails, 11 `malformed_json`, 3
+`schema_violation` and 2 `low_faithfulness`: the local llama3.1:8b rarely returns valid JSON for these prompts. They are stored as
+real executions and were not retried. Coverage is AAPL 2, AMZN 2, MSFT 1, JPM 1, NVDA 0 complete of the target 5 each, so the
+target was not met. A sixth company was not attempted because no committed question set exists for one. Recorded spend: flash
+verdicts $0.0472 (7 and 6 Gemini calls, from `judge_verdicts`), gateway faithfulness calls $0.0143 (change in the gateway's run
+total), frontier $0 (no frontier verdict for any new trace, `rag-frontier-verdicts` stayed at 186). Not recorded: the two
+low_faithfulness blocks made one gateway call each, so Phase 2 spend is $0.0615 recorded plus at most $0.04 (the per-call
+ceiling twice), under $0.10 and far under $0.50. Phase 1 spent $0.00. No bulk or concurrent request ran.
+**Amazon.** Outcome 1: the exact homepage question completed with a new trace id. Outcome 2 not met: the answer repeats the original
+failure ("cannot be determined", flash faithfulness 1.0, answer relevance 0.0), but the frontier judge is sampled by a hash of the
+trace id (1 in 10) and was not sampled, so no disagreement exists to observe. It was not asked again, because a complete
+execution is never re-asked. Outcome 3: `web/lib/demo-record.json` is the one place that names the demonstration records. The
+disagreement stays `historical` (the original trace and the capture are unchanged) and the new trace is recorded as `reask`. The
+Agent page now says the same question was asked again, links the new trace and claims no disagreement.
+**Tests.** The pytest test that asserted the original id in the live disagreement set now validates the configured record: live
+when the file says live, otherwise the live query must not claim it and the capture must be a valid labelled HISTORICAL record. It
+passes by that rule and not because the original disagreement came back. Three Playwright specs that need a real stored
+disagreement (featured card hover, trace drawer, trace detail) are skipped with the reason and reported as skipped. The other five
+Amazon specs now assert the truthful current state (no featured card, an empty disagreement lens) while the file says historical and
+the old assertions when it says live. `e2e/demo-record.spec.ts` checks the file against the store.
+**Verification.** pytest 1488 passed, 4 skipped, 0 failed in 152 s with the `rag-responses` high watermark (570) and judge verdicts
+(425, $3.5716) unchanged across the run, so the run cost $0.00. ruff and mypy (145 files), tsc, eslint, prettier and Vitest (163)
+are clean and `npm run build` passes. Playwright, one worker: 233 passed, 3 skipped, 0 failed.
+
 ## 2026-10-21 (evening): Day 12 Session 2, Agent and Red Team rebuilt, footer, homepage cards
 
 Model: Sonnet 5.5, no escalation. Nothing was pushed. Session start: `main`, HEAD and `origin/main` both `eda86f6`. No frozen tool

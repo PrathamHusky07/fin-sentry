@@ -179,3 +179,9 @@ def test_every_committed_stream_line_carries_its_original_offset_and_timestamp(n
     first = json.loads(lines[0])
     assert set(first) == {"id", "offset", "timestamp_ms", "key", "value"}
     assert isinstance(first["offset"], int) and first["timestamp_ms"] > 1_700_000_000_000
+
+
+def test_a_first_write_is_ordered_like_every_later_merge(tmp_path: Path) -> None:
+    rows = ['{"run_id": "b", "n": 1}', '{"run_id": "a", "n": 2}']
+    first = _merge(tmp_path, "postgres/red_team_runs.jsonl", "red_team_runs", "table", rows)
+    assert [json.loads(x)["run_id"] for x in first] == ["a", "b"]

@@ -13,7 +13,7 @@
       "sha256": "d0b4718dd72244b758221b89b591335bcf5b41e32bed3599b0e212613b6ea3e4"
     }
   ],
-  "created_at_utc": "2026-10-22T00:58:40+00:00",
+  "created_at_utc": "2026-10-22T01:10:59+00:00",
   "datasets": {
     "investigation_events": {
       "bytes": 44919,
@@ -21,7 +21,7 @@
       "kind": "table",
       "path": "postgres/investigation_events.jsonl",
       "records": 39,
-      "sha256": "e9a63aeadabe417849548fe6aeb7098a39886aa7b04c0cc8bf24fcb10879d057",
+      "sha256": "df6896f758d4aa5509d08939595e79b2f62e19da587d7c5b2d8a67c4fb7ddcd4",
       "source": {
         "database": "finsentry",
         "table": "investigation_events"
@@ -33,21 +33,21 @@
       "kind": "table",
       "path": "postgres/investigations.jsonl",
       "records": 7,
-      "sha256": "7d687bfa0d1bebe77bd9087d8ceeeec99924862a7ef0ad5493cabe111de7469d",
+      "sha256": "6bb7f37527cfbdc6703f383ef3b4338242cdb475ec0701448838bad84a45cd53",
       "source": {
         "database": "finsentry",
         "table": "investigations"
       }
     },
     "judge-verdicts": {
-      "bytes": 333702,
-      "ids_sha256": "843b189a1668b476e52b76b33d8f7dcbb1529f15f1072bdadfbfd568596131bf",
+      "bytes": 349785,
+      "ids_sha256": "fcb550afe1b866ebb7aa38db4bf67338348a9f8ebb7b99c73d9d284f357b9c79",
       "kind": "stream",
       "path": "stream/judge-verdicts.jsonl",
-      "records": 406,
-      "sha256": "07ca0c20e904ee9f051f6432f48f2b01a8722d133669ad4ddffaf7a36daa5d71",
+      "records": 425,
+      "sha256": "3332d134200e825e542751250ceec49f994a817267c345686c8a789ebcb746d3",
       "source": {
-        "high_watermark": 616,
+        "high_watermark": 635,
         "log_start_offset": 210,
         "partition": 0,
         "topic": "judge-verdicts"
@@ -68,14 +68,14 @@
       }
     },
     "rag-responses": {
-      "bytes": 2495868,
-      "ids_sha256": "6b24aa03f8f92d9fa5d957151431f5e2e2a32900b22f85584daac965569be179",
+      "bytes": 2786167,
+      "ids_sha256": "e0ca5bb7ba10dc706a0b6bacba63de7f167dd57885db519d9c53d3055f5d8212",
       "kind": "stream",
       "path": "stream/rag-responses.jsonl",
-      "records": 306,
-      "sha256": "7ef225e68cc7e0f037023e22dbbc6ff92f197da593a68c8b27cc8ff81ade3682",
+      "records": 325,
+      "sha256": "88dfb4663af5ca7ee0074f258da07ea49833d53bdcfeae69c42a9835cd812f00",
       "source": {
-        "high_watermark": 551,
+        "high_watermark": 570,
         "log_start_offset": 245,
         "partition": 0,
         "topic": "rag-responses"
@@ -87,7 +87,7 @@
       "kind": "table",
       "path": "postgres/red_team_executions.jsonl",
       "records": 43,
-      "sha256": "5507d5a0f356174fad3ef5819b3e4226d4c2acad29f83a2061db92195939c9d6",
+      "sha256": "0b564b92d9511ca170271358c2300bd57d9357f41e0a52a825013f275c8e421e",
       "source": {
         "database": "finsentry",
         "table": "red_team_executions"
@@ -99,7 +99,7 @@
       "kind": "table",
       "path": "postgres/red_team_runs.jsonl",
       "records": 27,
-      "sha256": "7ebf48bdc8a29367889584bf17db308ae35a0a67b8e77e264bb70d3967f664e0",
+      "sha256": "eb03a47186a6b6917bdbe579c57b65fe0a802818a343143f4f3623896793ad4f",
       "source": {
         "database": "finsentry",
         "table": "red_team_runs"

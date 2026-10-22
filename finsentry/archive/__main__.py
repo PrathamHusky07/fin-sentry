@@ -46,6 +46,7 @@ def main() -> int:
     fp = sub.add_parser("fill")
     fp.add_argument("--budget", type=float, required=True, help="Gemini spend cap in USD")
     fp.add_argument("--limit", type=int, default=100, help="most requests to send")
+    fp.add_argument("--spent", type=float, default=0.0, help="USD already spent against the cap")
     fp.add_argument("--dry-run", action="store_true")
     rp = sub.add_parser("republish")
     rp.add_argument("--topic", required=True)
@@ -77,7 +78,7 @@ def main() -> int:
     elif args.command == "fill":
         from finsentry.archive import fill
 
-        fill.main(args.budget, args.limit, args.dry_run)
+        fill.main(args.budget, args.limit, args.dry_run, args.spent)
     else:
         rows = coverage.matrix(coverage.load_stored(), coverage.archived_event_ids(args.dir))
         print(coverage.render(rows))
