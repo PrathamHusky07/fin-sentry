@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LiveOperations } from "@/components/live-operations";
+import { measureGatewayHealth } from "@/lib/gateway-health";
 import {
   fetchCalibrationHealth,
   fetchRecentTraces,
@@ -11,16 +12,18 @@ export const metadata: Metadata = {
 };
 
 export default async function OperationsPage() {
-  const [calibration, recent, history] = await Promise.all([
+  const [calibration, recent, history, health] = await Promise.all([
     fetchCalibrationHealth(),
     fetchRecentTraces(1),
     fetchThroughputHistory(),
+    measureGatewayHealth(),
   ]);
   return (
     <LiveOperations
       calibration={calibration}
       newest={recent?.[0] ?? null}
       history={history}
+      health={health}
     />
   );
 }

@@ -10,6 +10,7 @@ import { InView } from "@/components/in-view";
 import { PageHeader } from "@/components/page-header";
 import { PersistedThroughput } from "@/components/persisted-throughput";
 import { formatUtc, relativeTime } from "@/lib/format";
+import type { GatewayHealthCheck } from "@/lib/gateway-health";
 import type { ThroughputHistory } from "@/lib/metrics-snapshot";
 import { activityScope, mergeActivityBuckets } from "@/lib/throughput-history";
 import type { CalibrationHealthResponse, TraceListItem } from "@/lib/trace-api";
@@ -36,12 +37,15 @@ export function LiveOperations({
   calibration,
   newest,
   history,
+  health,
 }: {
   calibration: CalibrationHealthResponse | null;
   /** The stored one-minute buckets, or null when the gateway did not return them. */
   history: ThroughputHistory | null;
   /** The most recent persisted execution, or null when none or unavailable. */
   newest: TraceListItem | null;
+  /** The gateway health route timed by the web server, or null when it was not reachable. */
+  health: GatewayHealthCheck | null;
 }) {
   const now = useNow();
   const { snapshot, receivedAt, connectionState, throughputHistory } =
@@ -68,7 +72,7 @@ export function LiveOperations({
       label: "Throughput",
       value: fmt(bucket?.total_requests),
       unit: "requests",
-      scope: "Gateway requests in the latest one-minute bucket",
+      scope: "RAG queries recorded in the latest one-minute bucket",
       target: "#activity-requests",
       chart: "requests per bucket",
     },
@@ -76,7 +80,7 @@ export function LiveOperations({
       label: "Average latency",
       value: fmt(bucket?.avg_latency_ms),
       unit: "ms",
-      scope: "Mean request latency in the same bucket",
+      scope: "Mean latency of those queries, retrieval and generation included",
       target: "#activity-latency",
       chart: "latency per bucket",
     },
@@ -84,7 +88,7 @@ export function LiveOperations({
       label: "p95 latency",
       value: fmt(bucket?.p95_latency_ms),
       unit: "ms",
-      scope: "Approximate 95th percentile in the same bucket",
+      scope: "Approximate 95th percentile of those queries",
       target: "#activity-latency",
       chart: "latency per bucket",
     },
@@ -197,6 +201,22 @@ export function LiveOperations({
               </>
             ) : null}
           </p>
+          <div
+            data-gateway-health={health ? "measured" : "not-measured"}
+            className="border-border flex flex-col gap-1 border-t px-6 py-4 sm:flex-row sm:items-baseline sm:gap-6"
+          >
+            <p className="text-text-secondary shrink-0 text-sm">
+              Gateway health check
+              <span className="tabular-metric text-text-primary ml-3 text-lg font-semibold">
+                {health ? `${health.medianMs} ms` : "not measured"}
+              </span>
+            </p>
+            <p className="text-text-tertiary text-sm leading-snug">
+              {health
+                ? `Median of ${health.samples} requests to the gateway health route, timed by the web server at ${formatUtc(health.measuredAt)}. It runs no retrieval and no model, so it is the cost of reaching the gateway and not request latency.`
+                : "The gateway health route did not answer, so no round trip was timed. Nothing is shown in its place."}
+            </p>
+          </div>
         </section>
 
         <InView className="mt-16">
