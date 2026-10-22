@@ -63,7 +63,7 @@ completed: the Amazon homepage question (trace `0bb26bf9-858d-49fc-a677-56fecd18
 `schema_violation` and 2 `low_faithfulness`: the local llama3.1:8b rarely returns valid JSON for these prompts. They are stored as
 real executions and were not retried. Coverage is AAPL 2, AMZN 2, MSFT 1, JPM 1, NVDA 0 complete of the target 5 each, so the
 target was not met. A sixth company was not attempted because no committed question set exists for one. Recorded spend: flash
-verdicts $0.0472 (7 and 6 Gemini calls, from `judge_verdicts`), gateway faithfulness calls $0.0143 (change in the gateway's run
+verdicts $0.0472 (from `judge_verdicts`), gateway faithfulness calls $0.0143 (change in the gateway's run
 total), frontier $0 (no frontier verdict for any new trace, `rag-frontier-verdicts` stayed at 186). Not recorded: the two
 low_faithfulness blocks made one gateway call each, so Phase 2 spend is $0.0615 recorded plus at most $0.04 (the per-call
 ceiling twice), under $0.10 and far under $0.50. Phase 1 spent $0.00. No bulk or concurrent request ran.
