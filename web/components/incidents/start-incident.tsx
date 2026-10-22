@@ -9,6 +9,7 @@ import {
   startIncident,
   type StartRequest,
 } from "@/lib/incidents-api";
+import { RunPasswordField } from "@/components/run-password-field";
 
 const KINDS = Object.keys(TRIGGER_LABEL) as TriggerKind[];
 const NEEDS_REFERENCE: Partial<Record<TriggerKind, string>> = {
@@ -32,6 +33,7 @@ export function StartIncident() {
   const [reference, setReference] = useState("");
   const [ticker, setTicker] = useState("");
   const [minutes, setMinutes] = useState(60);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{
     text: string;
@@ -47,7 +49,7 @@ export function StartIncident() {
     if (referenceLabel) body.reference_id = reference.trim();
     if (ticker.trim()) body.ticker = ticker.trim().toUpperCase();
     try {
-      const started = await startIncident(body);
+      const started = await startIncident(body, password);
       if (started.created) {
         router.push(`/agent/${started.investigation.investigation_id}`);
         return;
@@ -147,6 +149,11 @@ export function StartIncident() {
             </select>
           </label>
         </div>
+        <RunPasswordField
+          value={password}
+          onChange={setPassword}
+          disabled={busy}
+        />
         <p className="text-text-secondary max-w-3xl text-base leading-relaxed">
           The investigator reads the platform through nine read-only tools and
           cannot change anything. It asks the model for hypotheses at most
@@ -157,7 +164,7 @@ export function StartIncident() {
         <div className="flex flex-wrap items-center gap-4">
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || password === ""}
             className="bg-accent text-background min-h-11 rounded-lg px-5 text-base font-medium disabled:opacity-50"
           >
             {busy ? "Starting…" : "Start investigation"}

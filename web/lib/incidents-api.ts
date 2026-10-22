@@ -83,9 +83,14 @@ export interface StartRequest {
   window_minutes: number;
 }
 
-export const startIncident = (request: StartRequest) =>
+/** Starts an investigation. The password goes in a request header, never in the URL or the
+ * body, and the gateway checks it before anything is created. The page never stores it. */
+export const startIncident = (request: StartRequest, password: string) =>
   call<Started>("", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-run-password": password,
+    },
     body: JSON.stringify(request),
   });

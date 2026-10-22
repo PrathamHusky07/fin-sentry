@@ -1,9 +1,12 @@
 """
-The password gate in front of Red Team runs.
+The password gate in front of the two routes that start work: Red Team runs and
+investigations.
 
 A run fires attack scenarios through the live defenses, writes execution rows and can
-reach a model that bills the project credit, so reading the console must never be enough
-to start one. The password lives only in the server environment (RED_TEAM_RUN_PASSWORD).
+reach a model that bills the project credit. An investigation writes a session and calls
+the planner, which bills the same credit. Reading either console must never be enough to
+start one, so both start routes share this gate and its failure count. Reads stay open.
+The password lives only in the server environment (RED_TEAM_RUN_PASSWORD).
 The gate fails closed: with no password configured every run is refused. Failed attempts
 are counted across all callers, because behind the same-origin proxy every browser reaches
 the gateway from one address, and after MAX_FAILURES inside WINDOW_SECONDS every attempt
@@ -24,6 +27,8 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from fastapi.responses import JSONResponse
+
 log = logging.getLogger(__name__)
 
 PASSWORD_ENV = "RED_TEAM_RUN_PASSWORD"
@@ -41,6 +46,12 @@ class GateDecision:
 
 
 _ALLOWED = GateDecision(True, 200, "")
+
+
+def refusal(decision: GateDecision) -> JSONResponse:
+    """The answer to a refused attempt: a short error, plus Retry-After while locked."""
+    headers = {"Retry-After": str(decision.retry_after)} if decision.retry_after else None
+    return JSONResponse({"error": decision.error}, status_code=decision.status, headers=headers)
 
 
 def runs_enabled() -> bool:
@@ -73,7 +84,7 @@ class RunGate:
             return _ALLOWED
         self._failures.append(now)
         log.warning(
-            "red team run refused: password %s (%d recent failures)",
+            "start refused: run password %s (%d recent failures)",
             "missing" if not supplied else "incorrect",
             len(self._failures),
         )

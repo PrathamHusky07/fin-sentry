@@ -150,7 +150,7 @@ services:
     volumes:
       - ./infra/nginx/gateway.conf:/etc/nginx/nginx.conf:ro
     ports:
-      - "8088:80"
+      - "127.0.0.1:8088:80"
     depends_on:
       - gateway-1
       - gateway-2

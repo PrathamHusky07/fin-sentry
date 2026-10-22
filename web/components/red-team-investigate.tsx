@@ -7,6 +7,7 @@ import { OriginBadge } from "@/components/incidents/badges";
 import { relativeTime } from "@/lib/format";
 import { sessionsForExecution, type Summary } from "@/lib/incidents";
 import { IncidentApiError, startIncident } from "@/lib/incidents-api";
+import { RunPasswordField } from "@/components/run-password-field";
 import {
   OUTCOME_LABEL,
   type ExecutionRecord,
@@ -42,6 +43,7 @@ export function InvestigateThis({
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<{
     text: string;
     id: string | null;
@@ -55,11 +57,14 @@ export function InvestigateThis({
     setBusy(true);
     setNotice(null);
     try {
-      const started = await startIncident({
-        kind: "red_team_miss",
-        reference_id: execution.execution_id,
-        window_minutes: WINDOW_MINUTES,
-      });
+      const started = await startIncident(
+        {
+          kind: "red_team_miss",
+          reference_id: execution.execution_id,
+          window_minutes: WINDOW_MINUTES,
+        },
+        password,
+      );
       onStarted?.();
       if (started.created) {
         router.push(`/agent/${started.investigation.investigation_id}`);
@@ -76,6 +81,7 @@ export function InvestigateThis({
       });
     } finally {
       setBusy(false);
+      setPassword("");
       setConfirming(false);
     }
   }
@@ -132,10 +138,17 @@ export function InvestigateThis({
             twice. Each call’s worst-case cost is reserved against a $0.10
             session cap first. The result is stored and opens in the Agent.
           </p>
+          <div className="mt-3">
+            <RunPasswordField
+              value={password}
+              onChange={setPassword}
+              disabled={busy}
+            />
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || password === ""}
               onClick={() => void start()}
               className={`${BUTTON} border-signal/60 text-text-primary hover:bg-signal/10`}
             >

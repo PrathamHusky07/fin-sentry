@@ -21,7 +21,9 @@ from finsentry.investigator.api import build_router
 from finsentry.investigator.evaluation import seed
 from finsentry.investigator.service import InvestigationDeps
 from finsentry.investigator.tool_contract import McpReadTools
+from finsentry.redteam.run_gate import HEADER
 from tests.conftest import TEST_DATABASE_URL as URL
+from tests.investigations.conftest import TEST_RUN_PASSWORD
 from tests.investigations.helpers import ForbiddenPlanner, GatedPlanner, deps_for, settle, sql
 
 
@@ -42,7 +44,11 @@ def _read_only_deps() -> InvestigationDeps:
 def _client(deps: InvestigationDeps) -> httpx.AsyncClient:
     app = FastAPI()
     app.include_router(build_router(lambda: deps))
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://t",
+        headers={HEADER: TEST_RUN_PASSWORD},
+    )
 
 
 @pytest.fixture

@@ -33,7 +33,7 @@ from finsentry.redteam.records import (
     RunRequest,
 )
 from finsentry.redteam.registry import load_scenarios
-from finsentry.redteam.run_gate import HEADER, run_gate, runs_enabled
+from finsentry.redteam.run_gate import HEADER, refusal, run_gate, runs_enabled
 from finsentry.redteam.runner import RunRejectedError, start_run
 
 log = logging.getLogger(__name__)
@@ -114,10 +114,7 @@ def build_router(get_deps: Callable[[], Deps]) -> APIRouter:
         # run row, no execution row, no event and no model call.
         decision = run_gate.check(password)
         if not decision.allowed:
-            headers = {"Retry-After": str(decision.retry_after)} if decision.retry_after else None
-            return JSONResponse(
-                {"error": decision.error}, status_code=decision.status, headers=headers
-            )
+            return refusal(decision)
         deps = get_deps()
         if not deps.database_url:
             return _unavailable()

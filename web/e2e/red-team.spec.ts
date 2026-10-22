@@ -616,9 +616,11 @@ test("INVESTIGATE: Investigate this asks first, then posts a red_team_miss start
   ).investigations.find((s) => s.origin === "fixture");
   if (!fixture) throw new Error("Seed the fixture sessions first.");
   const posted: unknown[] = [];
+  const passwords: (string | undefined)[] = [];
   await page.route("**/ops/investigations", async (route: Route) => {
     if (route.request().method() !== "POST") return route.continue();
     posted.push(route.request().postDataJSON());
+    passwords.push(route.request().headers()["x-run-password"]);
     const real = await request.get(
       `/ops/investigations/${fixture.investigation_id}`,
     );
@@ -658,13 +660,19 @@ test("INVESTIGATE: Investigate this asks first, then posts a red_team_miss start
   expect(posted).toEqual([]);
 
   await card.getByRole("button", { name: "Investigate this" }).click();
-  await page.getByRole("button", { name: "Start investigation" }).click();
+  // Starting needs the run password, so the button waits for one. The request is
+  // intercepted here, and the throwaway value is not the real password.
+  const start = page.getByRole("button", { name: "Start investigation" });
+  await expect(start).toBeDisabled();
+  await card.getByLabel("Run password").fill("e2e-throwaway");
+  await start.click();
   await expect(page).toHaveURL(
     new RegExp(`/agent/${fixture.investigation_id}$`),
   );
   expect(posted).toEqual([
     { kind: "red_team_miss", reference_id: executionId, window_minutes: 1440 },
   ]);
+  expect(passwords).toEqual(["e2e-throwaway"]);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   expect(w.problems).toEqual([]);
 });
@@ -732,6 +740,7 @@ test("INVESTIGATE: a refusal from the start route is shown as it was sent and na
   await card.getByRole("button", { name: "Investigate this" }).click({
     timeout: 15_000,
   });
+  await card.getByLabel("Run password").fill("e2e-throwaway");
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(card.getByRole("status")).toContainText(
     "no model is configured",

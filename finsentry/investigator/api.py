@@ -2,10 +2,11 @@
 The incident investigation API, mounted on the gateway under /ops/investigations so the browser
 reaches it through the same-origin /ops rewrite the other console routes use.
 
-Routes: start an investigation, list stored sessions, read one session with its timeline and
-report. Only the start route can run anything. The two reads return what is stored, plus values
-derived from it, and never start a run, call the planner or write a row. Errors are short JSON
-with an `error` field. Nothing here returns a stack trace, a credential or a hidden test answer.
+Routes: start an investigation (behind the run password, see redteam/run_gate), list stored
+sessions, read one session with its timeline and report. Only the start route can run anything.
+The two reads return what is stored, plus values derived from it, and never start a run, call the
+planner or write a row. Errors are short JSON with an `error` field. Nothing here returns a stack
+trace, a credential or a hidden test answer.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import psycopg
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ValidationError
 
@@ -38,6 +39,7 @@ from finsentry.investigator.service import (
     start_live,
 )
 from finsentry.investigator.timeline import TimelineEntry
+from finsentry.redteam.run_gate import HEADER, refusal, run_gate
 
 log = logging.getLogger(__name__)
 
@@ -178,7 +180,16 @@ def build_router(get_deps: Callable[[], InvestigationDeps]) -> APIRouter:
     router = APIRouter(prefix="/ops/investigations")
 
     @router.post("", response_model=Started, status_code=202)
-    async def start(request: InvestigationRequest) -> Response:
+    async def start(
+        request: InvestigationRequest,
+        password: Annotated[str | None, Header(alias=HEADER)] = None,
+    ) -> Response:
+        # The same operator password and failure count as a Red Team run. The gate runs before
+        # the store or the planner is touched, so a refusal creates no session, no timeline
+        # event and no model call.
+        decision = run_gate.check(password)
+        if not decision.allowed:
+            return refusal(decision)
         deps = get_deps()
         try:
             investigation_id, created = await start_live(request, deps)
