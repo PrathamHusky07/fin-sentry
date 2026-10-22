@@ -13,7 +13,7 @@
       "sha256": "d0b4718dd72244b758221b89b591335bcf5b41e32bed3599b0e212613b6ea3e4"
     }
   ],
-  "created_at_utc": "2026-10-22T01:10:59+00:00",
+  "created_at_utc": "2026-10-22T20:01:42+00:00",
   "datasets": {
     "investigation_events": {
       "bytes": 44919,
@@ -40,14 +40,14 @@
       }
     },
     "judge-verdicts": {
-      "bytes": 349785,
-      "ids_sha256": "fcb550afe1b866ebb7aa38db4bf67338348a9f8ebb7b99c73d9d284f357b9c79",
+      "bytes": 356576,
+      "ids_sha256": "fcbbf3bac7fb89346119b588ded6005a9e9dec5a8e9e939933e2cd3fdf1ac2cf",
       "kind": "stream",
       "path": "stream/judge-verdicts.jsonl",
-      "records": 425,
-      "sha256": "3332d134200e825e542751250ceec49f994a817267c345686c8a789ebcb746d3",
+      "records": 433,
+      "sha256": "acf4103025531d64b8174fa2014fa2c6198ee29c618df23d0b16c03f761e70fb",
       "source": {
-        "high_watermark": 635,
+        "high_watermark": 643,
         "log_start_offset": 210,
         "partition": 0,
         "topic": "judge-verdicts"
@@ -68,14 +68,14 @@
       }
     },
     "rag-responses": {
-      "bytes": 2786167,
-      "ids_sha256": "e0ca5bb7ba10dc706a0b6bacba63de7f167dd57885db519d9c53d3055f5d8212",
+      "bytes": 2899040,
+      "ids_sha256": "8441ccc401ff9589de72a3b92591ea20b943ce37f18286424f061e956e0bbb06",
       "kind": "stream",
       "path": "stream/rag-responses.jsonl",
-      "records": 325,
-      "sha256": "88dfb4663af5ca7ee0074f258da07ea49833d53bdcfeae69c42a9835cd812f00",
+      "records": 333,
+      "sha256": "22e54f4cefc81cbe87f8887a56a35c13dd3d3dd5221b72e8283a1ddc61596df1",
       "source": {
-        "high_watermark": 570,
+        "high_watermark": 578,
         "log_start_offset": 245,
         "partition": 0,
         "topic": "rag-responses"
