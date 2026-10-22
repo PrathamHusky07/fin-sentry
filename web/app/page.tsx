@@ -25,22 +25,19 @@ export default function LandingPage() {
       <section className="ctx ctx-hero">
         <div className="mx-auto w-full max-w-7xl px-4 pt-10 pb-16 sm:px-8 sm:pt-12 sm:pb-20">
           <h1 className="text-text-primary rise max-w-4xl text-4xl leading-[1.06] font-semibold tracking-tight sm:text-6xl">
-            <span className="block">Guard every answer. Judge it.</span>
-            <span className="block">Keep the evidence.</span>
+            <span className="block">Make every AI answer</span>
+            <span className="block">show its work.</span>
           </h1>
           <div className="rise rise-2 mt-6 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <p className="text-text-secondary max-w-2xl text-lg leading-relaxed text-pretty">
-              Fin-Sentry is an AI reliability and evaluation platform for
-              production LLM systems. Guardrails check each request from input
-              to output, and each answer is traced to the filing text behind it.
-              A two-tier judge scores delivered answers on a separate evaluation
-              plane, and its second tier is calibrated against labeled data.
-              When something fails, an incident response agent reconstructs it
-              from read-only sources and separates a supported explanation from
-              a proven cause. A Red Team suite attacks the defenses on demand,
-              and its recorded executions remain inspectable with traceable
-              evidence. Financial RAG over SEC filings is the reference
-              workload.
+              Fin-Sentry sits in front of an LLM endpoint and guards the
+              question, the retrieved text and the answer. Delivered answers are
+              scored by a two-tier judge on a separate plane, and the second
+              tier is calibrated against labeled data. When something fails, an
+              incident response agent reconstructs it from read-only records and
+              reports only what they support. The reference workload is
+              financial RAG over SEC filings, and recorded Red Team and agent
+              runs remain inspectable.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link

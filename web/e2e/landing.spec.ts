@@ -19,7 +19,7 @@ test.describe("Landing page", () => {
     await page.goto("/");
 
     await expect(
-      page.getByRole("heading", { name: /Guard every answer/, level: 1 }),
+      page.getByRole("heading", { name: /Make every AI answer/, level: 1 }),
     ).toBeVisible();
     await expect(
       page.getByRole("group", { name: /Fin-Sentry system constellation/ }),
@@ -66,21 +66,24 @@ test.describe("Landing page", () => {
     page,
   }) => {
     await page.goto("/");
-    const intro = page.getByText(/AI reliability and evaluation platform/);
-    await expect(intro).toContainText("production LLM systems");
+    const intro = page.getByText(/sits in front of an LLM endpoint/);
+    await expect(intro).toContainText("two-tier judge");
     await expect(intro).toContainText("reference workload");
     // The hero leads with the reliability, evaluation and agent story, makes no claim that
-    // every execution is preserved, and no longer calls financial RAG the only workload.
+    // every execution is preserved, and does not call financial RAG the only workload.
     await expect(intro).toContainText("incident response agent");
-    await expect(intro).toContainText("supported explanation");
-    await expect(intro).toContainText("proven cause");
-    await expect(intro).toContainText("recorded executions remain inspectable");
+    await expect(intro).toContainText("reports only what they support");
+    await expect(intro).toContainText("remain inspectable");
     await expect(intro).not.toContainText("only workload");
     await expect(intro).not.toContainText(/every execution/i);
     await expect(intro).not.toContainText("—");
+    // Four sentences at most.
+    const sentences = ((await intro.innerText()).match(/\.(\s|$)/g) ?? [])
+      .length;
+    expect(sentences).toBeLessThanOrEqual(4);
     await expect(page.locator('head meta[name="description"]')).toHaveAttribute(
       "content",
-      /evidence-bounded agent investigates failures/,
+      /evidence-bounded agent/,
     );
     await expect(page.locator("body")).not.toContainText(
       /sits in front of a RAG endpoint/,

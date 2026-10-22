@@ -22,7 +22,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "Fin-Sentry",
   description:
-    "An AI reliability and evaluation platform for production LLM systems, demonstrated on financial RAG. Guardrails cover the request lifecycle and judges run on a separate evaluation plane. An evidence-bounded agent investigates failures, and recorded Red Team results stay inspectable.",
+    "Fin-Sentry guards an LLM endpoint, scores its answers with a two-tier judge and investigates failures with an evidence-bounded agent. The reference workload is financial RAG over SEC filings, and recorded Red Team and agent runs remain inspectable.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
