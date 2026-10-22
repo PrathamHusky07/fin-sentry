@@ -3,12 +3,12 @@ import { RERUN_TRACE_ID } from "./demo-record";
 
 /**
  * The landing page's product evidence. The Amazon disagreement is shown as a historical
- * capture, and the frame's own action opens a real stored trace, so it never lands on an empty
- * view. Needs the gateway, because it follows the link and reads the stored record.
+ * example, and the frame's own action opens a real trace of the same question asked again, so it
+ * never lands on an empty view and never promises a disagreement the trace does not hold. Needs the gateway, because it follows the link and reads the stored record.
  */
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("the first frame is labeled historical and its action opens a non-empty stored trace", async ({
+test("the first frame is labeled historical and its action opens a non-empty Amazon trace", async ({
   page,
   request,
 }) => {
@@ -21,15 +21,18 @@ test("the first frame is labeled historical and its action opens a non-empty sto
   const figure = page
     .locator("figure")
     .filter({ hasText: "The disagreement that justifies the second tier." });
-  await expect(figure).toContainText("historical capture");
-  await expect(figure).toContainText("so no live record of it exists");
-  // The caption says what the link opens and that it shows no disagreement.
-  await expect(figure).toContainText("shows no disagreement");
+  await expect(figure).toContainText("historical example");
+  await expect(figure).toContainText("what a second opinion exists to surface");
+  // The caption says what the link opens and that it holds no frontier score.
+  await expect(figure).toContainText("without a frontier score");
+  // No provenance dates and no storage wording in the visitor-facing copy.
+  await expect(figure).not.toContainText(/20\d\d-\d\d-\d\d/);
+  await expect(figure).not.toContainText(/stored|expired|event log/i);
 
-  const action = figure.getByRole("link", { name: /Open the stored re-ask/ });
-  await expect(action).toHaveAttribute(
-    "href",
-    `/investigations?trace=${RERUN_TRACE_ID}`,
+  // The label says what it opens. It must not promise a disagreement.
+  const action = figure.getByRole("link", { name: /Open the Amazon trace/ });
+  await expect(figure.getByRole("link", { name: /disagreement/i })).toHaveCount(
+    0,
   );
   await expect(
     figure.getByRole("link", { name: /Filter disagreements/ }),
