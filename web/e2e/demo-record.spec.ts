@@ -51,14 +51,14 @@ test("the re-asked Amazon trace is a different, complete answer with no disagree
   expect(body.flash?.status).toBe("complete");
   expect(body.frontier?.sampled).toBe(false);
 
-  // The Agent page says so under the expired original and links to it, and claims no
+  // The Agent page says so under the unavailable original and links to it, and claims no
   // disagreement.
   await page.goto("/agent");
   const note = page.locator("[data-rerun='available']");
   await expect(note).toBeVisible();
-  await expect(note).toContainText("not the original");
-  await expect(note).toContainText("shows no disagreement");
+  await expect(note).toContainText("separate trace");
+  await expect(note).toContainText("without a frontier score");
   await expect(
-    note.getByRole("link", { name: "Open the new trace" }),
+    note.getByRole("link", { name: "Open the Amazon trace" }),
   ).toHaveAttribute("href", `/investigations?trace=${RERUN_TRACE_ID}`);
 });

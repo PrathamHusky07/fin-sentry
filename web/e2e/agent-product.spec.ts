@@ -275,6 +275,61 @@ test.describe("the hypothesis comparison", () => {
 test.describe("the four record states", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
+  test("the border style keeps its meaning, the four read as one balanced set and holding one quiets the rest", async ({
+    page,
+  }) => {
+    await page.goto("/agent");
+    const card = (state: string) =>
+      page.locator(`#records [data-record-state="${state}"]`);
+    // Solid says something about the platform now. Dashed says nothing about it.
+    await expect(card("live")).toHaveCSS("border-top-style", "solid");
+    for (const state of ["fixture", "historical", "unavailable"]) {
+      await expect(card(state)).toHaveCSS("border-top-style", "dashed");
+    }
+    await expect(card("live")).toContainText(
+      "Says something about the platform",
+    );
+    await expect(card("unavailable")).toContainText(
+      "Says nothing about the platform now",
+    );
+
+    // The longest card is under one and a half times the shortest.
+    const lengths = await page
+      .locator("#records [data-record-state]")
+      .evaluateAll((els) => els.map((e) => (e.textContent ?? "").length));
+    expect(Math.max(...lengths) / Math.min(...lengths)).toBeLessThan(1.5);
+
+    // Pointing at one brings it forward and lets the others recede. The border style stays.
+    await card("fixture").scrollIntoViewIfNeeded();
+    await card("fixture").hover();
+    await expect(card("live")).toHaveCSS("opacity", "0.7");
+    await expect(card("historical")).toHaveCSS("opacity", "0.7");
+    await expect(card("fixture")).toHaveCSS("opacity", "1");
+    await expect(card("fixture")).toHaveCSS("border-top-style", "dashed");
+    await page.mouse.move(5, 5);
+    await expect(card("live")).toHaveCSS("opacity", "1");
+
+    // Keyboard focus does the same without a pointer.
+    await card("historical").getByRole("link").focus();
+    await expect(card("live")).toHaveCSS("opacity", "0.7");
+    await expect(card("historical")).toHaveCSS("opacity", "1");
+    await expect(card("historical").locator(".rec-rail")).toHaveCSS(
+      "transform",
+      "matrix(1, 0, 0, 1, 0, 0)",
+    );
+  });
+
+  test("under reduced motion the cards do not move or grow", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/agent");
+    const fixture = page.locator('#records [data-record-state="fixture"]');
+    await fixture.scrollIntoViewIfNeeded();
+    await fixture.hover();
+    await expect(fixture).toHaveCSS("transform", "none");
+  });
+
   test("each is distinct and the expired Amazon record reads as unavailable, not broken", async ({
     page,
     request,
@@ -299,12 +354,22 @@ test.describe("the four record states", () => {
     );
     if (!body.found) {
       await expect(card).toContainText("cannot be retrieved");
-      await expect(card).toContainText("seven-day retention");
+      await expect(card).toContainText("aged out of the event log");
     }
 
-    await expect(
-      page.locator('#records [data-record-state="historical"]'),
-    ).toContainText("captured 2026-10-08");
+    // The preserved Amazon capture states the two scores and carries no provenance dates.
+    const historical = page.locator(
+      '#records [data-record-state="historical"]',
+    );
+    await expect(historical).toContainText("Amazon judge disagreement");
+    await expect(historical).toContainText("1.000");
+    await expect(historical).toContainText("0.000");
+    await expect(page.locator("#records")).not.toContainText(
+      /20\d\d-\d\d-\d\d/,
+    );
+    await expect(page.locator("#records")).not.toContainText(
+      /seven-day retention/,
+    );
     await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
     expect(seen.posts).toEqual([]);
     expect(seen.issues).toEqual([]);

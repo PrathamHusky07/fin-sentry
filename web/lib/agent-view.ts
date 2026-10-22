@@ -240,7 +240,7 @@ export const RECORD_STATE: Record<
   historical: {
     label: "Historical reference",
     meaning:
-      "A preserved capture of a real record, labelled with its age. It is not replayed into the pipeline and it is not a current reading.",
+      "A preserved capture of a real record, labelled historical. It is not replayed into the pipeline and it is not a current reading.",
   },
   unavailable: {
     label: "Unavailable record",
