@@ -60,6 +60,44 @@ interactive hierarchy (solid: returned, ran and matched nothing, best-supported 
 run, rejected, abstained), with the border rule pinned by a unit test and a computed-style test. "How it works" and "Reading a
 case" were kept separate: one is the mechanism and the other is how to read the result, and they do not overlap.
 
+### Step 6: bounded RAG fill (committed, not pushed)
+The pushed archive (`e14ed78`, 325 / 425 / 186 stream records) is the baseline. This section and the archive refresh after it are a
+separate snapshot for the operator to review and push.
+**Coverage by the code's own predicate** (`is_complete`: status success with an answer and chunks, a flash verdict that scored all
+three metrics, and a frontier verdict when the one-in-ten hash would sample the trace). Of the 41 committed candidate questions:
+AAPL 2 of 8 complete, MSFT 1 of 8, AMZN 2 of 9 (homepage included), NVDA 0 of 8, JPM 1 of 8. The brief called AAPL richly
+complete, and that holds across all stored executions (294 stored, 227 complete, 46 distinct questions), but not for the committed
+question set, so the rule "do not spend on AAPL" was applied by company and not by a belief about its set. NVDA: 7 questions had a
+stored block and 1 was never asked. A question already blocked is not retried, and a delivered-but-incomplete one (MSFT-temporal,
+JPM-different_metric, JPM-temporal) was not asked again either.
+**Fill.** `python -m finsentry.archive fill --budget 0.40 --spent 0.1015 --limit 8 --exclude-ticker AAPL --unasked-only`: eight
+never-asked questions, one at a time, one worker, memory read before each request (36%, 28%, 36%, 25%, 25% ... never below the 25%
+floor) and the spend check before each. Two small flags were added to the driver for this, and its ledger now charges the per-call
+ceiling when a gateway call leaves no recorded cost (a faithfulness block, an error, a delivered answer with no cost), because
+missing usage is not zero. Results:
+- NVDA-citation_evidence `b566ebb7`: blocked, `malformed_json`, $0.
+- MSFT-derived_calculated `f06baa88`: blocked, `malformed_json`, $0.
+- JPM-derived_calculated `9bc103e9`: delivered and complete (flash scored all three), rail $0.0129 plus flash $0.0255, frontier not
+  sampled by the hash.
+- MSFT-citation_evidence `542dad79`: blocked, `malformed_json`, $0.
+- AMZN-segment_product `a5e47882`: blocked, `malformed_json`, $0.
+- JPM-citation_evidence `c5610f58`: blocked, `schema_violation`, $0.
+- AMZN-yoy_reasoning `3cf03262`: blocked, `malformed_json`, $0.
+- AMZN-multi_hop `b357b1c2`: error, `downstream_unavailable` (HTTP 504 after 23 s, the local model did not answer inside its
+  budget with memory at the floor). Stored as an error execution, not retried, charged the $0.02 ceiling because its usage is
+  unknown.
+One complete (JPM +1), six honest blocks and one honest error. NVDA is still 0 complete. Every block is a real output of the pipeline
+and none was retried, loosened or answered by hand. The local llama3.1:8b returns invalid JSON for most of these prompts.
+**Spend.** Step 6 ledger $0.0585 (rail $0.0129, flash $0.0255 recorded and equal to the change in `judge_verdicts`, $0.02 ceiling
+for the error). Cumulative Phase 2 including the earlier sessions' recorded $0.0615 plus their $0.04 allowance: $0.1600 of the
+$0.40 cap. Frontier stayed 186 records, $0. Memory finished at 25% free with Ollama holding the 8B model, and recovered to 56% a few
+minutes after it unloaded. The next heavy step waited for that.
+**Re-archive.** `export` then `verify` and `reconcile`: rag-responses 333 (topic = archive = RisingWave), judge-verdicts 433,
+frontier 186, and the four table digests are identical to the baseline (the Red Team and Agent tables did not change). The recovery
+rehearsal passes every check on the new archive. pytest 1508 passed, 4 skipped, 0 failed, and the event counts (333 / 433 / 186)
+are the same before and after the run, so it cost $0.00. tsc, eslint, prettier, Vitest (177) clean, and the data-dependent
+Playwright specs pass (27 passed, 2 skipped).
+
 ### Verification
 pytest 1505 passed, 4 skipped, 0 failed in 183 s (the documented AMZN failure did not occur). ruff, ruff format and mypy (146
 files) clean on changed Python. tsc, eslint, prettier and Vitest (177) clean, `npm run build` passes with the dev server stopped and
