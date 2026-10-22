@@ -74,7 +74,7 @@ for (const width of WIDTHS) {
       await expect(
         page.locator("#investigations article").first(),
       ).toContainText("Open the case file");
-      await expect(page.locator("#records [data-record-state]")).toHaveCount(4);
+      await expect(page.locator("#records [data-record-state]")).toHaveCount(3);
       await audit(page);
       expect(seen.posts).toEqual([]);
       expect(seen.issues).toEqual([]);

@@ -133,7 +133,7 @@ test.describe("Live Operations interaction system", () => {
     await expect(page).toHaveURL(/#activity-requests$/);
     await expect(page.locator("#activity-requests")).toBeInViewport();
 
-    await page.getByRole("link", { name: /^p95 latency/ }).click();
+    await page.getByRole("link", { name: /^p95 RAG latency/ }).click();
     await expect(page).toHaveURL(/#activity-latency$/);
     await expect(page.locator("#activity-latency")).toBeInViewport();
   });

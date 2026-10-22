@@ -19,7 +19,11 @@ test("Live Operations receives a real snapshot over SSE and labels every readout
   });
 
   const telemetry = page.getByRole("region", { name: "Request activity" });
-  for (const label of ["Throughput", "Average latency", "p95 latency"]) {
+  for (const label of [
+    "Throughput",
+    "Average RAG latency",
+    "p95 RAG latency",
+  ]) {
     await expect(telemetry.getByText(label, { exact: true })).toBeVisible();
   }
   for (const label of ["Judge tokens", "Judge cost"]) {

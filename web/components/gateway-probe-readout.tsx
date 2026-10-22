@@ -24,7 +24,7 @@ export function GatewayProbeReadout({
       data-gateway-probe={state}
       className="border-border border-b px-6 py-7"
     >
-      <h3 className="text-text-secondary text-sm">
+      <h3 className="text-text-secondary text-base sm:text-sm">
         Gateway round trip, recorded probe
       </h3>
       {latest ? (
@@ -40,7 +40,7 @@ export function GatewayProbeReadout({
             <li>max {formatMs(latest.max_ms)} ms</li>
             <li>{latest.samples} requests</li>
           </ul>
-          <p className="text-text-tertiary mt-3 max-w-3xl text-sm leading-snug">
+          <p className="text-text-tertiary mt-3 max-w-3xl text-base leading-snug sm:text-sm">
             Recorded {formatUtc(latest.measured_at)}
             {now !== null ? `, ${relativeTime(latest.measured_at, now)}` : ""}.
             The requests were timed against the gateway health route, which runs
