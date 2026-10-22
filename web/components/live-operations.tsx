@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/page-header";
 import { PersistedThroughput } from "@/components/persisted-throughput";
 import { formatUtc, relativeTime } from "@/lib/format";
 import type { ThroughputHistory } from "@/lib/metrics-snapshot";
-import { mergeActivityBuckets } from "@/lib/throughput-history";
+import { activityScope, mergeActivityBuckets } from "@/lib/throughput-history";
 import type { CalibrationHealthResponse, TraceListItem } from "@/lib/trace-api";
 import { useMetricsSnapshot } from "@/lib/use-metrics-snapshot";
 import { useNow } from "@/lib/use-now";
@@ -56,6 +56,10 @@ export function LiveOperations({
     () => mergeActivityBuckets(history?.buckets ?? [], throughputHistory, live),
     [history, throughputHistory, live],
   );
+
+  // Judged against the clock, so a quiet system shows the last activity that was recorded,
+  // with its real time, and is never described as the last hour.
+  const scope = activityScope(activity, now);
 
   // Each readout points at the chart that draws it. Average and p95 share the
   // latency chart, so those two links land on the same figure.
@@ -207,14 +211,18 @@ export function LiveOperations({
             id="chart-heading"
             className="text-text-primary text-2xl font-semibold tracking-tight"
           >
-            Request buckets, last hour
+            {scope.kind === "last-recorded"
+              ? "Last recorded activity"
+              : scope.kind === "current"
+                ? "Request buckets, last hour"
+                : "Request buckets"}
           </h2>
           <p className="text-text-secondary mt-2 mb-6 max-w-2xl text-base leading-relaxed">
-            The last hour of one-minute buckets. Stored buckets are read from
-            the metrics view, and the newest turns live while the stream is open
-            and that bucket is fresh.
+            {scope.kind === "last-recorded"
+              ? `Nothing has been recorded since ${formatUtc(scope.endedAt)}, so this chart shows the last hour of activity that was stored before then. Each bucket is dated.`
+              : "One-minute buckets read from the metrics view. The newest turns live while the stream is open and that bucket is fresh."}
           </p>
-          <ActivityChart buckets={activity} />
+          <ActivityChart buckets={activity} scope={scope} />
         </section>
 
         <section

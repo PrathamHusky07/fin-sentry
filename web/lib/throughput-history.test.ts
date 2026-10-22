@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { ThroughputBucket } from "@/lib/metrics-snapshot";
 import {
   ACTIVITY_WINDOW_MS,
+  STALE_AFTER_MS,
+  activityScope,
   historyRequestTotal,
   historyRows,
   mergeActivityBuckets,
+  type ActivityBucket,
 } from "@/lib/throughput-history";
 
 // Shaped like the real first and last rows of the stored view: buckets weeks
@@ -174,5 +177,54 @@ describe("mergeActivityBuckets", () => {
 
   it("returns nothing when neither source has a bucket", () => {
     expect(mergeActivityBuckets([], [], true)).toEqual([]);
+  });
+});
+
+describe("activityScope", () => {
+  const bucket = (windowEnd: string): ActivityBucket => ({
+    windowEnd,
+    totalRequests: 3,
+    avgLatencyMs: 100,
+    p95LatencyMs: 200,
+    source: "stored",
+  });
+  const END = "2026-10-22T01:11:00Z";
+  const endMs = new Date(END).getTime();
+
+  it("claims nothing before a clock exists", () => {
+    expect(activityScope([bucket(END)], null)).toEqual({ kind: "unknown" });
+  });
+
+  it("says there is no data when no bucket is stored", () => {
+    expect(activityScope([], endMs)).toEqual({ kind: "none" });
+    expect(activityScope([], null)).toEqual({ kind: "none" });
+  });
+
+  it("is current while the newest bucket is within two minutes, inclusive", () => {
+    expect(activityScope([bucket(END)], endMs + 30_000)).toEqual({
+      kind: "current",
+    });
+    expect(activityScope([bucket(END)], endMs + STALE_AFTER_MS)).toEqual({
+      kind: "current",
+    });
+  });
+
+  it("is the last recorded activity once the newest bucket is stale, with its real time", () => {
+    const now = endMs + STALE_AFTER_MS + 1;
+    expect(activityScope([bucket(END)], now)).toEqual({
+      kind: "last-recorded",
+      endedAt: END,
+      ageMs: STALE_AFTER_MS + 1,
+    });
+    // Eighteen hours of quiet is still the same real bucket, never moved to the clock.
+    const quiet = activityScope([bucket(END)], endMs + 18 * 3_600_000);
+    expect(quiet).toMatchObject({ kind: "last-recorded", endedAt: END });
+  });
+
+  it("judges the newest bucket, not the first", () => {
+    const old = bucket("2026-10-22T00:11:00Z");
+    expect(activityScope([old, bucket(END)], endMs + 60_000)).toEqual({
+      kind: "current",
+    });
   });
 });

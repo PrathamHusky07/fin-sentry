@@ -120,3 +120,30 @@ export function mergeActivityBuckets(
   }
   return series;
 }
+
+/** A bucket older than this is stale: the backend's own rule (two bucket widths,
+ * finsentry/events/metrics_snapshot.py) and the wording the connection strip uses. */
+export const STALE_AFTER_MS = 2 * 60_000;
+
+/** What the activity series is, judged against the clock. `unknown` is the server render and
+ * the first client render, before a clock exists, so nothing is claimed about recency yet.
+ * `last-recorded` means the newest stored bucket is stale, so the series is the last activity
+ * that was recorded and not the last hour of the clock. */
+export type ActivityScope =
+  | { kind: "unknown" }
+  | { kind: "none" }
+  | { kind: "current" }
+  | { kind: "last-recorded"; endedAt: string; ageMs: number };
+
+export function activityScope(
+  buckets: ActivityBucket[],
+  nowMs: number | null,
+): ActivityScope {
+  if (buckets.length === 0) return { kind: "none" };
+  if (nowMs === null) return { kind: "unknown" };
+  const endedAt = buckets[buckets.length - 1].windowEnd;
+  const ageMs = nowMs - new Date(endedAt).getTime();
+  return ageMs > STALE_AFTER_MS
+    ? { kind: "last-recorded", endedAt, ageMs }
+    : { kind: "current" };
+}

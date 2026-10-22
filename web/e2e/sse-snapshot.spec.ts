@@ -28,8 +28,12 @@ test("Live Operations receives a real snapshot over SSE and labels every readout
   // Token and cost scope is the flash judge, never "platform" totals.
   await expect(page.getByText(/Flash judge only/).first()).toBeVisible();
 
+  // The chart heading follows the stored data: the last hour while buckets are fresh, and
+  // the last recorded activity once the newest stored bucket is stale (live-ops-stale.spec.ts).
   await expect(
-    page.getByText("Request buckets, last hour", { exact: true }),
+    page.getByRole("heading", {
+      name: /^(Request buckets, last hour|Last recorded activity)$/,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Calibration" }),

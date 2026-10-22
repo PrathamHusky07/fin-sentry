@@ -14,7 +14,8 @@ import {
   YAxis,
 } from "recharts";
 import { StatusDot } from "@/components/status-dot";
-import type { ActivityBucket } from "@/lib/throughput-history";
+import { formatUtc, relativeTime } from "@/lib/format";
+import type { ActivityBucket, ActivityScope } from "@/lib/throughput-history";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
 const BUCKET_MS = 60_000;
@@ -36,6 +37,17 @@ interface ChartPoint {
 function clock(t: number): string {
   const d = new Date(t);
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+/** The axis and tooltip stamp. A series that is not from the last hour carries the date, so a
+ * bucket from another day can never read as one from this morning. */
+function stamp(t: number, dated: boolean): string {
+  if (!dated) return clock(t);
+  const month = new Date(t).toLocaleString("en-US", {
+    month: "short",
+    timeZone: "UTC",
+  });
+  return `${month} ${new Date(t).getUTCDate()} ${clock(t)}`;
 }
 
 /** One point per real bucket, with a null point inserted wherever buckets
@@ -78,6 +90,7 @@ function ChartTooltip({
   payload,
   label,
   unit,
+  dated,
 }: {
   active?: boolean;
   payload?: {
@@ -87,6 +100,7 @@ function ChartTooltip({
   }[];
   label?: number;
   unit: string;
+  dated: boolean;
 }) {
   if (!active || !payload?.length || label === undefined) return null;
   const source = payload[0].payload?.source ?? null;
@@ -96,7 +110,7 @@ function ChartTooltip({
   return (
     <div className="floating rounded-lg px-4 py-3 text-sm">
       <p className="text-text-tertiary font-mono text-xs">
-        Bucket ending {clock(label)} UTC
+        Bucket ending {stamp(label, dated)} UTC
       </p>
       {source ? (
         <p
@@ -123,16 +137,31 @@ function ChartTooltip({
 
 const AXIS_TICK = { fontSize: 12, fill: "var(--text-tertiary)" };
 
+/** How long ago the last recorded bucket ended, from the scope's own age. */
+function ageText(scope: Extract<ActivityScope, { kind: "last-recorded" }>) {
+  return relativeTime(
+    scope.endedAt,
+    new Date(scope.endedAt).getTime() + scope.ageMs,
+  );
+}
+
 /** What the paragraph under the charts says, from the real series alone. */
-function caption(buckets: ActivityBucket[]): string {
+function caption(buckets: ActivityBucket[], scope: ActivityScope): string {
   if (buckets.length === 0) {
-    return "No bucket is available yet. Stored history or the first snapshot fills this in.";
+    return "No bucket is stored yet, so there is no activity to chart. The first request that reaches the metrics view adds one.";
   }
   const hasLive = buckets.some((b) => b.source === "live");
+  const span =
+    scope.kind === "last-recorded"
+      ? "ending at the last recorded activity"
+      : "in the last hour";
   const count =
     buckets.length === 1
-      ? "One bucket in the last hour, so the latency chart shows a single point. A line needs a second bucket, and the metrics view advances once a minute."
-      : `${buckets.length} buckets in the last hour. Missing minutes stay empty and the line breaks across them.`;
+      ? `One bucket ${span}, so the latency chart shows a single point. A line needs a second bucket, and the metrics view advances once a minute.`
+      : `${buckets.length} buckets ${span}. Missing minutes stay empty and the line breaks across them.`;
+  if (scope.kind === "last-recorded") {
+    return `These are the last buckets the metrics view stored. The newest ended ${formatUtc(scope.endedAt)}, ${ageText(scope)}. They are not from the last hour. ${count} Every bar is a stored bucket. None is live right now. The next section holds the full stored history.`;
+  }
   const bars = hasLive
     ? "Blue bars are stored buckets and the cyan bar is the live one."
     : "Every bar is a stored bucket. None is live right now.";
@@ -148,8 +177,18 @@ function caption(buckets: ActivityBucket[]): string {
  * the stream is open and that bucket is fresh; every other bar is stored and
  * says so. With a single bucket it says plainly what it is waiting for.
  */
-export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
+export function ActivityChart({
+  buckets,
+  scope,
+}: {
+  buckets: ActivityBucket[];
+  scope: ActivityScope;
+}) {
   const reducedMotion = usePrefersReducedMotion();
+  const dated = scope.kind === "last-recorded";
+  const span = dated
+    ? "ending at the last recorded activity"
+    : "in the last hour";
   const points = useMemo(() => toPoints(buckets), [buckets]);
   const times = points.map((p) => p.t);
   const domain: [number, number] =
@@ -177,7 +216,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
       type="number"
       scale="time"
       domain={domain}
-      tickFormatter={clock}
+      tickFormatter={(t: number) => stamp(t, dated)}
       tick={AXIS_TICK}
       tickLine={false}
       axisLine={{ stroke: "var(--border-strong)" }}
@@ -191,6 +230,17 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
       vertical={false}
     />
   );
+
+  if (buckets.length === 0) {
+    return (
+      <p
+        role="status"
+        className="border-border-strong text-text-secondary max-w-3xl rounded-lg border border-dashed p-4 text-base leading-relaxed"
+      >
+        {caption(buckets, scope)}
+      </p>
+    );
+  }
 
   return (
     <div>
@@ -222,6 +272,12 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
                     ? `Live, waiting for the next bucket. Newest ended ${clock(newestT ?? 0)} UTC`
                     : `Live edge: newest bucket ended ${clock(newestT ?? 0)} UTC`}
                 </span>
+              ) : scope.kind === "last-recorded" ? (
+                <span className="text-warning flex items-center gap-2">
+                  <StatusDot color="warning" />
+                  Last recorded activity ended {formatUtc(scope.endedAt)},{" "}
+                  {ageText(scope)}
+                </span>
               ) : (
                 <span className="text-text-tertiary flex items-center gap-2">
                   <StatusDot color="neutral" />
@@ -233,7 +289,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
           <div
             className="mt-2 h-44"
             role="img"
-            aria-label={`Requests per one-minute bucket, stored and live. ${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} in the last hour.`}
+            aria-label={`Requests per one-minute bucket, stored and live. ${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} ${span}.`}
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
@@ -252,7 +308,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
                 />
                 <Tooltip
                   cursor={{ fill: "rgb(255 255 255 / 0.05)" }}
-                  content={<ChartTooltip unit="requests" />}
+                  content={<ChartTooltip unit="requests" dated={dated} />}
                   animationDuration={140}
                 />
                 {edge}
@@ -315,7 +371,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
           <div
             className="mt-2 h-52"
             role="img"
-            aria-label={`Average and p95 latency per one-minute bucket. ${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} in the last hour.`}
+            aria-label={`Average and p95 latency per one-minute bucket. ${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} ${span}.`}
           >
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
@@ -337,7 +393,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
                     strokeWidth: 1,
                     strokeDasharray: "3 3",
                   }}
-                  content={<ChartTooltip unit="ms" />}
+                  content={<ChartTooltip unit="ms" dated={dated} />}
                   animationDuration={140}
                 />
                 {edge}
@@ -386,7 +442,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
       </div>
 
       <p className="text-text-secondary mt-5 max-w-3xl text-base leading-relaxed">
-        {caption(buckets)}
+        {caption(buckets, scope)}
       </p>
 
       {buckets.length > 0 ? (
@@ -396,7 +452,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
           </summary>
           <table className="mt-2 w-full max-w-xl text-left text-sm">
             <caption className="sr-only">
-              One-minute buckets in the last hour, stored and live
+              One-minute buckets {span}, stored and live
             </caption>
             <thead>
               <tr className="text-text-tertiary">
@@ -411,7 +467,7 @@ export function ActivityChart({ buckets }: { buckets: ActivityBucket[] }) {
               {buckets.map((h) => (
                 <tr key={h.windowEnd} className="border-border border-t">
                   <td className="tabular-metric text-text-secondary py-2">
-                    {clock(new Date(h.windowEnd).getTime())}
+                    {stamp(new Date(h.windowEnd).getTime(), dated)}
                   </td>
                   <td className="text-text-secondary py-2">
                     {SOURCE_LABEL[h.source]}
