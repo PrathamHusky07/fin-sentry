@@ -110,7 +110,9 @@ export function InterfaceHub() {
   return (
     <div>
       <DiagramScope edges={EDGES} details={DETAILS}>
-        <div className="hidden lg:block">
+        {/* The nine tool pills are 32 units tall. Below 1280px the drawing scales under 44px
+            tap targets, so the outline stands in for it until the drawing is full size. */}
+        <div className="hidden xl:block">
           <svg
             viewBox="0 0 1200 600"
             role="img"
@@ -364,7 +366,7 @@ export function InterfaceHub() {
           <ArchLegend items={["read", "muted"]} />
         </div>
       </DiagramScope>
-      <div className="lg:hidden">
+      <div className="xl:hidden">
         <LaneOutline lanes={LAYERS[3].outline} />
       </div>
     </div>

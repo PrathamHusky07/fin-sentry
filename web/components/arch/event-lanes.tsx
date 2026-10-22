@@ -388,7 +388,7 @@ export function EventLanes() {
               x={334}
               y={590}
               w={240}
-              h={40}
+              h={44}
               id="calibrationFile"
               title="Calibration file on disk"
               tone="muted"
