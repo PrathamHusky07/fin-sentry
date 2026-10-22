@@ -1,5 +1,66 @@
 # Build Log
 
+## 2026-10-22 (late night): Day 12 Session 6, hero, exact latency, probe series, three record states, deploy handoff
+
+Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `230c557`, tree clean. No RAG request, no model call and no
+fill ran. Cost $0.00. No frozen contract, MCP tool, rail, held-out case, planner behavior, archive design, password gate or the
+constellation composition changed. One exception is recorded under Recovery below.
+
+### Live Operations: the p95 bug and what the bucket counts
+`mv_request_throughput_1m` computed the average with `AVG` and the p95 with `APPROX_PERCENTILE(0.95)`, a sketch with about 1%
+relative error that returns a lower-rank value on a small bucket. Over the same three rows (3000, 12200 and 29850 ms) it returned
+12213.09 against a mean of 15016.67, which is the pair the page showed. `PERCENTILE_CONT(0.95)` returns 28085 for those rows, the
+hand-computed value. Both columns read the same rows, so the cause was the function, not a row-set mismatch.
+
+The old view could not be dropped and rebuilt. Redpanda's log start offset for `rag-responses` is 245 against a high watermark of 578, so
+the first 245 events had expired and the view holds the only copy of their buckets. `mv_request_latency_exact_1m` (new, in `init.sql`
+and created on the live instance by that one statement) computes count, average and exact p95 per minute. The two readers
+(`_fetch_metrics` and the throughput history route) take counts and average from the old view and p95 from the new one only where the
+new view counted exactly the same number of requests. 73 of 158 stored buckets, those whose events had expired, now report no p95
+and the UI says so. They no longer report a value that can sit below the mean. Guard tests run the real `init.sql` statement and the
+reader SQL over scratch tables with known latencies (`tests/risingwave/test_latency_percentile_sql.py`), and a Playwright spec fails if
+any bucket of 20 requests or fewer has p95 below its average. The latest bucket now reads avg 15015.7 ms, p95 21553.2 ms.
+
+What the bucket counts: the gateway emits `RagResponseEvent` only from `/v1/rag/query`, but the topic also holds pytest fixtures. 117 of
+the 325 archived `rag-responses` events are "duplicate-verdict regression probe" events with an empty model and a synthetic
+`total_latency_ms` of 100, and 42 of the 333 traces the UI reads today are the same probes. They are the 100 ms buckets, which is the
+fast figure remembered from before the slow RAG run. Session 5 was right that no real lightweight request feeds the bucket and wrong
+to say only RAG feeds it. They are stored evidence and were not touched. Real queries have a median near 10.2 s.
+
+### Persisted gateway round-trip series
+`finsentry/observability/gateway_probe.py` times 30 sequential `GET /health` requests (two warm-up requests discarded) and stores one
+row in `gateway_probe_runs` (migration 009), apart from every evidence table. It runs no model and no retrieval and writes no product
+row. A run that cannot time every request stores nothing. The gateway serves the newest row at `GET /ops/gateway-probe/latest` (503 on a
+failed read, never an empty summary) and Live Operations shows it first with its recorded time, with the RAG readouts below it labelled
+"End-to-end RAG (local model)". First run: median 0.26 ms, p95 0.35 ms, max 0.38 ms over 30 requests. The page's own health check is now
+bounded by one shared 1500 ms budget (it could take 12 s) and says it is not stored. Product evidence before and after: topic offsets
+578, 643 and 259 unchanged, `stream_archive` 936, Red Team runs 27 and executions 43, investigations 7 and events 39, throughput view 158
+buckets and 578 requests, all unchanged. The only new rows are the probe run and the migration record.
+
+### Hero
+Headline: "Score the answer. Audit the judge. Explain the failure from the record." Candidates weighed: "Judge the answers. Then audit the judges."
+(drops the investigator), "Audited judges. An investigator that abstains." (reads as a list of nouns), and "The judges are audited. The
+investigator shows its evidence, or abstains." (passive). The shipped line names the three things the build does that a wrapper does not.
+The first fold now has three lights at 0.30, 0.22 and 0.18 peak (were 0.11 and 0.09) that drift, swell and breathe, an aurora band behind
+the headline, a band of light that crosses the dot lattice and brightens the dots, a turning beam centred on the constellation core,
+and a scroll-tied depth trail where the browser supports it. All of it is transform or opacity, none is defined under reduced motion,
+and the beam is not drawn there. Specs assert the animation names under both preferences and compare rendered pixels at 1440 and 375
+wide: they change over time with motion and are identical without it. The beam is a desktop effect, because the constellation is below
+the first mobile screen.
+
+### Record states
+The fourth card, its `lookup` and `rerun` props, `lookupText`, `lookupTrace`, `LiveLookup`, `RERUN_TRACE_ID` and the two server lookups
+on the Agent page are gone. Three cards in three equal columns from 1024 wide, one column below. Specs assert equal widths, equal
+rendered heights and aligned actions at 1024 and 1440.
+
+### Recovery
+`recovery.py` checked that `init.sql` rebuilds 8 views. The new view makes it 9, so the literal changed. The check still asserts an
+exact count and the rehearsal passed, which also shows the new statement rebuilds cleanly.
+
+### Deploy readiness
+`docs/deploy-readiness.md` holds the secret audit, the Vercel settings, the tiered readiness report and the recommended demo path.
+`.env.example` is keys only. `web/package.json` sets `engines.node`.
+
 ## 2026-10-22 (night): Day 12 Session 5, hero, Amazon evidence, record states, Live Operations scope
 
 Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `40064e3`, tree clean. The RAG-fill commits (`21cfaa0`,
