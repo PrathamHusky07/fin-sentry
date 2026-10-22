@@ -51,6 +51,10 @@ def main() -> int:
     fp.add_argument("--limit", type=int, default=100, help="most requests to send")
     fp.add_argument("--spent", type=float, default=0.0, help="USD already spent against the cap")
     fp.add_argument("--dry-run", action="store_true")
+    fp.add_argument("--exclude-ticker", action="append", default=[], help="skip a company")
+    fp.add_argument(
+        "--unasked-only", action="store_true", help="ask only questions with no stored execution"
+    )
     rp = sub.add_parser("republish")
     rp.add_argument("--topic", required=True)
     rp.add_argument("--into", required=True)
@@ -86,7 +90,14 @@ def main() -> int:
     elif args.command == "fill":
         from finsentry.archive import fill
 
-        fill.main(args.budget, args.limit, args.dry_run, args.spent)
+        fill.main(
+            args.budget,
+            args.limit,
+            args.dry_run,
+            args.spent,
+            frozenset(args.exclude_ticker),
+            args.unasked_only,
+        )
     else:
         rows = coverage.matrix(coverage.load_stored(), coverage.archived_event_ids(args.dir))
         print(coverage.render(rows))
