@@ -5,6 +5,7 @@ import { DecisionNavigator } from "@/components/decision-navigator";
 import { HeroConstellation } from "@/components/hero-constellation";
 import { StageCards } from "@/components/stage-cards";
 import { Topology } from "@/components/topology";
+import demoRecord from "@/lib/demo-record.json";
 
 export const metadata: Metadata = {
   title: "Fin-Sentry",
@@ -132,8 +133,8 @@ export default function LandingPage() {
             <BrowserFrame
               src="/screenshots/trace-detail.png"
               route="/investigations"
-              href="/investigations?disagreement=true"
-              cta="Filter disagreements"
+              href={`/investigations?trace=${demoRecord.reask.app_trace_id}`}
+              cta="Open the stored re-ask"
               {...SHOT.traceDetail}
               alt="The trace detail drawer for a real disagreement: the flash judge scored an Amazon net income answer 1.000 and the frontier judge scored it 0.000, with the frontier judge’s written reasoning."
             />
@@ -145,10 +146,13 @@ export default function LandingPage() {
               frontier judge scored it zero and explained that the retrieved
               context did contain the figure.{" "}
               <span className="text-text-tertiary">
-                This is a capture taken on 2026-10-08 of an execution stored on
-                2026-10-03. The event log has since expired that execution, so
-                the live disagreement filter can come back empty.
-              </span>
+                The image is a historical capture taken on 2026-10-08 of an
+                execution stored on 2026-10-03. The event log has since expired
+                that execution, so no live record of it exists.
+              </span>{" "}
+              The link opens a real stored trace instead: the same Amazon
+              question asked again on 2026-10-22. The frontier judge was not
+              sampled for it, so it shows no disagreement.
             </figcaption>
           </figure>
 
