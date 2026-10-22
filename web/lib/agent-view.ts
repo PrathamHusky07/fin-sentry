@@ -1,4 +1,6 @@
 import {
+  QUERY_OUTCOME_LABEL,
+  QUERY_OUTCOME_MEANING,
   evidenceRows,
   queryOutcome,
   type Detail,
@@ -249,6 +251,84 @@ export const RECORD_STATE: Record<
 
 export function recordStateOf(origin: Origin): "live" | "fixture" {
   return origin === "live" ? "live" : "fixture";
+}
+
+// Reading a case file.
+
+export type ReadingId = QueryOutcome | "hypothesis" | "abstained";
+
+export interface ReadingState {
+  id: ReadingId;
+  /** A query result is one line of the evidence. An outcome is how the whole case ended. */
+  kind: "query" | "outcome";
+  /** The border rule, stated once: a solid border says something about the platform and a
+   * dashed border says nothing about it. True means solid. The case file draws these states
+   * with the same rule, and the unit test pins the assignment below. */
+  says: boolean;
+  label: string;
+  meaning: string;
+}
+
+/** STATIC. The five query states use the same label and meaning constants the case file
+ * renders, so this key cannot drift from it. In reading order: what says something first. */
+export const READING_STATES: readonly ReadingState[] = [
+  {
+    id: "returned",
+    kind: "query",
+    says: true,
+    label: QUERY_OUTCOME_LABEL.returned,
+    meaning: QUERY_OUTCOME_MEANING.returned,
+  },
+  {
+    id: "verified_empty",
+    kind: "query",
+    says: true,
+    label: QUERY_OUTCOME_LABEL.verified_empty,
+    meaning: QUERY_OUTCOME_MEANING.verified_empty,
+  },
+  {
+    id: "hypothesis",
+    kind: "outcome",
+    says: true,
+    label: "Best-supported hypothesis",
+    meaning:
+      "The records are consistent with it and no rival is also supported. That is not a proven cause, and the case file says so on the result.",
+  },
+  {
+    id: "unverified_empty",
+    kind: "query",
+    says: false,
+    label: QUERY_OUTCOME_LABEL.unverified_empty,
+    meaning: QUERY_OUTCOME_MEANING.unverified_empty,
+  },
+  {
+    id: "unavailable",
+    kind: "query",
+    says: false,
+    label: QUERY_OUTCOME_LABEL.unavailable,
+    meaning: QUERY_OUTCOME_MEANING.unavailable,
+  },
+  {
+    id: "rejected",
+    kind: "query",
+    says: false,
+    label: QUERY_OUTCOME_LABEL.rejected,
+    meaning: QUERY_OUTCOME_MEANING.rejected,
+  },
+  {
+    id: "abstained",
+    kind: "outcome",
+    says: false,
+    label: "Abstained",
+    meaning:
+      "The investigation finished and found no supported cause, or could not read the source it needed. It is stored and shown as a complete result, not as an error.",
+  },
+];
+
+export function readingStateById(id: ReadingId): ReadingState {
+  const found = READING_STATES.find((r) => r.id === id);
+  if (!found) throw new Error(`unknown reading state ${id}`);
+  return found;
 }
 
 // The case file.

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AgentGuide } from "@/components/agent/agent-guide";
 import { CaseExplorer } from "@/components/agent/case-explorer";
 import { InvestigationMap } from "@/components/agent/investigation-map";
+import { ReadingACase } from "@/components/agent/reading-a-case";
 import { RecordStates } from "@/components/agent/record-states";
 import { SectionRail } from "@/components/incidents/section-rail";
 import { StartIncident } from "@/components/incidents/start-incident";
@@ -50,11 +50,10 @@ export default async function AgentPage() {
               Incident Response Agent
             </h1>
             <p className="text-text-secondary mt-4 text-lg leading-relaxed text-pretty">
-              The investigator weighs competing explanations against the
-              recorded evidence. Evidence is retrieved through approved,
-              read-only tools, and every claim cites the records behind it. A
-              conclusion requires supporting evidence. When the evidence is
-              insufficient, the investigator abstains.
+              The investigator weighs competing explanations against recorded
+              evidence, reads it only through read-only tools and cites the
+              records behind every claim. When the evidence is not enough, it
+              abstains.
             </p>
           </div>
           <Link
@@ -77,8 +76,8 @@ export default async function AgentPage() {
             How an investigation runs
           </h2>
           <p className="text-text-secondary mt-2 max-w-3xl text-base leading-relaxed">
-            Six stages around one incident. Only planning calls a model. Select
-            a stage to see what it does and where an investigation can stop.
+            Only planning calls a model. Select a stage to see what it does and
+            where an investigation can stop.
           </p>
           <div className="mt-4">
             <InvestigationMap />
@@ -97,9 +96,8 @@ export default async function AgentPage() {
             Cases
           </h2>
           <p className="text-text-secondary mt-2 mb-6 max-w-3xl text-base leading-relaxed">
-            Each case is one stored investigation of one incident. Select a case
-            to read its summary, then open the case file for the hypotheses, the
-            evidence and the decision trail. Selecting a case runs nothing.
+            Each case is one stored investigation. Select one for its summary,
+            then open the case file. Selecting a case runs nothing.
           </p>
           <CaseExplorer />
           <div className="mt-8">
@@ -119,8 +117,8 @@ export default async function AgentPage() {
             Where a record comes from
           </h2>
           <p className="text-text-secondary mt-2 mb-6 max-w-3xl text-base leading-relaxed">
-            Every case and every cited record is one of four kinds. The page
-            names the kind and never shows one in place of another.
+            Every case and cited record is one of four kinds, and the page never
+            shows one in place of another.
           </p>
           <RecordStates counts={counts} lookup={lookup} rerun={rerun} />
         </section>
@@ -130,7 +128,7 @@ export default async function AgentPage() {
           aria-labelledby="guide-heading"
           className="border-border border-t py-10 pb-20"
         >
-          <AgentGuide />
+          <ReadingACase />
         </section>
       </div>
     </div>

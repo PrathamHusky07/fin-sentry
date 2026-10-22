@@ -1251,3 +1251,42 @@ svg :focus-visible {
     line-height: 1.5rem;
   }
 }
+
+/* ---------- Reading a case file ----------
+
+   Driven by data-state on each tile: rest, active (the state under the pointer or focus, or
+   the one kept) and quiet (every other state while one is brought forward). Only transform,
+   opacity and a ring change. The border style and color are the state's own meaning, set on
+   the tile, and are never touched here. Reduced motion keeps the state and drops the lift. */
+.rc-tile {
+  --tone: var(--accent);
+  transition:
+    transform var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease-soft),
+    box-shadow var(--dur-base) var(--ease),
+    background-color var(--dur-base) var(--ease);
+}
+
+.rc-tile[data-state="active"] {
+  transform: translateY(-3px);
+  background-color: var(--surface-hover);
+  box-shadow:
+    var(--elev-2),
+    0 0 0 1px color-mix(in srgb, var(--tone) 55%, transparent),
+    0 14px 34px -22px color-mix(in srgb, var(--tone) 70%, transparent);
+}
+
+.rc-tile[data-state="quiet"] {
+  opacity: 0.6;
+}
+
+.rc-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-tile[data-state="active"] {
+    transform: none;
+  }
+}

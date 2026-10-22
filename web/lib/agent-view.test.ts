@@ -3,6 +3,7 @@ import {
   ACTOR_LABEL,
   LINKS,
   MAP,
+  READING_STATES,
   STAGES,
   citationTrace,
   defaultHypothesis,
@@ -10,18 +11,21 @@ import {
   missingFor,
   nodeState,
   queryTally,
+  readingStateById,
   relatedStages,
   rivalsOf,
   stagePosition,
   stepStage,
   stoppedWhy,
 } from "@/lib/agent-view";
-import type {
-  Detail,
-  HypothesisRow,
-  PredictionResult,
-  QueryRun,
-  TimelineEntry,
+import {
+  QUERY_OUTCOME_LABEL,
+  QUERY_OUTCOME_MEANING,
+  type Detail,
+  type HypothesisRow,
+  type PredictionResult,
+  type QueryRun,
+  type TimelineEntry,
 } from "@/lib/incidents";
 
 const prediction = (state: PredictionResult["state"]): PredictionResult => ({
@@ -306,5 +310,56 @@ describe("stoppedWhy", () => {
         ],
       }),
     ).toBe("the records did not support a cause");
+  });
+});
+
+describe("reading a case file", () => {
+  it("covers the five query states and the two outcomes once each", () => {
+    expect(READING_STATES.map((r) => r.id).sort()).toEqual(
+      [
+        "abstained",
+        "hypothesis",
+        "rejected",
+        "returned",
+        "unavailable",
+        "unverified_empty",
+        "verified_empty",
+      ].sort(),
+    );
+    expect(READING_STATES.filter((r) => r.kind === "query")).toHaveLength(5);
+    expect(READING_STATES.filter((r) => r.kind === "outcome")).toHaveLength(2);
+  });
+
+  it("keeps the border rule: only what says something about the platform is solid", () => {
+    const solid = READING_STATES.filter((r) => r.says).map((r) => r.id);
+    const dashed = READING_STATES.filter((r) => !r.says).map((r) => r.id);
+    expect(solid).toEqual(["returned", "verified_empty", "hypothesis"]);
+    expect(dashed).toEqual([
+      "unverified_empty",
+      "unavailable",
+      "rejected",
+      "abstained",
+    ]);
+  });
+
+  it("uses the same wording the case file renders for each query state", () => {
+    for (const key of [
+      "returned",
+      "verified_empty",
+      "unverified_empty",
+      "unavailable",
+      "rejected",
+    ] as const) {
+      const state = readingStateById(key);
+      expect(state.label).toBe(QUERY_OUTCOME_LABEL[key]);
+      expect(state.meaning).toBe(QUERY_OUTCOME_MEANING[key]);
+    }
+  });
+
+  it("states the tentative outcome as not proven and the abstention as complete", () => {
+    expect(readingStateById("hypothesis").meaning).toContain(
+      "not a proven cause",
+    );
+    expect(readingStateById("abstained").meaning).toContain("complete result");
   });
 });
