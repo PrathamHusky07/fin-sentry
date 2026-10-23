@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 const SHOT = {
   traceDetail: { width: 1440, height: 2000 },
   overview: { width: 1440, height: 3200 },
-  operations: { width: 1440, height: 2400 },
+  operations: { width: 1440, height: 2447 },
   investigations: { width: 1440, height: 2200 },
 } as const;
 
@@ -204,16 +204,18 @@ export default function LandingPage() {
                 src="/screenshots/operations.png"
                 route="/operations"
                 href="/operations"
-                cta="Open live telemetry"
+                cta="Open Live Operations"
                 {...SHOT.operations}
-                alt="Live Operations, showing connection and freshness state, throughput and latency readouts, evaluation telemetry, the live request chart and the start of the stored request history."
+                alt="Live Operations as captured: four statements of what the platform covers, the evaluation telemetry cards for the flash judge and the frontier tier, the calibration reading with its thresholds, and the gateway health-route round trip."
               />
               <figcaption className="text-text-secondary mt-4 text-base leading-relaxed">
                 <span className="text-text-primary font-medium">
                   Live Operations.
                 </span>{" "}
-                Stream freshness, latency, judge usage, stored request history
-                and the calibration reading, each labeled with its scope.
+                Evaluation telemetry from the judges, the frontier judge&rsquo;s
+                calibration reading and a gateway health-route timing, each
+                labeled with its window. This is a captured state, not a live
+                connection.
               </figcaption>
             </figure>
           </div>
