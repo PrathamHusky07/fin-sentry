@@ -245,8 +245,8 @@ describe("metricsSnapshot", () => {
     ];
     expect(windows(first)).toEqual(recorded);
     expect(windows(later)).toEqual(recorded);
-    expect(first.frontier.latest_window_end).toBe("2026-10-21T19:37:00Z");
-    expect(later.frontier.latest_window_end).toBe("2026-10-21T19:37:00Z");
+    expect(first.frontier?.latest_window_end).toBe("2026-10-21T19:37:00Z");
+    expect(later.frontier?.latest_window_end).toBe("2026-10-21T19:37:00Z");
 
     for (const s of [first, later]) {
       const generated = Date.parse(s.generated_at);
