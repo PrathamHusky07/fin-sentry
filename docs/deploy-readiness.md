@@ -1,6 +1,6 @@
 # Deploy readiness
 
-Written at the end of Day 12 Session 6 and audited again in Session 8. Nothing is deployed. The Next.js frontend builds, and the checks below ran against the local stack. The gateway, Postgres, Redpanda, RisingWave and the local model do not run on Vercel and are not hosted anywhere.
+Written at the end of Day 12 Session 6, audited again in Session 8 and extended in Session 9 with archived-evidence mode. Nothing is deployed. The Next.js frontend builds, and the checks below ran against the local stack. The gateway, Postgres, Redpanda, RisingWave and the local model do not run on Vercel and are not hosted anywhere.
 
 Git state at the start of Session 8: `main`, `HEAD` and `origin/main` were all `0c7670a`, so the Session 7 commits were already pushed. The Session 8 commits sit on top of it locally and are not pushed.
 
@@ -102,21 +102,79 @@ Do not set `RED_TEAM_RUN_PASSWORD` on Vercel. It belongs to the gateway host, an
 | `/investigations`, `/red-team` | static shell | the gateway, read in the browser | unavailable states |
 | `/judges` | static | redirects to `/investigations` | follows the redirect |
 
+With archived-evidence mode on, every row above except `/` and `/architecture` shows archived records instead (see the section below).
+
 The routes that start work are the Red Team run button and the Agent start form. Both post to the gateway behind the run password, and the gateway refuses them when it has no password set. With no gateway reachable they cannot spend anything.
+
+## Archived-evidence mode (Session 9)
+
+The site can now serve a read-only copy of the committed archive, so a deployed frontend shows real records and not unavailable pages. It is switched on by one explicit build value, `NEXT_PUBLIC_ARCHIVE_MODE=true`. A failed gateway call never turns it on, so a real outage cannot pass for an archived session. With the value unset the behavior is exactly the live behavior above.
+
+What the mode does:
+
+- The `/ops` rewrite to the gateway is switched off. Server components read the archive in process (`lib/ops-fetch-server.ts`) and the browser asks this site's own `/api/archive/*` route handler (`lib/ops-fetch.ts`). Nothing is sent to a gateway, and the route handler exports `GET` only.
+- One fixed line sits under the top bar on every archived page: "Archived evidence. This is a recorded copy of real runs, not a live system. Every record keeps its original time." The landing and Architecture pages are static and do not carry it.
+- Every control that starts work is off: the Red Team run workflow, the Agent start form and "Investigate this". None of them makes a request.
+- Live Operations has no stream. It reads one archived snapshot, rebuilt from the archived records with the view definitions in `infra/risingwave/init.sql`, with the original one-minute windows and every section marked stale.
+
+Where each route comes from:
+
+| Route | Archive source | Contract check |
+|---|---|---|
+| `GET /ops/traces`, `/ops/traces/{id}` | `stream/rag-responses`, `judge-verdicts`, `rag-frontier-verdicts` | Same response as the gateway for 333 trace details and 11 list queries |
+| `GET /ops/investigations`, `/ops/investigations/{id}` | `postgres/investigations`, `investigation_events` | Same response for the list and all 7 details |
+| `GET /ops/redteam/scenarios`, `runs`, `runs/{id}`, `executions`, `executions/{id}` | `postgres/red_team_*`, `finsentry/redteam/scenarios.yml` | Same response for the registry, 27 runs and 43 executions |
+| `GET /ops/calibration/health` | `docs/measurements/reliability/canary-live-smoke-d6p2.json` and a copy of the drift policy | Same response |
+| `GET /ops/metrics/snapshot` (archive only) | the three stream files, re-aggregated | Rebuilt, not copied. Checked against an independent computation |
+| `GET /ops/redteam/run-gate` | none | Answers `runs_enabled: false`, a fact about the mode |
+| `GET /ops/gateway-probe/latest` | none | **Not in the archive.** The page says the probe is not part of the archived evidence |
+
+The contract checks compared the live gateway with the archive route on the same data, response by response, with zero differences. The Red Team and Agent responses were also compared with the real pydantic models.
+
+Gaps to know about:
+
+- The recorded gateway probe lives in the `gateway_probe_runs` table, which the archive does not export, so Live Operations shows no probe figure in this mode. Adding it means extending the archive export, which is an operator decision.
+- No flash and frontier disagreement trace exists in the archive, because the Amazon trace expired from the topics. Overview and Investigations show none, which is the stored truth. The landing page keeps its committed capture.
+- The snapshot's frontier group sums the fifteen minutes before the newest archived frontier bucket, because the live rule counts back from the current time and the archive has no current time.
+- A few error strings still say "the gateway". They appear only when an archive file cannot be read.
+
+### Bundling
+
+Six functions read the archive or ask for it: `/overview`, `/operations`, `/generation`, `/agent`, `/agent/[id]` and `/api/archive/[...path]`. `next.config.ts` traces the repository root in this mode and lists each file by path. Because every module that can reach the file readers is traced with all nine paths, each page excludes the groups it does not read. The built `.nft.json` files show the result:
+
+| Function | Archive files it carries |
+|---|---|
+| `/api/archive/[...path]` | all nine (3.4 MB: 3.3 MB of stream records, 0.14 MB of tables, the canary artifact and `scenarios.yml`) |
+| `/overview`, `/operations` | the three stream files and the canary artifact |
+| `/generation` | the three stream files |
+| `/agent` | `investigations.jsonl` |
+| `/agent/[id]` | none, it asks the route handler |
+
+The total is far below Vercel's function size limit. The build stops with a clear error when `docs/demo-archive` is not next to `web/`, because a build that cannot see the files would ship pages that all say unavailable.
+
+### Deploy steps
+
+1. Run `gitleaks detect` or `trufflehog git` on the repository, and decide the author-email question above. Then push and make the repository public.
+2. Create the Vercel project with Root Directory `web`, and turn on "Include source files outside of the Root Directory in the Build Step". The archive and the registry sit outside `web/`.
+3. Set `NEXT_PUBLIC_ARCHIVE_MODE=true`. Leave `NEXT_PUBLIC_GATEWAY_URL` unset. Do not set `RED_TEAM_RUN_PASSWORD`.
+4. Deploy with the default build command, `npm run build`.
+5. Smoke test on the deployed host (below).
+
+### What a local build does not prove
+
+A local production build proves the route list, the tracing of each function and the behavior against `next start`. It does not prove file tracing, function size or the route handler on Vercel's build image and runtime. After the first deploy, check:
+
+- `/api/archive/traces?limit=1` returns the newest trace `b357b1c2-804d-43ef-8b1d-7f1eb5f01287`.
+- `/api/archive/redteam/scenarios` returns 10 scenarios, and `/api/archive/investigations` returns 7.
+- `/overview` shows 291 executions and `/agent/43751b14-b080-4f5b-8391-33b914f12f22` shows its hypotheses.
+- `POST /api/archive/redteam/runs` answers 405.
+- The deployed pages show the archive line and make no request to another origin.
+
+If a page says a record could not be read after deploy, the files were not traced into that function. Check the setting in step 2 first.
 
 ## Recommended public-demo path
 
-Recommendation: **a scoped demo mode backed by the real archived records**, reached in two steps. Hosting the gateway is not an option at $0.
-
-1. **Deploy the frontend alone now.** It costs nothing and needs no code. Landing and Architecture are complete. The data pages say they are unavailable. This proves the Vercel build and domain, and it is honest, but a visitor sees mostly unavailable states. Leave `NEXT_PUBLIC_GATEWAY_URL` unset.
-2. **Add an archived-evidence mode in a later session.** The archive in `docs/demo-archive` already holds the stream records, the Red Team runs and the Agent investigations. The steps:
-   1. Serve the read-only subset of `/ops/*` from Next route handlers that read the bundled archive files, with `outputFileTracingIncludes` so the files ship with the function.
-   2. Switch the `/ops/*` rewrite off in that mode, so nothing leaves Vercel.
-   3. Mark every page with one fixed line saying the data is archived evidence and not a live system.
-   4. The Red Team run and Agent start controls already show as unavailable when the gateway does not answer. Check that on the deployed host.
-   5. On Live Operations, serve the archived evaluation telemetry and keep the recorded gateway probe, each with its own date.
-
-Step 2 is a session of work and was not started.
+Hosting the gateway is not an option at $0, so the recommended path is archived-evidence mode above. Deploy the frontend with the mode on, smoke-test it, then write the README. The earlier plan to deploy the frontend alone with every data page unavailable is superseded.
 
 ## Data caveat: settled in Day 12 Session 7
 

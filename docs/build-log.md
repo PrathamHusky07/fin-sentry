@@ -1,5 +1,53 @@
 # Build Log
 
+## 2026-10-23: Day 12 Session 9, archived-evidence mode behind an explicit flag
+
+Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `3462c66`, tree clean. No RAG request, no model call, no calibration
+re-run, no Red Team or Agent run. Cost $0.00. No frozen contract, MCP tool, rail, held-out case, scenario registry, planner behavior, archive
+design, password gate, recovery module, calibration computation, init.sql history guard or gateway-probe measurement changed. Nothing was
+pushed, published or deployed.
+
+### Gates
+- Screenshot path: `operations-day12-s8.png` was already at `web/public/screenshots/`. Nothing moved. On the production build it loads through the
+  image optimizer (HTTP 200, natural width 1100) once scrolled into view, because the image is lazy.
+- Archive: 333 requests, 433 flash verdicts, 186 frontier rows, 27 runs, 43 executions, 7 investigations, 39 events. Every route a page reads
+  maps to an archive source except the gateway probe, which lives in `gateway_probe_runs` and is not exported. That is the one real gap.
+  The Amazon disagreement trace is not in the archive, so the archive holds no flash and frontier disagreement.
+
+### What was built
+`NEXT_PUBLIC_ARCHIVE_MODE=true` switches it on at build time. Server components read the archive in process through `serverOpsFetch`, the browser
+asks `/api/archive/*` through `opsFetch`, the `/ops` rewrite is off, and the route handler exports GET only. Live Operations reads one archived
+snapshot instead of opening an EventSource. One fixed line sits under the top bar on every archived page. The Red Team run workflow, the Agent
+start form and "Investigate this" are off. The routes live in `web/lib/archive/` (files, traces, snapshot, calibration, red team, investigations,
+a small YAML reader for `scenarios.yml`, the dispatcher). Each function carries only the archive files it reads (checked in the built `.nft.json`
+files). The build stops with a reason when `docs/demo-archive` is not visible.
+
+Two decisions worth recording. The four server-rendered pages are `force-dynamic`, because a page prerendered at build would freeze phrases such
+as "the newest 21h ago". The drift policy numbers are copied into `drift-policy.json`, and `tests/archive/test_web_archive_policy.py` fails if
+they stop matching `DriftConfig`.
+
+### Verification
+- Contract: the archive routes were compared with the live gateway on the same data, 383 responses (every one of 333 trace details, 11 trace
+  list queries, calibration, the investigation list and 7 details, the registry, 27 run details and the execution list): zero differences. The
+  Red Team and Agent responses also matched the real pydantic models with zero differences. Every expected number in the vitest and Playwright
+  tests was computed from the files by a separate script.
+- No request escapes: the archived build points its gateway at a closed port. A Node preload that logs every `fetch` and outgoing socket saw none
+  while the pages and routes were requested, and the same preload does log a control request. The browser tests assert no cross-origin request,
+  no non-GET request and no console message on every page.
+- Flag off: the full Playwright suite on the dev server against the live stack passed unchanged, and `/api/archive` answers 404.
+
+### Gates run
+tsc, eslint, prettier and vitest (230, up from 179) pass. ruff, ruff format and mypy (147 files) pass. pytest: 1537 passed, 4 skipped, 0 failed,
+so the known Amazon-trace failure did not occur. Playwright: 317 tests, 314 passed, 3 skipped (the existing disagreement-trace skips), 0 failed.
+That is 274 live tests plus 15 archive tests plus 28 archive responsive checks (7 pages at 375, 768, 1024 and 1440 px: no overflow, no control
+under 44 px, no console message, the archive line at 16 px or more on a phone). Production build with the flag off: 13 route entries, the five
+on-demand pages unchanged and `/api/archive/[...path]` added. Product evidence is unchanged: topic offsets 245..578, 210..643 and 73..259, and
+every Postgres count and digest, match the start. `docs/demo-archive` has no diff.
+
+### Next
+The operator runs gitleaks or trufflehog, pushes, makes the repository public, deploys with the setting and flag in `docs/deploy-readiness.md`,
+and smoke-tests the deployed host. Then the README.
+
 ## 2026-10-23: Day 12 Session 8, four e2e specs resolved, gateway copy, versioned screenshot, deploy audit
 
 Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `0c7670a`, tree clean, so the Session 7 commits were already
