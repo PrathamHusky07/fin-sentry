@@ -65,17 +65,14 @@ for (const origin of ORIGINS) {
       const w = watch(page);
       await page.goto(`${origin}/operations`);
 
-      await expect(page.getByText("Connected", { exact: true })).toBeVisible({
+      // The judge cards carry numbers once a snapshot has crossed the boundary.
+      const faith = page.locator(
+        "section[aria-label='Flash judge, faithfulness']",
+      );
+      await expect(faith.locator("dd").first()).toHaveText(/\d/, {
         timeout: 10_000,
       });
-      await expect(page.getByText("Reachable", { exact: true })).toBeVisible({
-        timeout: 10_000,
-      });
-      const activity = page.getByRole("region", { name: "Request activity" });
-      await expect(
-        activity.getByText("Throughput", { exact: true }),
-      ).toBeVisible();
-      await expect(activity.getByText("no data")).toHaveCount(0);
+      await expect(faith.getByText("no data")).toHaveCount(0);
 
       expect([...w.opsRequestOrigins]).toEqual([origin]);
       expect(w.problems).toEqual([]);

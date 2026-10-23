@@ -2,21 +2,16 @@ import type { Metadata } from "next";
 import { LiveOperations } from "@/components/live-operations";
 import { measureGatewayHealth } from "@/lib/gateway-health";
 import { fetchGatewayProbe } from "@/lib/gateway-probe";
-import {
-  fetchCalibrationHealth,
-  fetchRecentTraces,
-  fetchThroughputHistory,
-} from "@/lib/overview-data";
+import { fetchCalibrationHealth, fetchRecentTraces } from "@/lib/overview-data";
 
 export const metadata: Metadata = {
   title: "Live Operations | Fin-Sentry",
 };
 
 export default async function OperationsPage() {
-  const [calibration, recent, history, health, probe] = await Promise.all([
+  const [calibration, recent, health, probe] = await Promise.all([
     fetchCalibrationHealth(),
     fetchRecentTraces(1),
-    fetchThroughputHistory(),
     measureGatewayHealth(),
     fetchGatewayProbe(),
   ]);
@@ -24,7 +19,6 @@ export default async function OperationsPage() {
     <LiveOperations
       calibration={calibration}
       newest={recent?.[0] ?? null}
-      history={history}
       health={health}
       probe={probe}
     />

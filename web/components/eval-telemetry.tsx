@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { formatUtc } from "@/lib/format";
 import type { MetricsSnapshot } from "@/lib/metrics-snapshot";
+import type { SseConnectionState } from "@/lib/use-metrics-snapshot";
 
 // These readouts only render once a snapshot has arrived in the browser, so
 // the viewer’s own locale is safe to use (no server-rendered text to match).
@@ -149,8 +150,12 @@ function Breakdown({
  */
 export function EvalTelemetry({
   snapshot,
+  connection,
 }: {
   snapshot: MetricsSnapshot | null;
+  /** Whether the stream has answered. With no snapshot and an errored stream the cards are
+   * replaced by an explicit unavailable state, so a missing backend never reads as a quiet one. */
+  connection: SseConnectionState;
 }) {
   const faith = snapshot?.faithfulness ?? null;
   const rel = snapshot?.relevance ?? null;
@@ -184,121 +189,135 @@ export function EvalTelemetry({
         group with nothing in its window says so.
       </p>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Group
-          title="Flash judge, faithfulness"
-          scope={scopeLine(faith?.window_end)}
-          stale={faith?.stale ?? null}
-          tone="accent"
-          index={0}
+      {snapshot === null && connection === "error" ? (
+        <p
+          role="status"
+          className="border-border bg-background-elevated/60 text-text-secondary mt-6 max-w-3xl rounded-xl border p-5 text-base leading-relaxed"
         >
-          <Row
-            label="Verdicts"
-            value={count(faith?.verdicts_count)}
+          <span className="text-text-primary block font-medium">
+            Evaluation telemetry is unavailable
+          </span>
+          The gateway&rsquo;s snapshot stream has not answered, so these
+          readings cannot be shown. Nothing is filled in from an earlier
+          session, and an empty window would not be reported as a quiet one.
+        </p>
+      ) : (
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Group
+            title="Flash judge, faithfulness"
+            scope={scopeLine(faith?.window_end)}
             stale={faith?.stale ?? null}
-          />
-          <Row
-            label="Average faithfulness"
-            value={score(faith?.avg_faithfulness)}
-            stale={faith?.stale ?? null}
-          />
-          <Row
-            label="Complete"
-            value={count(faith?.complete_count)}
-            stale={faith?.stale ?? null}
-          />
-          <Row
-            label="Skipped"
-            value={count(faith?.skipped_count)}
-            note="Metrics the judge skipped, for example after a timeout."
-            stale={faith?.stale ?? null}
-          />
-        </Group>
+            tone="accent"
+            index={0}
+          >
+            <Row
+              label="Verdicts"
+              value={count(faith?.verdicts_count)}
+              stale={faith?.stale ?? null}
+            />
+            <Row
+              label="Average faithfulness"
+              value={score(faith?.avg_faithfulness)}
+              stale={faith?.stale ?? null}
+            />
+            <Row
+              label="Complete"
+              value={count(faith?.complete_count)}
+              stale={faith?.stale ?? null}
+            />
+            <Row
+              label="Skipped"
+              value={count(faith?.skipped_count)}
+              note="Metrics the judge skipped, for example after a timeout."
+              stale={faith?.stale ?? null}
+            />
+          </Group>
 
-        <Group
-          title="Flash judge, relevance"
-          scope={scopeLine(rel?.window_end)}
-          stale={rel?.stale ?? null}
-          tone="accent"
-          index={1}
-        >
-          <Row
-            label="Verdicts"
-            value={count(rel?.verdicts_count)}
+          <Group
+            title="Flash judge, relevance"
+            scope={scopeLine(rel?.window_end)}
             stale={rel?.stale ?? null}
-          />
-          <Row
-            label="Average answer relevance"
-            value={score(rel?.avg_answer_relevance)}
-            stale={rel?.stale ?? null}
-          />
-          <Row
-            label="Average context relevance"
-            value={score(rel?.avg_context_relevance)}
-            stale={rel?.stale ?? null}
-          />
-        </Group>
+            tone="accent"
+            index={1}
+          >
+            <Row
+              label="Verdicts"
+              value={count(rel?.verdicts_count)}
+              stale={rel?.stale ?? null}
+            />
+            <Row
+              label="Average answer relevance"
+              value={score(rel?.avg_answer_relevance)}
+              stale={rel?.stale ?? null}
+            />
+            <Row
+              label="Average context relevance"
+              value={score(rel?.avg_context_relevance)}
+              stale={rel?.stale ?? null}
+            />
+          </Group>
 
-        <Group
-          title="Judge usage"
-          scope={scopeLine(tokens?.window_end)}
-          stale={tokens?.stale ?? null}
-          tone="info"
-          index={2}
-        >
-          <Row
-            label="Judge tokens"
-            value={count(tokenTotal)}
-            unit="tokens"
-            note={`Flash judge only: Gemini input, output and thinking tokens in its latest one-minute bucket${tokens?.gemini_calls_total != null ? `, ${tokens.gemini_calls_total} calls` : ""}`}
+          <Group
+            title="Judge usage"
+            scope={scopeLine(tokens?.window_end)}
             stale={tokens?.stale ?? null}
-          />
-          <Row
-            label="Judge cost"
-            value={
-              cost?.cost_total_usd != null
-                ? `$${cost.cost_total_usd.toFixed(6)}`
-                : null
-            }
-            note="Flash judge only, estimated at Vertex AI standard pricing, in its latest one-minute bucket. Not platform spend."
-            stale={cost?.stale ?? null}
-          />
-        </Group>
+            tone="info"
+            index={2}
+          >
+            <Row
+              label="Judge tokens"
+              value={count(tokenTotal)}
+              unit="tokens"
+              note={`Flash judge only: Gemini input, output and thinking tokens in its latest one-minute bucket${tokens?.gemini_calls_total != null ? `, ${tokens.gemini_calls_total} calls` : ""}`}
+              stale={tokens?.stale ?? null}
+            />
+            <Row
+              label="Judge cost"
+              value={
+                cost?.cost_total_usd != null
+                  ? `$${cost.cost_total_usd.toFixed(6)}`
+                  : null
+              }
+              note="Flash judge only, estimated at Vertex AI standard pricing, in its latest one-minute bucket. Not platform spend."
+              stale={cost?.stale ?? null}
+            />
+          </Group>
 
-        <Group
-          title={`Frontier tier, last ${frontier?.window_minutes ?? 15} minutes`}
-          scope={
-            frontier?.latest_window_end
-              ? `Summed over the window, newest bucket ended ${formatUtc(frontier.latest_window_end)}`
-              : "Summed over the window, no bucket in range"
-          }
-          stale={frontier?.stale ?? null}
-          tone="disagreement"
-          index={3}
-        >
-          <Row
-            label="Verdicts"
-            value={count(frontierTotal)}
+          <Group
+            title={`Frontier tier, last ${frontier?.window_minutes ?? 15} minutes`}
+            scope={
+              frontier?.latest_window_end
+                ? `Summed over the window, newest bucket ended ${formatUtc(frontier.latest_window_end)}`
+                : "Summed over the window, no bucket in range"
+            }
             stale={frontier?.stale ?? null}
-          />
-          <div>
-            <p className="text-text-tertiary mb-2 text-sm">By verdict</p>
-            <Breakdown
-              counts={frontier?.verdict_counts}
-              empty="No frontier verdicts in this window."
+            tone="disagreement"
+            index={3}
+          >
+            <Row
+              label="Verdicts"
+              value={count(frontierTotal)}
+              stale={frontier?.stale ?? null}
             />
-          </div>
-          <div>
-            <p className="text-text-tertiary mb-2 text-sm">
-              Disagreement classes
-            </p>
-            <Breakdown
-              counts={frontier?.disagreement_counts}
-              empty="No disagreement classes in this window."
-            />
-          </div>
-        </Group>
-      </div>
+            <div>
+              <p className="text-text-tertiary mb-2 text-sm">By verdict</p>
+              <Breakdown
+                counts={frontier?.verdict_counts}
+                empty="No frontier verdicts in this window."
+              />
+            </div>
+            <div>
+              <p className="text-text-tertiary mb-2 text-sm">
+                Disagreement classes
+              </p>
+              <Breakdown
+                counts={frontier?.disagreement_counts}
+                empty="No disagreement classes in this window."
+              />
+            </div>
+          </Group>
+        </div>
+      )}
     </section>
   );
 }

@@ -40,3 +40,13 @@ export function formatMs(ms: number): string {
   if (ms < 100) return ms.toFixed(1);
   return String(Math.round(ms));
 }
+
+/** True when the probe target is on the machine that ran it, so the figure holds no network distance. */
+export function isLoopbackTarget(target: string): boolean {
+  try {
+    const host = new URL(target).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}

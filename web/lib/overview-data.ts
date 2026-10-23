@@ -1,5 +1,4 @@
 import { GATEWAY_URL } from "@/lib/config";
-import type { ThroughputHistory } from "@/lib/metrics-snapshot";
 import { blockStage, type BlockStage } from "@/lib/labels";
 import type {
   CalibrationHealthResponse,
@@ -198,24 +197,6 @@ export async function fetchTraceDetail(
     });
     if (!res.ok) return null;
     return (await res.json()) as TraceDetailResponse;
-  } catch {
-    return null;
-  }
-}
-
-/** The latest persisted one-minute throughput buckets. Null means the fetch
- * failed -- the caller renders an honest "not available" state, never an
- * empty chart that could pass for a quiet system. */
-export async function fetchThroughputHistory(
-  limit = 60,
-): Promise<ThroughputHistory | null> {
-  try {
-    const res = await fetch(
-      `${GATEWAY_URL}/ops/metrics/throughput/history?limit=${limit}`,
-      { cache: "no-store" },
-    );
-    if (!res.ok) return null;
-    return (await res.json()) as ThroughputHistory;
   } catch {
     return null;
   }

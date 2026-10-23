@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchGatewayProbe, formatMs } from "@/lib/gateway-probe";
+import {
+  fetchGatewayProbe,
+  formatMs,
+  isLoopbackTarget,
+} from "@/lib/gateway-probe";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -9,6 +13,16 @@ describe("formatMs", () => {
     expect(formatMs(9.994)).toBe("9.99");
     expect(formatMs(42.46)).toBe("42.5");
     expect(formatMs(1234.5)).toBe("1235");
+  });
+});
+
+describe("isLoopbackTarget", () => {
+  it("is true only for a target on the probing machine", () => {
+    expect(isLoopbackTarget("http://localhost:8000/health")).toBe(true);
+    expect(isLoopbackTarget("http://127.0.0.1:8000/health")).toBe(true);
+    expect(isLoopbackTarget("http://[::1]:8000/health")).toBe(true);
+    expect(isLoopbackTarget("https://gateway.example.com/health")).toBe(false);
+    expect(isLoopbackTarget("not a url")).toBe(false);
   });
 });
 

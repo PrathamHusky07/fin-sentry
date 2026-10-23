@@ -46,45 +46,39 @@ function layoutOf(page: Page): Promise<number[]> {
 
 async function openOperations(page: Page) {
   await page.goto("/operations");
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible({
-    timeout: 10_000,
-  });
-  await expect(page.getByText("Reachable", { exact: true })).toBeVisible({
-    timeout: 10_000,
-  });
+  // A snapshot has arrived once a judge card carries a number instead of "no data".
+  await expect(
+    page.locator("section[aria-label='Flash judge, faithfulness'] dd").first(),
+  ).toHaveText(/\d/, { timeout: 10_000 });
 }
 
 test.describe("Live Operations interaction system", () => {
-  test("still populates from real data, with real chart bars and no errors", async ({
+  test("still populates from real data, with the recorded gateway reading and no errors", async ({
     page,
   }) => {
     const w = watch(page);
     await openOperations(page);
 
-    const activity = page.getByRole("region", {
-      name: "Request activity",
-      exact: true,
-    });
-    await expect(activity.getByText("no data")).toHaveCount(0);
+    const cards = page.locator("section[aria-label^='Flash judge']");
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first().getByText("no data")).toHaveCount(0);
 
-    // The chart opens on stored history, so it has more than one real bar,
-    // and each bar names its source in the table view.
-    const bars = page.locator("#activity-requests .recharts-bar-rectangle");
-    await expect(bars.first()).toBeVisible();
-    expect(await bars.count()).toBeGreaterThan(1);
-    const live = page.locator("#activity-requests figcaption");
-    await expect(live).toContainText(/Live|Not live/);
+    // The probe is a stored reading, so it is present whether or not anything ran since.
+    await expect(page.locator("[data-gateway-probe]")).toHaveAttribute(
+      "data-gateway-probe",
+      "recorded",
+    );
 
     expect([...w.opsOrigins]).toEqual(["http://localhost:3000"]);
     expect(w.problems).toEqual([]);
   });
 
-  test("a freshness cell reveals what it rests on by keyboard focus and hides on Escape", async ({
+  test("a capability cell reveals how it works by keyboard focus and hides on Escape", async ({
     page,
   }) => {
     await openOperations(page);
     const cells = page.locator(
-      "dl[aria-label='Connection and freshness'] > div",
+      "ul[aria-label='What Live Operations covers'] > li",
     );
     await expect(cells).toHaveCount(4);
 
@@ -92,19 +86,23 @@ test.describe("Live Operations interaction system", () => {
     await first.focus();
     const peek = first.locator(".peek");
     await expect(peek).toHaveCSS("opacity", "1");
-    await expect(peek).toContainText("EventSource");
+    await expect(peek).toContainText("flash judge");
 
     await page.keyboard.press("Escape");
     await expect(peek).toHaveCSS("opacity", "0");
   });
 
-  test("every freshness cell and readout link is reachable by Tab with a visible focus indicator", async ({
+  test("every capability cell is reachable by Tab with a visible focus indicator", async ({
     page,
   }) => {
     await openOperations(page);
     const seen: string[] = [];
-    // Six primary navigation links come before the freshness cells.
-    for (let i = 0; i < 13; i++) {
+    // Tab until the last capability cell, however many links come before it.
+    for (
+      let i = 0;
+      i < 20 && !seen.some((l) => l.startsWith("Evidence"));
+      i++
+    ) {
       await page.keyboard.press("Tab");
       const info = await page.evaluate(() => {
         const el = document.activeElement as HTMLElement | null;
@@ -121,31 +119,27 @@ test.describe("Live Operations interaction system", () => {
         expect(info.outline, `focus indicator on "${info.label}"`).toBe(true);
       }
     }
-    expect(seen.some((l) => l.startsWith("Stream"))).toBe(true);
-    expect(seen.some((l) => l.startsWith("Throughput"))).toBe(true);
+    for (const title of [
+      "Quality signals",
+      "Judge calibration",
+      "Disagreement analysis",
+      "Evidence-backed investigations",
+    ]) {
+      expect(
+        seen.some((l) => l.startsWith(title)),
+        title,
+      ).toBe(true);
+    }
   });
 
-  test("a readout is a real link: it lands on the chart that draws it", async ({
-    page,
-  }) => {
-    await openOperations(page);
-    await page.getByRole("link", { name: /^Throughput/ }).click();
-    await expect(page).toHaveURL(/#activity-requests$/);
-    await expect(page.locator("#activity-requests")).toBeInViewport();
-
-    await page.getByRole("link", { name: /^p95 RAG latency/ }).click();
-    await expect(page).toHaveURL(/#activity-latency$/);
-    await expect(page.locator("#activity-latency")).toBeInViewport();
-  });
-
-  test("hovering readouts, eval cards and the calibration shell moves nothing around them", async ({
+  test("hovering the gateway card, eval cards and the calibration shell moves nothing around them", async ({
     page,
   }) => {
     await openOperations(page);
     const before = await layoutOf(page);
 
     const targets = [
-      page.getByRole("link", { name: /^Throughput/ }),
+      page.locator("[data-gateway-probe]"),
       page.locator("section[aria-label='Flash judge, faithfulness']"),
       page.locator("#calibration .instrument"),
     ];
