@@ -518,6 +518,8 @@ _JUDGE_STATE_TO_STATUS_SQL: dict[str, str] = {
 # (tests/dashboard/test_trace_list_sql_live.py). They are stored evidence and stay in the store, but
 # they are test traffic, so the UI's trace list leaves them out. The shape is the fixed prefix and
 # one trace id, which no real question has, and every such row in the store matched it.
+# The match is deliberately narrow: the prefix plus any 36 characters, not a UUID format check.
+# A real question of that exact shape would be left out too, and none exists in the store.
 TEST_TRAFFIC_QUERY_PREFIX = "duplicate-verdict regression probe "
 _TRACE_ID_LENGTH = 36
 
