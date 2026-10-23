@@ -25,9 +25,10 @@ const FIELD =
  * Starts one investigation of the live platform. The investigation reads through the nine
  * read-only tools and asks the planner for hypotheses at most twice. The page says what that
  * costs and guards, and an identical request made while one runs opens the running one
- * instead of starting a second.
+ * instead of starting a second. When the gateway did not answer, the form is not offered at all:
+ * an action that cannot run is shown as unavailable and never as a form that fails on submit.
  */
-export function StartIncident() {
+function StartIncidentForm() {
   const router = useRouter();
   const [kind, setKind] = useState<TriggerKind>("drift_degradation");
   const [reference, setReference] = useState("");
@@ -186,4 +187,25 @@ export function StartIncident() {
       </form>
     </details>
   );
+}
+
+export function StartIncidentUnavailable() {
+  return (
+    <div
+      data-start-incident="unavailable"
+      className="border-border bg-background-elevated/40 rounded-xl border px-5 py-4"
+    >
+      <p className="text-text-primary text-base font-medium">
+        Starting an investigation is unavailable
+      </p>
+      <p className="text-text-secondary mt-1 max-w-3xl text-base leading-relaxed">
+        It runs against the live backend, and the gateway did not answer, so
+        nothing can be started from here.
+      </p>
+    </div>
+  );
+}
+
+export function StartIncident({ available }: { available: boolean }) {
+  return available ? <StartIncidentForm /> : <StartIncidentUnavailable />;
 }

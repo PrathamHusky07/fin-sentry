@@ -92,7 +92,7 @@ export default async function AgentPage() {
           </p>
           <CaseExplorer />
           <div className="mt-8">
-            <StartIncident />
+            <StartIncident available={counts !== null} />
           </div>
         </section>
 
