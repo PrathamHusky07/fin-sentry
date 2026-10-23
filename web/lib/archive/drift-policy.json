@@ -1,0 +1,9 @@
+{
+  "window_size": 150,
+  "min_n": 30,
+  "healthy_baseline_kappa": 0.605,
+  "drift_entry_threshold": 0.43,
+  "recovery_threshold": 0.54,
+  "entry_consecutive_windows": 3,
+  "recovery_consecutive_windows": 5
+}
