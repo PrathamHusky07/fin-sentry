@@ -76,7 +76,7 @@ const run = (target: string): GatewayProbeSummary => ({
 });
 
 describe("gateway health route readout", () => {
-  it("labels the figure as the health-route round trip and not as evaluation latency", () => {
+  it("leads with the figure, names the gateway health route once and does not over-explain", () => {
     const words = text(
       renderToStaticMarkup(
         <GatewayProbeReadout
@@ -87,15 +87,19 @@ describe("gateway health route readout", () => {
       ),
     );
     expect(words).toContain("Health-route round trip, recorded probe");
-    expect(words).toContain("The route runs no retrieval and no model");
-    expect(words).toContain("not how long an evaluation or an answer takes");
-    expect(words).toContain(
-      "It is stored, so it stays here until the next run replaces it",
-    );
-    expect(words).not.toMatch(/evaluation latency is|RAG latency/i);
+    expect(words).toContain("0.26 ms median");
+    expect(words).toContain("p95 0.35 ms");
+    expect(words).toContain("30 requests");
+    expect(words).toContain("Recorded Oct 22, 22:28 UTC");
+    // The scope word stays, so the figure is never read as end-to-end latency.
+    expect(words).toContain("gateway answers on its health route");
+    // The old repeated disclaimers are gone.
+    expect(words).not.toMatch(/RAG|no retrieval|no model|network distance/i);
+    expect(words).not.toContain("not how long");
+    expect(words).not.toContain("It is stored");
   });
 
-  it("states the timed boundaries and only claims the same machine for a local target", () => {
+  it("keeps the timing method in one line and only claims the same machine for a local target", () => {
     const local = text(
       renderToStaticMarkup(
         <GatewayProbeReadout
@@ -106,10 +110,8 @@ describe("gateway health route readout", () => {
       ),
     );
     expect(local).toContain(
-      "from the probe sending a GET to the gateway health route",
+      "Each request is a GET timed until the whole response is read, over one kept-open connection after two warm-up requests, from the same machine as the gateway.",
     );
-    expect(local).toContain("until it had read the whole response");
-    expect(local).toContain("same machine as the gateway");
     const remote = text(
       renderToStaticMarkup(
         <GatewayProbeReadout
@@ -119,9 +121,31 @@ describe("gateway health route readout", () => {
         />,
       ),
     );
+    expect(remote).toContain("after two warm-up requests.");
     expect(remote).not.toContain("same machine");
     // The target address is never printed, so no internal host or port reaches the page.
     expect(local).not.toMatch(/localhost|:8000/);
+  });
+
+  it("keeps the page's own momentary check separate, smaller and unstored", () => {
+    const words = text(
+      renderToStaticMarkup(
+        <GatewayProbeReadout
+          probe={run("http://localhost:8000/health")}
+          health={{
+            medianMs: 0.3,
+            samples: 3,
+            measuredAt: "2026-10-22T23:00:00Z",
+          }}
+          now={null}
+        />,
+      ),
+    );
+    expect(words).toContain("Checked just now by this page 0.3 ms");
+    expect(words).toContain(
+      "Median of 3 requests to the gateway health route, timed by the web server at Oct 22, 23:00 UTC and not stored.",
+    );
+    expect(words).not.toMatch(/RAG|no retrieval|no model/i);
   });
 
   it("shows nothing in place of a reading when the store did not answer", () => {

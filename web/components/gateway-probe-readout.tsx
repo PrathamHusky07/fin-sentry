@@ -7,11 +7,10 @@ import {
 } from "@/lib/gateway-probe";
 
 /**
- * The gateway health-route round trip, a supporting instrument. The recorded figure comes from a
- * stored probe run, so it is still here when nothing has run since, and it carries the time it
- * was recorded. The route runs no retrieval and no model, so the figure says how long reaching
- * the gateway takes and nothing about how long an evaluation or a RAG answer takes. The caption
- * states what was timed so a very small number cannot be read as more than that.
+ * The gateway health-route round trip. The recorded figure comes from a stored probe run, so it
+ * is still here when nothing has run since, and it carries the time it was recorded. The scope
+ * is stated once, in the intro, as the gateway's health route. How the timing was taken sits in
+ * one quiet line under the figure, and the page's own momentary check stays separate and smaller.
  */
 export function GatewayProbeReadout({
   probe,
@@ -37,9 +36,8 @@ export function GatewayProbeReadout({
         Gateway health route
       </h2>
       <p className="text-text-secondary mt-2 max-w-2xl text-base leading-relaxed">
-        A supporting reading, separate from evaluation. It times the
-        gateway&rsquo;s health route, so it measures reaching the gateway and
-        not how long an evaluation or an answer takes.
+        How quickly the gateway answers on its health route, from a probe whose
+        latest reading is kept with the time it was taken.
       </p>
 
       <div
@@ -66,21 +64,20 @@ export function GatewayProbeReadout({
                 <li>max {formatMs(latest.max_ms)} ms</li>
                 <li>{latest.samples} requests</li>
               </ul>
-              <p className="text-text-tertiary mt-4 max-w-3xl text-base leading-snug sm:text-sm">
+              <p className="text-text-secondary mt-4 max-w-3xl text-base leading-snug sm:text-sm">
                 Recorded {formatUtc(latest.measured_at)}
                 {now !== null
                   ? `, ${relativeTime(latest.measured_at, now)}`
                   : ""}
-                . It is stored, so it stays here until the next run replaces it.
+                .
               </p>
-              <p className="text-text-tertiary mt-2 max-w-3xl text-base leading-snug sm:text-sm">
-                Each request was timed from the probe sending a GET to the
-                gateway health route until it had read the whole response, over
-                one kept-open connection and after two warm-up requests.
+              <p className="text-text-tertiary mt-1 max-w-3xl text-base leading-snug sm:text-sm">
+                Each request is a GET timed until the whole response is read,
+                over one kept-open connection after two warm-up requests
                 {isLoopbackTarget(latest.target)
-                  ? " The probe ran on the same machine as the gateway, so no network distance is in the figure."
-                  : ""}{" "}
-                The route runs no retrieval and no model.
+                  ? ", from the same machine as the gateway"
+                  : ""}
+                .
               </p>
             </>
           ) : (
@@ -103,7 +100,7 @@ export function GatewayProbeReadout({
           </p>
           <p className="text-text-tertiary text-sm leading-snug">
             {health
-              ? `Median of ${health.samples} requests to the gateway health route, timed by the web server at ${formatUtc(health.measuredAt)} and not stored. It runs no retrieval and no model, so it is the cost of reaching the gateway and not evaluation or request latency.`
+              ? `Median of ${health.samples} requests to the gateway health route, timed by the web server at ${formatUtc(health.measuredAt)} and not stored.`
               : "The gateway health route did not answer within its time budget, so no round trip was timed. Nothing is shown in its place."}
           </p>
         </div>

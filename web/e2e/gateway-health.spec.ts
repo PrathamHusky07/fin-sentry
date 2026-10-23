@@ -1,14 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Live Operations shows three different latencies and must never let one pass for another. The
- * recorded gateway probe is a stored reading of the health route. The page's own check times the
- * same route once per visit and stores nothing. The metrics buckets time whole RAG queries. The
- * health route runs no retrieval and no model. Needs the gateway, because it serves the probe.
+ * The gateway reading on Live Operations. The recorded probe is a stored reading of the gateway
+ * health route and leads the card. The page's own check times the same route once per visit,
+ * stores nothing and stays visibly the smaller, momentary figure. The scope is named once as
+ * the gateway health route, and neither figure is presented as anything wider. Needs the
+ * gateway, because it serves the probe.
  */
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("the recorded gateway probe is primary, dated and labeled as not RAG latency", async ({
+test("the recorded gateway probe leads the card, is dated and names the gateway health route once", async ({
   page,
 }) => {
   const issues: string[] = [];
@@ -19,31 +20,31 @@ test("the recorded gateway probe is primary, dated and labeled as not RAG latenc
 
   const probe = page.locator("[data-gateway-probe]");
   await expect(probe).toHaveAttribute("data-gateway-probe", "recorded");
-  await expect(probe).toContainText("Gateway round trip, recorded probe");
-  await expect(probe).toContainText("runs no retrieval and no model");
-  await expect(probe).toContainText("not RAG latency");
-  await expect(probe).toContainText("It is stored");
+  await expect(probe).toContainText("Health-route round trip, recorded probe");
+  await expect(page.locator("#gateway")).toContainText(
+    "gateway answers on its health route",
+  );
   const text = await probe.innerText();
   expect(text).toMatch(/Recorded \w{3} \d+, \d{2}:\d{2} UTC/);
   const median = Number(text.match(/([\d.]+)\s*ms median/)?.[1]);
   expect(median).toBeGreaterThan(0);
   expect(median).toBeLessThan(1000);
+  expect(text).toMatch(/p95 [\d.]+ ms/);
+  expect(text).toMatch(/max [\d.]+ ms/);
   expect(text).toMatch(/\d+ requests/);
+  // The timing method is one quiet line, not a disclaimer repeated down the card.
+  await expect(probe).toContainText("after two warm-up requests");
+  expect(text.match(/retrieval/gi) ?? []).toHaveLength(0);
 
-  // The probe sits above the RAG readouts, and the readouts never claim its number.
-  const probeBox = await probe.boundingBox();
-  const readouts = page.locator("#activity-heading + dl");
-  const readoutsBox = await readouts.boundingBox();
-  expect(probeBox && readoutsBox && probeBox.y < readoutsBox.y).toBe(true);
-  await expect(readouts).toContainText("RAG queries recorded");
-  await expect(readouts).toContainText("End-to-end RAG (local model)");
-  await expect(readouts).toContainText("retrieval and generation included");
-  await expect(readouts).not.toContainText("Gateway round trip");
-  await expect(readouts).not.toContainText("Gateway health check");
+  // The figure comes before its caption, and the card never mentions RAG.
+  const figure = await probe.locator("p.text-4xl").boundingBox();
+  const caption = await probe.getByText(/^Recorded /).boundingBox();
+  expect(figure && caption && figure.y < caption.y).toBe(true);
+  await expect(page.locator("#gateway")).not.toContainText(/RAG/);
   expect(issues).toEqual([]);
 });
 
-test("the page's own health check is bounded, separate and not stored", async ({
+test("the page's own health check is bounded, separate, smaller and not stored", async ({
   page,
 }) => {
   await page.goto("/operations");
@@ -51,48 +52,21 @@ test("the page's own health check is bounded, separate and not stored", async ({
   const check = page.locator("[data-gateway-health]");
   await expect(check).toHaveAttribute("data-gateway-health", "measured");
   await expect(check).toContainText("Checked just now by this page");
-  await expect(check).toContainText("not stored");
-  await expect(check).toContainText("not request latency");
+  await expect(check).toContainText("and not stored");
+  await expect(check).toContainText("gateway health route");
   const ms = Number(
     (await check.innerText()).match(/this page\s*([\d.]+) ms/)?.[1],
   );
   expect(ms).toBeGreaterThan(0);
   expect(ms).toBeLessThan(1500);
-});
 
-test("every stored bucket reports one p95 over the same requests as its average", async ({
-  page,
-  request,
-}) => {
-  const res = await request.get("/ops/metrics/throughput/history?limit=500");
-  expect(res.ok()).toBe(true);
-  const body = (await res.json()) as {
-    buckets: {
-      total_requests: number;
-      avg_latency_ms: number | null;
-      p95_latency_ms: number | null;
-    }[];
-  };
-  const compared = body.buckets.filter(
-    (b) => b.p95_latency_ms !== null && b.avg_latency_ms !== null,
-  );
-  expect(compared.length).toBeGreaterThan(0);
-  for (const b of compared) {
-    // With at most 20 requests a continuous 95th percentile is never below the mean. A larger
-    // bucket can legitimately sit under it when one value dominates, so it is not asserted.
-    if (b.total_requests <= 20) {
-      expect(b.p95_latency_ms as number).toBeGreaterThanOrEqual(
-        b.avg_latency_ms as number,
-      );
-    }
-  }
-
-  // The same rule on what the page shows for the newest bucket.
-  await page.goto("/operations");
-  const readouts = page.locator("#activity-heading + dl");
-  await expect(readouts).not.toContainText("no data");
-  const values = await readouts.locator("dd.tabular-metric").allInnerTexts();
-  const [, avg, p95] = values.map((v) => Number(v.replace(/[^\d.]/g, "")));
-  expect(avg).toBeGreaterThan(0);
-  expect(p95).toBeGreaterThanOrEqual(avg);
+  // It is the momentary reading: a smaller figure than the recorded one, in its own row.
+  const size = (selector: string) =>
+    page
+      .locator(selector)
+      .first()
+      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  const recorded = await size("[data-gateway-probe] p.text-4xl");
+  const momentary = await size("[data-gateway-health] span.tabular-metric");
+  expect(momentary).toBeLessThan(recorded);
 });

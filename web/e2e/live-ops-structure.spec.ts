@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 /**
  * The shape of Live Operations after it moved to evaluation telemetry: the RAG request sections
- * are gone, the gateway reading is labeled for what it times, the strip describes the platform
+ * are gone, the gateway reading names the health route it times, the strip describes the platform
  * and claims no state, and the calibration sentence reads the stored reading. Real stack.
  */
 
@@ -34,7 +34,7 @@ test.describe("Live Operations structure", () => {
     await expect(page.getByText(/RAG latency/)).toHaveCount(0);
   });
 
-  test("labels the gateway reading as the health-route round trip and says what was timed", async ({
+  test("leads with the health-route figure, names the gateway health route once and stays short", async ({
     page,
   }) => {
     await page.goto("/operations");
@@ -46,14 +46,18 @@ test.describe("Live Operations structure", () => {
     );
     await expect(probe).toContainText("ms median");
     await expect(probe).toContainText(/Recorded .* UTC/);
-    await expect(probe).toContainText("It is stored, so it stays here");
     await expect(probe).toContainText(
-      "from the probe sending a GET to the gateway health route until it had read the whole response",
+      "Each request is a GET timed until the whole response is read",
     );
-    await expect(probe).toContainText("no retrieval and no model");
     await expect(page.locator("#gateway")).toContainText(
-      "not how long an evaluation or an answer takes",
+      "gateway answers on its health route",
     );
+    // The old repeated disclaimers and any RAG framing are gone from the section.
+    const words = (await page.locator("#gateway").textContent()) ?? "";
+    expect(words).not.toMatch(
+      /RAG|no retrieval|no model|network distance|not how long/i,
+    );
+    expect(words).not.toContain("It is stored");
   });
 
   test("the strip describes the platform and claims no state", async ({
