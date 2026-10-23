@@ -1,19 +1,17 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Live Operations in a quiet period. When the newest stored bucket is stale the chart shows the
- * last activity that was actually recorded, with its real date and time, and says it is not the
- * last hour. When traffic is current it keeps the "last hour" heading. Which of the two applies
- * is read from the gateway's own stored buckets, so the test follows the data and does not
- * assume a quiet system. It asserts no bar is invented: every plotted bucket is a stored one.
- * Needs the stack running.
+ * Staleness on Live Operations. The request-bucket chart this file used to cover is gone, and
+ * the same honesty now lives in two places: each evaluation card carries a stale flag from the
+ * snapshot and must say "Stale" exactly when the flag is set, and the "Newest recorded request"
+ * line dates the data behind a stale card with the real timestamp of the newest stored trace.
+ * The test follows the data and does not assume a quiet or a busy system. It also holds the
+ * page to no horizontal overflow and a clean console at four widths. Needs the stack running.
  */
 
-interface History {
-  buckets: { window_start: string; window_end: string }[];
+interface TraceList {
+  traces: { timestamp_utc: string; app_trace_id: string }[];
 }
-
-const STALE_AFTER_MS = 2 * 60_000;
 
 function utc(iso: string): string {
   const d = new Date(iso);
@@ -26,7 +24,7 @@ for (const width of [375, 768, 1024, 1440]) {
   test.describe(`at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
 
-    test("a stale series is labeled with its real time and a current one keeps the last-hour heading", async ({
+    test("a stale card says so, a current one does not, and the newest request is dated truthfully", async ({
       page,
       request,
     }) => {
@@ -35,54 +33,48 @@ for (const width of [375, 768, 1024, 1440]) {
         if (m.type() === "error" || m.type() === "warning")
           issues.push(m.text());
       });
-      const res = await request.get("/ops/metrics/throughput/history?limit=60");
+      const res = await request.get("/ops/traces?limit=1");
       expect(res.ok()).toBeTruthy();
-      const { buckets } = (await res.json()) as History;
-      test.skip(
-        buckets.length === 0,
-        "No stored bucket exists, so there is no series to label.",
-      );
-      const newest = buckets[buckets.length - 1].window_end;
+      const { traces } = (await res.json()) as TraceList;
 
       await page.goto("/operations");
-      const section = page.locator("section[aria-labelledby='chart-heading']");
-      await expect(section).toBeVisible();
-      const stale = Date.now() - new Date(newest).getTime() > STALE_AFTER_MS;
+      const telemetry = page.locator("section[aria-labelledby='eval-heading']");
+      const cards = telemetry.locator("section[data-stale]");
+      await expect(cards).toHaveCount(4);
+      await expect(telemetry.getByText(/ended .* UTC/).first()).toBeVisible({
+        timeout: 10_000,
+      });
 
-      if (stale) {
-        await expect(
-          section.getByRole("heading", { name: "Last recorded activity" }),
-        ).toBeVisible();
-        // The real time of the newest stored bucket, and its age.
-        await expect(section).toContainText(`since ${utc(newest)}`);
-        await expect(section).toContainText(
-          `Last recorded activity ended ${utc(newest)}`,
-        );
-        await expect(section).toContainText("They are not from the last hour");
-        await expect(section).not.toContainText("Request buckets, last hour");
-
-        // The table lists dated stored buckets only, none of them live, newest as stored.
-        await section.getByText("View the buckets as a table").click();
-        const rows = section.locator("table tbody tr");
-        const count = await rows.count();
-        expect(count).toBeGreaterThan(0);
-        expect(count).toBeLessThanOrEqual(buckets.length);
-        await expect(section.locator("table")).not.toContainText("Live bucket");
-        const lastRow = await rows.last().innerText();
-        const end = new Date(newest);
-        const month = end.toLocaleString("en-US", {
-          month: "short",
-          timeZone: "UTC",
-        });
-        expect(lastRow).toContain(`${month} ${end.getUTCDate()}`);
-      } else {
-        await expect(
-          section.getByRole("heading", { name: "Request buckets, last hour" }),
-        ).toBeVisible();
-        await expect(section).not.toContainText("Last recorded activity");
+      // Every card: the flag and the word agree. A stale card never reads as current.
+      for (let i = 0; i < 4; i += 1) {
+        const card = cards.nth(i);
+        const stale = (await card.getAttribute("data-stale")) === "true";
+        const header = card.locator("p").first();
+        if (stale) {
+          await expect(header).toContainText("Stale");
+        } else {
+          await expect(card).not.toContainText("Stale");
+        }
       }
 
-      // Fits the screen, and every control is at least 44px tall.
+      // The newest recorded request carries the real timestamp of the newest stored trace.
+      const newest = page.getByText(/^Newest recorded request /);
+      if (traces.length === 0) {
+        await expect(newest).toHaveCount(0);
+      } else {
+        await expect(newest).toContainText(utc(traces[0].timestamp_utc));
+        await expect(
+          page.getByRole("link", { name: "Open it" }),
+        ).toHaveAttribute(
+          "href",
+          `/investigations?trace=${traces[0].app_trace_id}`,
+        );
+      }
+
+      // Nothing from the removed chart comes back as a stale-period label.
+      await expect(page.getByText("Last recorded activity")).toHaveCount(0);
+      await expect(page.getByText("Request buckets, last hour")).toHaveCount(0);
+
       const overflow = await page.evaluate(
         () =>
           document.documentElement.scrollWidth -

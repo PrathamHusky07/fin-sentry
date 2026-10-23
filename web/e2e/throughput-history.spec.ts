@@ -1,15 +1,15 @@
 import { expect, test, type APIResponse } from "@playwright/test";
 
 /**
- * The stored request history on Live Operations. The page reads
- * GET /ops/metrics/throughput/history on the gateway, so these tests read the
- * same route and hold the page to it. Needs the real stack.
+ * The gateway's stored throughput-history route. Live Operations no longer draws these buckets
+ * (the request history and its chart were removed from the page), but the gateway still serves
+ * the route and the RisingWave view behind it still fills, so the route contract is checked
+ * against the running stack. Needs the real stack.
  *
- * Status contract. 200 must carry a valid ThroughputHistory. 503 is the one
- * honest unavailable state (the gateway or its metrics service is down) and
- * the page must say so. Every other outcome is a failure: a 404 means the
- * running gateway does not serve the route at all, which is a deployment or
- * routing fault and must never be accepted as "history unavailable".
+ * Status contract. 200 must carry a valid ThroughputHistory. 503 is the one honest unavailable
+ * state (the gateway or its metrics service is down). Every other outcome is a failure: a 404
+ * means the running gateway does not serve the route at all, which is a deployment or routing
+ * fault and must never be accepted as "history unavailable".
  */
 const GATEWAY = process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:8000";
 const ROUTE = `${GATEWAY}/ops/metrics/throughput/history?limit=60`;
@@ -87,52 +87,40 @@ test("the gateway serves the stored history route with the ThroughputHistory sha
   await readHistory(await request.get(ROUTE));
 });
 
-test("Live Operations draws the stored buckets the gateway returns, or says it has none", async ({
-  page,
+test("every stored bucket reports one p95 over the same requests as its average", async ({
   request,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-
-  const first = await readHistory(await request.get(ROUTE));
-  await page.goto("/operations");
-  const second = await readHistory(await request.get(ROUTE));
-
-  const section = page.getByRole("region", { name: "Stored request history" });
-  await expect(section).toBeVisible();
-  // Stored history says where it came from and is never described as arriving
-  // over the stream.
-  await expect(section).toContainText("persisted by the metrics view");
-  await expect(section).not.toContainText("arrived over the stream");
-
-  if (first === null || second === null) {
-    await expect(section).toContainText("Stored history is not available");
-    await expect(section.locator("table")).toHaveCount(0);
-    expect(errors).toEqual([]);
-    return;
-  }
-
-  if (!first.risingwave_connected || !second.risingwave_connected) {
-    await expect(section).toContainText("metrics store is offline");
-    expect(errors).toEqual([]);
-    return;
-  }
-
-  const counts = new Set([first.buckets.length, second.buckets.length]);
-  if (counts.has(0)) {
-    await expect(section).toContainText(
-      "No one-minute bucket has been stored yet",
-    );
-    expect(errors).toEqual([]);
-    return;
-  }
-
-  await section.getByText("View the stored buckets as a table").click();
-  const rows = await section.locator("tbody tr").count();
-  expect([...counts]).toContain(rows);
-  await expect(section).toContainText(
-    `${rows} stored ${rows === 1 ? "bucket" : "buckets"} covering`,
+  const body = await readHistory(
+    await request.get(`${GATEWAY}/ops/metrics/throughput/history?limit=500`),
   );
-  await expect(section).toContainText("Nothing is filled in between them");
-  expect(errors).toEqual([]);
+  test.skip(body === null, "The metrics service answered 503, so no buckets.");
+  const compared = (body as History).buckets.filter(
+    (b) => b.p95_latency_ms !== null && b.avg_latency_ms !== null,
+  );
+  expect(compared.length).toBeGreaterThan(0);
+  for (const b of compared) {
+    // With at most 20 requests a continuous 95th percentile is never below the mean. A larger
+    // bucket can legitimately sit under it when one value dominates, so it is not asserted.
+    if (b.total_requests <= 20) {
+      expect(b.p95_latency_ms as number).toBeGreaterThanOrEqual(
+        b.avg_latency_ms as number,
+      );
+    }
+  }
+});
+
+test("Live Operations no longer draws the stored buckets or any request-history section", async ({
+  page,
+}) => {
+  await page.goto("/operations");
+  await expect(
+    page.getByRole("heading", { name: "Evaluation telemetry" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Stored request history" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator("section[aria-labelledby='chart-heading']"),
+  ).toHaveCount(0);
+  await expect(page.locator("table")).toHaveCount(0);
 });
