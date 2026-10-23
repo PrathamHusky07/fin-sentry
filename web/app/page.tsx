@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 const SHOT = {
   traceDetail: { width: 1440, height: 2000 },
   overview: { width: 1440, height: 3200 },
-  operations: { width: 1440, height: 2447 },
+  operations: { width: 1440, height: 2407 },
   investigations: { width: 1440, height: 2200 },
 } as const;
 
@@ -201,12 +201,12 @@ export default function LandingPage() {
             </figure>
             <figure>
               <BrowserFrame
-                src="/screenshots/operations.png"
+                src="/screenshots/operations-day12-s8.png"
                 route="/operations"
                 href="/operations"
                 cta="Open Live Operations"
                 {...SHOT.operations}
-                alt="Live Operations as captured: four statements of what the platform covers, the evaluation telemetry cards for the flash judge and the frontier tier, the calibration reading with its thresholds, and the gateway health-route round trip."
+                alt="Live Operations as captured: four statements of what the platform covers, the evaluation telemetry cards for the flash judge and the frontier tier, the calibration reading with its thresholds, and the gateway health-route round trip of 0.26 ms median."
               />
               <figcaption className="text-text-secondary mt-4 text-base leading-relaxed">
                 <span className="text-text-primary font-medium">
