@@ -514,6 +514,14 @@ _JUDGE_STATE_TO_STATUS_SQL: dict[str, str] = {
 }
 
 
+# A pytest regression test publishes rows to the live rag-responses topic with this query shape
+# (tests/dashboard/test_trace_list_sql_live.py). They are stored evidence and stay in the store, but
+# they are test traffic, so the UI's trace list leaves them out. The shape is the fixed prefix and
+# one trace id, which no real question has, and every such row in the store matched it.
+TEST_TRAFFIC_QUERY_PREFIX = "duplicate-verdict regression probe "
+_TRACE_ID_LENGTH = 36
+
+
 async def _fetch_trace_list(
     limit: int,
     offset: int,
@@ -523,10 +531,20 @@ async def _fetch_trace_list(
     judge_state: str | None = None,
     frontier_sampled: bool | None = None,
     disagreement: bool | None = None,
+    include_test_traffic: bool = True,
 ) -> list[dict[str, Any]]:
     validate_limit(limit)
     conditions: list[str] = []
     params: list[Any] = []
+    if not include_test_traffic:
+        # COALESCE keeps a row with no query: NOT NULL is NULL, which would drop it.
+        conditions.append("NOT COALESCE(r.query LIKE %s AND LENGTH(r.query) = %s, false)")
+        params.extend(
+            [
+                f"{TEST_TRAFFIC_QUERY_PREFIX}%",
+                len(TEST_TRAFFIC_QUERY_PREFIX) + _TRACE_ID_LENGTH,
+            ]
+        )
     if ticker is not None:
         conditions.append("r.ticker = %s")
         params.append(ticker)
@@ -875,7 +893,15 @@ async def traces(
     """Internal contract for the gateway's /ops/traces proxy (Investigations
     table) -- not a public-facing route."""
     rows = await _fetch_trace_list(
-        limit, offset, ticker, status, q, judge_state, frontier_sampled, disagreement
+        limit,
+        offset,
+        ticker,
+        status,
+        q,
+        judge_state,
+        frontier_sampled,
+        disagreement,
+        include_test_traffic=False,
     )
     return TraceListResponse(
         traces=[TraceListItem(**r) for r in rows],

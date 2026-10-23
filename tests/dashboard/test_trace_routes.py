@@ -377,7 +377,8 @@ async def test_traces_list_q_param_adds_ilike_condition_on_query_and_trace_id() 
 
     assert resp.status_code == 200
     assert "r.query ILIKE %s OR r.app_trace_id ILIKE %s" in captured["sql"]
-    assert captured["params"] == ("%amazon%", "%amazon%")
+    # The route leaves out test traffic first (see test_test_traffic_exclusion.py), then searches.
+    assert captured["params"][-2:] == ("%amazon%", "%amazon%")
 
 
 async def test_traces_list_judge_state_param_filters_on_raw_status() -> None:
@@ -737,7 +738,7 @@ async def test_an_omitted_disagreement_filter_adds_no_condition_and_runs_no_look
 async def test_the_route_passes_disagreement_false_through_instead_of_ignoring_it() -> None:
     seen: list[bool | None] = []
 
-    async def _spy(*args: Any) -> list[dict[str, Any]]:
+    async def _spy(*args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
         seen.append(args[7])
         return []
 
