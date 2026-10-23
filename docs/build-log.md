@@ -1,5 +1,41 @@
 # Build Log
 
+## 2026-10-23: Day 13 Session 1, CI pipeline, snapshot timestamp test, deploy doc reconciled
+
+Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` all `c26e35d`, tree clean, no `.github` directory. Work is on branch `chore/ci-pipeline`, PR #1. Not merged, not made public, not deployed, no history rewritten. No RAG request, model call, calibration re-run, Red Team or Agent run, in the session or in CI. Cost $0.00. Nothing frozen changed, no archive or evidence file changed, no test was weakened, and CI uses no secret.
+
+### Test dependency map
+Every pytest run needs Postgres, because `tests/conftest.py` migrates the database in an autouse session fixture. The map came from a clean clone of HEAD run against an empty throwaway pgvector Postgres, with Redpanda, RisingWave, the gateway and Ollama refused and Hugging Face offline. First result: 1517 passed, 6 failed, plus a collection error in `tests/ingestion/test_sec_edgar.py`, which loads an embedding model at import.
+
+| Suite | Class | In push CI | Why |
+|---|---|---|---|
+| Everything else (1517 tests, 3 auto-skips) | offline, Postgres only | yes | passed on an empty database |
+| `tests/ingestion` (9) | Hugging Face downloads, embedding model, live EDGAR | no, `--ignore` | needs network and a model. The collection error rules out a marker |
+| `tests/gateway/test_rails.py` slow (2) | model load | no, `slow` | existing marker |
+| `tests/archive/test_recovery.py` rehearsal (1) | Redpanda, RisingWave | no, `integration` | failed in the simulation |
+| `tests/dashboard/test_trace_list_sql_live.py` (4) | live RisingWave | no, `integration` | failed in the simulation, 30 s timeout each |
+| `tests/gateway/test_fetch_chunks_sql.py` (2) | ingested SEC corpus | no, `integration` | the tables were empty, `len(chunks) > 0` failed |
+| `tests/integration/test_frontier_consumer.py` (3) | Redpanda, models | no, existing `integration` | existing |
+
+The Amazon-trace test is `test_the_configured_disagreement_is_live_or_a_valid_historical_capture`. It was not pre-skipped. It ran under CI conditions, failed on "RisingWave not reachable", and is now `integration`. Its offline twin in `tests/scripts/test_demo_seed.py` runs in CI.
+
+### Workflow
+`.github/workflows/ci.yml`, on pull requests and pushes to `main`, `contents: read`, SHA-pinned `actions/checkout` v7.0.1, `setup-python` v7.1.0 and `setup-node` v7.1.0, job timeouts, superseded runs cancelled. Three jobs: Python (CPU torch first, `ruff==0.16.6`, `mypy==2.3.1`, spaCy model, ruff check, ruff format --check, mypy, deterministic pytest with `HF_HUB_OFFLINE=1`), Frontend (`npm ci`, `next typegen`, tsc, eslint, vitest) and Archive mode (`build:archive`, serve on :3100, `test:e2e:archive`). Prettier is not run because the project has no prettier dependency or config.
+
+Two findings from a clean checkout. `tsc` fails without `next typegen` because `RouteContext` and `LayoutProps` are generated. `ruff format --check .` fails on 78 legacy files, so they are listed in `[tool.ruff.format] exclude`. That baseline is an operator decision against a one-time `ruff format .`.
+
+### Test added
+`web/lib/archive/traces.test.ts` now moves the read time by a day and requires `generated_at` to follow it while all five section windows and the frontier window stay at their recording times and stay stale. Expected windows were computed from `docs/demo-archive` with a separate Python script. A mutation of `stale()` made it fail. Existing tests covered two of the five windows and one read time, so this adds the invariant and does not repeat them.
+
+### Deploy doc
+`docs/deploy-readiness.md`: `NEXT_PUBLIC_ARCHIVE_MODE` added to the environment table, the git-state paragraph updated with the Session 8 state kept as history, the route count corrected (a clean build lists 12 entries, 6 static and 6 on demand, with or without the flag), the secret scan marked as predating Session 9 and Day 13, and a Continuous integration section added.
+
+### Results
+Run 40005362562 failed in Frontend and Archive mode on a type error in my new test (`frontier` is nullable). Vitest does not type-check, so I had missed it locally. Fixed and pushed. Run 40006370190 on `1efaad6` passed all three jobs: Python 1517 passed, 3 skipped, 12 deselected; Frontend 231 tests; Archive mode 43 Playwright tests. Local: ruff, ruff format, mypy (147 files), tsc, eslint and vitest (231) clean. Skills: the four skills were read. Only the Next docs required by `web/AGENTS.md` changed a decision (`next typegen`). The Vercel and design skills changed nothing, because no UI was touched.
+
+### Next
+The operator reviews and merges PR #1, runs gitleaks, deploys with the settings in `docs/deploy-readiness.md`, and smoke-tests the host. Then the README.
+
 ## 2026-10-23: Day 12 Session 9, archived-evidence mode behind an explicit flag
 
 Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `3462c66`, tree clean. No RAG request, no model call, no calibration
