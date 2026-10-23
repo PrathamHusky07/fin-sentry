@@ -49,6 +49,6 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "slow: marks tests that download or load large models (deselect with -m 'not slow')",
-    "integration: marks tests that require live Docker infrastructure (Redpanda/RisingWave) — run explicitly with -m integration",
+    "integration: marks tests that require live Docker infrastructure (Redpanda/RisingWave) or the SEC corpus ingested into Postgres — run explicitly with -m integration",
     "live_topics: publishes a successful event to the live rag-responses topic, where the running consumers judge it with a real Gemini call. Skipped unless --run-live-topic-tests is passed",
 ]

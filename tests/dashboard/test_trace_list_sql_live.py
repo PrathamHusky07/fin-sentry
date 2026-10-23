@@ -27,6 +27,9 @@ from finsentry.dashboard.app import _dao, _fetch_disagreement_trace_ids, _fetch_
 from finsentry.events.schema import JudgeVerdictEvent, RagResponseEvent
 from finsentry.events.topics import JUDGE_VERDICTS_TOPIC, RAG_RESPONSES_TOPIC
 
+# Every test here runs real SQL against the Docker RisingWave, so the module is integration.
+pytestmark = pytest.mark.integration
+
 _ROOT = Path(__file__).resolve().parents[2]
 _DEMO_RECORD = _ROOT / "web" / "lib" / "demo-record.json"
 _BOOTSTRAP = "localhost:19092"

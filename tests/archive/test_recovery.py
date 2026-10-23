@@ -59,6 +59,7 @@ def _database_state(url: str) -> tuple[dict[str, int], list[str]]:
     return counts, leftovers
 
 
+@pytest.mark.integration
 async def test_the_rehearsal_passes_and_leaves_the_live_system_untouched() -> None:
     # The development database sits on the same server as the test database.
     dev_url = _database_url(TEST_DATABASE_URL, "finsentry")
