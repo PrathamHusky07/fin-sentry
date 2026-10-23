@@ -10,6 +10,7 @@ import { IncidentHeader } from "@/components/incidents/incident-header";
 import { IncidentVerdict } from "@/components/incidents/incident-verdict";
 import { NotEstablished } from "@/components/incidents/not-established";
 import { SectionRail } from "@/components/incidents/section-rail";
+import { ARCHIVE_MODE } from "@/lib/archive-mode";
 import { SpendPanel } from "@/components/incidents/spend-panel";
 import { TrailSummary } from "@/components/incidents/trail-summary";
 import type { Detail } from "@/lib/incidents";
@@ -133,7 +134,9 @@ export function IncidentWorkspace({ id }: { id: string }) {
                 No investigation is stored under this id.
               </p>
               <p className="text-text-secondary mx-auto mt-2 max-w-xl text-base">
-                The gateway answered, and it holds no case file with this id.
+                {ARCHIVE_MODE
+                  ? "The archive holds no case file with this id."
+                  : "The gateway answered, and it holds no case file with this id."}{" "}
                 Nothing is shown in its place, and no investigation is started
                 by opening this page.
               </p>

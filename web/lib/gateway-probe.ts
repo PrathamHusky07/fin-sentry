@@ -1,4 +1,4 @@
-import { GATEWAY_URL } from "@/lib/config";
+import { opsFetch } from "@/lib/ops-fetch";
 
 /** Mirrors GatewayProbeRun in finsentry/observability/gateway_probe.py field for field. */
 export interface GatewayProbeRun {
@@ -23,7 +23,7 @@ export interface GatewayProbeSummary {
  */
 export async function fetchGatewayProbe(): Promise<GatewayProbeSummary | null> {
   try {
-    const res = await fetch(`${GATEWAY_URL}/ops/gateway-probe/latest`, {
+    const res = await opsFetch("/ops/gateway-probe/latest", {
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });

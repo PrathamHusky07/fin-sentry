@@ -1,4 +1,4 @@
-import { GATEWAY_URL } from "@/lib/config";
+import { serverOpsFetch } from "@/lib/ops-fetch-server";
 import demoRecord from "@/lib/demo-record.json";
 import type { Origin } from "@/lib/incidents";
 
@@ -19,7 +19,7 @@ export interface StoredCounts {
  * zero. Looks at the newest 50 only, and says so. */
 export async function storedCounts(): Promise<StoredCounts | null> {
   try {
-    const res = await fetch(`${GATEWAY_URL}/ops/investigations?limit=50`, {
+    const res = await serverOpsFetch("/ops/investigations?limit=50", {
       cache: "no-store",
       signal: AbortSignal.timeout(4000),
     });

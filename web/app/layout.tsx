@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ArchiveNotice } from "@/components/archive-notice";
 import { SiteFooter } from "@/components/site-footer";
 import { TopNav } from "@/components/top-nav";
+import { ARCHIVE_MODE } from "@/lib/archive-mode";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -39,6 +41,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           Skip to content
         </a>
         <TopNav />
+        {ARCHIVE_MODE ? <ArchiveNotice /> : null}
         <main id="main-content" className="flex flex-1 flex-col">
           {children}
         </main>

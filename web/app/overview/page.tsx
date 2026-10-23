@@ -18,6 +18,10 @@ export const metadata: Metadata = {
   title: "Overview | Fin-Sentry",
 };
 
+// Read on every request. Relative phrases such as "the newest 21h ago" are measured from now,
+// and a page rendered once at build time would freeze them.
+export const dynamic = "force-dynamic";
+
 /**
  * The command center. It answers one question: what needs attention right
  * now. The order is the argument: the system state, the one case the second

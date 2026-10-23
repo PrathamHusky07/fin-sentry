@@ -1,4 +1,4 @@
-import { GATEWAY_URL } from "@/lib/config";
+import { serverOpsFetch } from "@/lib/ops-fetch-server";
 import {
   SCHEMA_RAIL_REASONS,
   type SchemaRailReason,
@@ -68,7 +68,7 @@ export function summarizeGeneration(
  * count, so a failed read cannot pass for a clean history. */
 export async function fetchGenerationRecord(): Promise<GenerationRecord | null> {
   try {
-    const res = await fetch(`${GATEWAY_URL}/ops/traces?limit=${SCAN_LIMIT}`, {
+    const res = await serverOpsFetch(`/ops/traces?limit=${SCAN_LIMIT}`, {
       cache: "no-store",
     });
     if (!res.ok) return null;

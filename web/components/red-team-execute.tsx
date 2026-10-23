@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Panel } from "@/components/panel";
 import { RedTeamOutcomeBadge } from "@/components/red-team-badges";
+import { ARCHIVE_MODE, ARCHIVE_READ_ONLY } from "@/lib/archive-mode";
 import { shortId } from "@/lib/format";
 import {
   formatCost,
@@ -425,8 +426,9 @@ export function RedTeamExecute({
           ) : null}
           {runsEnabled === false ? (
             <p role="status" className="text-warning mt-3 text-base sm:text-sm">
-              Runs are disabled on this deployment because no run password is
-              configured on the gateway. Reading the results still works.
+              {ARCHIVE_MODE
+                ? `${ARCHIVE_READ_ONLY} Reading the results still works.`
+                : "Runs are disabled on this deployment because no run password is configured on the gateway. Reading the results still works."}
             </p>
           ) : null}
           {startError && !review ? (

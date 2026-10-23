@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { OriginBadge } from "@/components/incidents/badges";
+import { ARCHIVE_MODE, ARCHIVE_READ_ONLY } from "@/lib/archive-mode";
 import { relativeTime } from "@/lib/format";
 import { sessionsForExecution, type Summary } from "@/lib/incidents";
 import { IncidentApiError, startIncident } from "@/lib/incidents-api";
@@ -123,7 +124,14 @@ export function InvestigateThis({
         </p>
       ) : null}
 
-      {confirming ? (
+      {ARCHIVE_MODE ? (
+        <p
+          data-archive-read-only
+          className="text-text-secondary text-base sm:text-sm"
+        >
+          {ARCHIVE_READ_ONLY}
+        </p>
+      ) : confirming ? (
         <div
           role="group"
           aria-label="Confirm starting an investigation"

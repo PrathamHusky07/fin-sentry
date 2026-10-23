@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ARCHIVE_MODE, ARCHIVE_READ_ONLY } from "@/lib/archive-mode";
 import { TRIGGER_LABEL, type TriggerKind } from "@/lib/incidents";
 import {
   IncidentApiError,
@@ -199,13 +200,18 @@ export function StartIncidentUnavailable() {
         Starting an investigation is unavailable
       </p>
       <p className="text-text-secondary mt-1 max-w-3xl text-base leading-relaxed">
-        It runs against the live backend, and the gateway did not answer, so
-        nothing can be started from here.
+        {ARCHIVE_MODE
+          ? ARCHIVE_READ_ONLY
+          : "It runs against the live backend, and the gateway did not answer, so nothing can be started from here."}
       </p>
     </div>
   );
 }
 
 export function StartIncident({ available }: { available: boolean }) {
-  return available ? <StartIncidentForm /> : <StartIncidentUnavailable />;
+  return available && !ARCHIVE_MODE ? (
+    <StartIncidentForm />
+  ) : (
+    <StartIncidentUnavailable />
+  );
 }

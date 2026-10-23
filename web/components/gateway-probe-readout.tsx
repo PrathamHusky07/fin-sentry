@@ -1,3 +1,4 @@
+import { ARCHIVE_MODE } from "@/lib/archive-mode";
 import { formatUtc, relativeTime } from "@/lib/format";
 import type { GatewayHealthCheck } from "@/lib/gateway-health";
 import {
@@ -82,9 +83,11 @@ export function GatewayProbeReadout({
             </>
           ) : (
             <p className="text-text-secondary mt-2 max-w-3xl text-base leading-snug">
-              {state === "none"
-                ? "No gateway probe has been recorded. Run python -m finsentry.observability.gateway_probe to store one."
-                : "The probe store did not answer, so no recorded round trip is shown. Nothing is shown in its place."}
+              {ARCHIVE_MODE
+                ? "The gateway probe is a timing of a live gateway and is not part of the archived evidence, so no round trip is shown. Nothing is shown in its place."
+                : state === "none"
+                  ? "No gateway probe has been recorded. Run python -m finsentry.observability.gateway_probe to store one."
+                  : "The probe store did not answer, so no recorded round trip is shown. Nothing is shown in its place."}
             </p>
           )}
         </div>
@@ -101,7 +104,9 @@ export function GatewayProbeReadout({
           <p className="text-text-tertiary text-base leading-snug sm:text-sm">
             {health
               ? `Median of ${health.samples} requests to the gateway health route, timed by the web server at ${formatUtc(health.measuredAt)} and not stored.`
-              : "The gateway health route did not answer within its time budget, so no round trip was timed. Nothing is shown in its place."}
+              : ARCHIVE_MODE
+                ? "This site has no gateway to time, so nothing was measured. Nothing is shown in its place."
+                : "The gateway health route did not answer within its time budget, so no round trip was timed. Nothing is shown in its place."}
           </p>
         </div>
       </div>

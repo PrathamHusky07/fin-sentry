@@ -1,4 +1,4 @@
-import { GATEWAY_URL } from "@/lib/config";
+import { serverOpsFetch } from "@/lib/ops-fetch-server";
 import { blockStage, type BlockStage } from "@/lib/labels";
 import type {
   CalibrationHealthResponse,
@@ -69,7 +69,7 @@ async function fetchTraces(
       limit: String(STATS_SCAN_LIMIT),
       ...params,
     });
-    const res = await fetch(`${GATEWAY_URL}/ops/traces?${qs.toString()}`, {
+    const res = await serverOpsFetch(`/ops/traces?${qs.toString()}`, {
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -176,7 +176,7 @@ export async function fetchRecentTraces(
  * state, never a fabricated "healthy" reading. */
 export async function fetchCalibrationHealth(): Promise<CalibrationHealthResponse | null> {
   try {
-    const res = await fetch(`${GATEWAY_URL}/ops/calibration/health`, {
+    const res = await serverOpsFetch("/ops/calibration/health", {
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -192,7 +192,7 @@ export async function fetchTraceDetail(
   appTraceId: string,
 ): Promise<TraceDetailResponse | null> {
   try {
-    const res = await fetch(`${GATEWAY_URL}/ops/traces/${appTraceId}`, {
+    const res = await serverOpsFetch(`/ops/traces/${appTraceId}`, {
       cache: "no-store",
     });
     if (!res.ok) return null;

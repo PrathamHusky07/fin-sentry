@@ -1,4 +1,4 @@
-import { GATEWAY_URL } from "@/lib/config";
+import { opsFetch } from "@/lib/ops-fetch";
 import type {
   ExecutionList,
   ExecutionRecord,
@@ -38,7 +38,7 @@ function messageFor(body: unknown, status: number): string {
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${GATEWAY_URL}/ops/redteam${path}`, init);
+    res = await opsFetch(`/ops/redteam${path}`, init);
   } catch {
     throw new RedTeamApiError("The gateway could not be reached.", 0, null);
   }

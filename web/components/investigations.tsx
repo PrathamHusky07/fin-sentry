@@ -13,7 +13,7 @@ import { InvestigationsTable } from "@/components/investigations-table";
 import { ViewSwitch } from "@/components/incidents/view-switch";
 import { PageHeader } from "@/components/page-header";
 import { TraceDrilldown } from "@/components/trace-drilldown";
-import { GATEWAY_URL } from "@/lib/config";
+import { opsFetch } from "@/lib/ops-fetch";
 import type { TraceListResponse } from "@/lib/trace-api";
 
 const PAGE_SIZE = 50;
@@ -70,7 +70,7 @@ export function Investigations() {
   // and used only to mark rows. An unavailable set just means no marks.
   useEffect(() => {
     let cancelled = false;
-    fetch(`${GATEWAY_URL}/ops/traces?disagreement=true&limit=500`)
+    opsFetch("/ops/traces?disagreement=true&limit=500")
       .then((res) =>
         res.ok ? (res.json() as Promise<TraceListResponse>) : null,
       )
@@ -142,7 +142,7 @@ export function Investigations() {
   const fetching = loadedQs !== qs;
   useEffect(() => {
     let cancelled = false;
-    fetch(`${GATEWAY_URL}/ops/traces?${qs}`)
+    opsFetch(`/ops/traces?${qs}`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(

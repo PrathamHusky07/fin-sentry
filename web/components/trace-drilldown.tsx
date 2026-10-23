@@ -9,7 +9,7 @@ import { OutcomeBadge } from "@/components/outcome-badge";
 import { Tip } from "@/components/tip";
 import { TraceCaseFile } from "@/components/trace-case-file";
 import { detectDisagreement } from "@/components/trace-sections";
-import { GATEWAY_URL } from "@/lib/config";
+import { opsFetch } from "@/lib/ops-fetch";
 import { JUDGE_STATE_MEANING } from "@/lib/labels";
 import { JUDGE_STATE_LABEL } from "@/components/judge-state-badge";
 import type { TraceDetailResponse } from "@/lib/trace-api";
@@ -96,7 +96,7 @@ export function TraceDrilldown({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${GATEWAY_URL}/ops/traces/${appTraceId}`)
+    opsFetch(`/ops/traces/${appTraceId}`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(

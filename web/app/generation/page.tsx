@@ -15,6 +15,10 @@ export const metadata: Metadata = {
   title: "Generation | Fin-Sentry",
 };
 
+// Read on every request. Relative phrases such as "the newest 21h ago" are measured from now,
+// and a page rendered once at build time would freeze them.
+export const dynamic = "force-dynamic";
+
 const NUMBER = new Intl.NumberFormat("en-US");
 
 const SOURCE_NOTE = "text-text-tertiary mt-1 text-base sm:text-sm";

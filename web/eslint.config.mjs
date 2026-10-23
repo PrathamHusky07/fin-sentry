@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // The archived-evidence build lives beside the live one (see next.config.ts).
+    ".next-archive/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

@@ -1,4 +1,4 @@
-import { GATEWAY_URL } from "@/lib/config";
+import { opsFetch } from "@/lib/ops-fetch";
 import type {
   Detail,
   Listing,
@@ -43,7 +43,7 @@ function messageFor(body: unknown, status: number): string {
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${GATEWAY_URL}/ops/investigations${path}`, init);
+    res = await opsFetch(`/ops/investigations${path}`, init);
   } catch {
     throw new IncidentApiError("The gateway could not be reached.", 0, null);
   }

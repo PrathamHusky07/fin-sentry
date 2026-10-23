@@ -12,6 +12,10 @@ export const metadata: Metadata = {
   title: "Agent | Fin-Sentry",
 };
 
+// Read on every request. Relative phrases such as "the newest 21h ago" are measured from now,
+// and a page rendered once at build time would freeze them.
+export const dynamic = "force-dynamic";
+
 const SECTIONS = [
   { id: "lifecycle", label: "How it works" },
   { id: "investigations", label: "Cases" },

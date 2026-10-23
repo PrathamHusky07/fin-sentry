@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { NextConfig } from "next";
 
 // The browser calls /ops/* on its own origin (see lib/config.ts) and Next
@@ -5,7 +7,63 @@ import type { NextConfig } from "next";
 const gatewayUrl =
   process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:8000";
 
+// Archived-evidence mode (lib/archive-mode.ts): the site serves a read-only copy of the committed
+// archive and sends nothing to a gateway, so the /ops rewrite below is switched off.
+const archiveMode = process.env.NEXT_PUBLIC_ARCHIVE_MODE === "true";
+
+// The archive files, by who reads them. Every module that can reach lib/archive/files.ts is
+// traced with all nine paths, so each page that reads the archive on the server excludes the
+// groups it does not use, and only the route handler carries all of them.
+const ARCHIVE_FILES = {
+  streams: [
+    "../docs/demo-archive/stream/rag-responses.jsonl",
+    "../docs/demo-archive/stream/judge-verdicts.jsonl",
+    "../docs/demo-archive/stream/rag-frontier-verdicts.jsonl",
+  ],
+  calibration: ["../docs/measurements/reliability/canary-live-smoke-d6p2.json"],
+  investigations: ["../docs/demo-archive/postgres/investigations.jsonl"],
+  timelines: ["../docs/demo-archive/postgres/investigation_events.jsonl"],
+  redTeam: [
+    "../docs/demo-archive/postgres/red_team_runs.jsonl",
+    "../docs/demo-archive/postgres/red_team_executions.jsonl",
+    "../finsentry/redteam/scenarios.yml",
+  ],
+};
+type ArchiveGroup = keyof typeof ARCHIVE_FILES;
+const allArchiveFiles = Object.values(ARCHIVE_FILES).flat();
+const archiveExcept = (...keep: ArchiveGroup[]) =>
+  Object.entries(ARCHIVE_FILES)
+    .filter(([group]) => !keep.includes(group as ArchiveGroup))
+    .flatMap(([, files]) => files);
+// Route keys are globs, so the brackets of the catch-all segment are escaped.
+const ARCHIVE_ROUTE = "/api/archive/\\[\\.\\.\\.path\\]";
+
+// A build that cannot see the committed files would trace nothing and ship pages that all say
+// "unavailable", so it stops here with the reason instead.
+if (
+  archiveMode &&
+  !existsSync(
+    path.join(process.cwd(), "..", "docs", "demo-archive", "manifest.json"),
+  )
+) {
+  throw new Error(
+    "Archived-evidence mode needs docs/demo-archive next to this directory. On Vercel, enable including source files outside the Root Directory.",
+  );
+}
+
 const nextConfig: NextConfig = {
+  // A second build directory lets the archived build sit beside the live one.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  ...(archiveMode && {
+    outputFileTracingRoot: path.join(process.cwd(), ".."),
+    outputFileTracingIncludes: { [ARCHIVE_ROUTE]: allArchiveFiles },
+    outputFileTracingExcludes: {
+      "/overview": archiveExcept("streams", "calibration"),
+      "/operations": archiveExcept("streams", "calibration"),
+      "/generation": archiveExcept("streams"),
+      "/agent": archiveExcept("investigations"),
+    },
+  }),
   // Browsers send Accept-Encoding: gzip, and Next's gzip layer buffers the
   // proxied /ops/stream response, so no SSE snapshot ever reaches the page.
   // Vercel compresses at its edge in the deployed topology.
@@ -30,6 +88,7 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
+    if (archiveMode) return [];
     return [{ source: "/ops/:path*", destination: `${gatewayUrl}/ops/:path*` }];
   },
 };

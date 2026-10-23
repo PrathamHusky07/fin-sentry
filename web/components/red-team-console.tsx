@@ -13,6 +13,7 @@ import {
 } from "@/components/red-team-results";
 import { RedTeamExecute } from "@/components/red-team-execute";
 import { RedTeamScenario } from "@/components/red-team-scenario";
+import { ARCHIVE_MODE, ARCHIVE_READ_ONLY } from "@/lib/archive-mode";
 import type { Summary } from "@/lib/incidents";
 import { fetchIncidents } from "@/lib/incidents-api";
 import { useIsDesktop } from "@/lib/use-is-desktop";
@@ -251,6 +252,12 @@ export function RedTeamConsole() {
     judgeAssisted: boolean,
     password: string,
   ): Promise<boolean> {
+    // Archived evidence never starts a run. The controls are already disabled, and this keeps
+    // a stray call from reaching any API.
+    if (ARCHIVE_MODE) {
+      setNotice(ARCHIVE_READ_ONLY);
+      return false;
+    }
     setStarting(true);
     setNotice(null);
     try {
@@ -521,7 +528,7 @@ export function RedTeamConsole() {
                 onOpenChange={setExecuteOpen}
                 busy={busy}
                 persistenceAvailable={persistence}
-                runsEnabled={runsEnabled}
+                runsEnabled={ARCHIVE_MODE ? false : runsEnabled}
                 activeRun={activeRun}
                 startError={notice}
                 onStart={start}
