@@ -219,6 +219,54 @@ describe("metricsSnapshot", () => {
     const old = await metricsSnapshot(Date.parse("2026-10-22T20:03:30Z"));
     expect(old.throughput?.stale).toBe(true);
   });
+
+  // generated_at is the assembly time, as on the live gateway. The windows are the recording
+  // times. If a later change anchored a window to the read time, archived figures would look
+  // freshly measured, so this test moves the read time and requires the windows to stay put.
+  it("stamps only generated_at with the read time and keeps every window at its recording time", async () => {
+    const DAY = 24 * 60 * 60_000;
+    const first = await metricsSnapshot(NOW);
+    const later = await metricsSnapshot(NOW + DAY);
+    expect(first.generated_at).toBe("2026-10-23T12:00:00.000Z");
+    expect(later.generated_at).toBe("2026-10-24T12:00:00.000Z");
+
+    const windows = (s: typeof first) =>
+      [s.throughput, s.faithfulness, s.relevance, s.tokens, s.cost].map((x) => [
+        x?.window_start,
+        x?.window_end,
+      ]);
+    // Newest archived minute per section, computed from docs/demo-archive with a Python script.
+    const recorded = [
+      ["2026-10-22T20:00:00Z", "2026-10-22T20:01:00Z"],
+      ["2026-10-22T19:59:00Z", "2026-10-22T20:00:00Z"],
+      ["2026-10-22T19:59:00Z", "2026-10-22T20:00:00Z"],
+      ["2026-10-22T20:00:00Z", "2026-10-22T20:01:00Z"],
+      ["2026-10-22T20:00:00Z", "2026-10-22T20:01:00Z"],
+    ];
+    expect(windows(first)).toEqual(recorded);
+    expect(windows(later)).toEqual(recorded);
+    expect(first.frontier?.latest_window_end).toBe("2026-10-21T19:37:00Z");
+    expect(later.frontier?.latest_window_end).toBe("2026-10-21T19:37:00Z");
+
+    for (const s of [first, later]) {
+      const generated = Date.parse(s.generated_at);
+      for (const [, end] of windows(s)) {
+        expect(generated - Date.parse(end as string)).toBeGreaterThan(
+          2 * 60_000,
+        );
+      }
+      for (const section of [
+        s.throughput,
+        s.faithfulness,
+        s.relevance,
+        s.tokens,
+        s.cost,
+        s.frontier,
+      ]) {
+        expect(section?.stale).toBe(true);
+      }
+    }
+  });
 });
 
 describe("calibrationHealth", () => {

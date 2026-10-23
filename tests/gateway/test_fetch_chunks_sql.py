@@ -11,7 +11,13 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from finsentry.gateway.main import _fetch_chunks_sync
+
+# Both tests assert rows come back, so they need the SEC corpus ingested into the test database
+# (scripts and live EDGAR access, not the migrations). An empty database fails them.
+pytestmark = pytest.mark.integration
 
 _TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",

@@ -1,8 +1,10 @@
 # Deploy readiness
 
-Written at the end of Day 12 Session 6, audited again in Session 8 and extended in Session 9 with archived-evidence mode. Nothing is deployed. The Next.js frontend builds, and the checks below ran against the local stack. The gateway, Postgres, Redpanda, RisingWave and the local model do not run on Vercel and are not hosted anywhere.
+Written at the end of Day 12 Session 6, audited again in Session 8, extended in Session 9 with archived-evidence mode and in Day 13 Session 1 with continuous integration. Nothing is deployed. The Next.js frontend builds, and most of the checks below ran against the local stack. The gateway, Postgres, Redpanda, RisingWave and the local model do not run on Vercel and are not hosted anywhere.
 
-Git state at the start of Session 8: `main`, `HEAD` and `origin/main` were all `0c7670a`, so the Session 7 commits were already pushed. The Session 8 commits sit on top of it locally and are not pushed.
+Git state at the start of Day 13 Session 1: `main`, `HEAD` and `origin/main` were all `c26e35d`, so everything from Sessions 8 and 9 is pushed. The CI work is on the branch `chore/ci-pipeline` and is not merged.
+
+Historical note, Session 8: at its start `main`, `HEAD` and `origin/main` were all `0c7670a`, and the Session 8 commits were not yet pushed. That is no longer the state. The sections below keep their session labels, and a number in them describes that session.
 
 ## Release gate: secret audit
 
@@ -15,13 +17,14 @@ What was scanned again in Session 8, before the repository goes public:
 - Token shapes across all 194,496 added lines in history: Google API keys, GitHub tokens, Hugging Face tokens, `sk-` keys, AWS access keys, private key blocks, service account JSON, Slack tokens and bearer literals. None matched.
 - Quoted password, secret and token assignments: four matches. Three are constants in test files (`tests/redteam/conftest.py`, `tests/investigations/conftest.py`, `tests/mcp/tools/test_trace_evidence.py`). The fourth is new since Session 6: `PASSWORD_ENV = "RED_TEAM_RUN_PASSWORD"` in `finsentry/redteam/run_gate.py`, which is the name of the variable and not a value. None equals the real run password.
 - File names: no `.env`, key, certificate, credential or `.vercel` file is tracked or was ever committed. `.gitignore` covers `.env`, `.env.*.local`, `*.pem`, `*.key` and `.vercel/`.
-- The built output (`web/.next/static`, `web/.next/server`, `web/public`, 371 files): neither value is present, and the only `NEXT_PUBLIC_` name is `NEXT_PUBLIC_GATEWAY_URL`.
+- The built output (`web/.next/static`, `web/.next/server`, `web/public`, 371 files): neither value is present, and the only `NEXT_PUBLIC_` name is `NEXT_PUBLIC_GATEWAY_URL`. That was true in Session 8. Session 9 added `NEXT_PUBLIC_ARCHIVE_MODE`, a build flag and not a credential, after this scan.
 
 What it does not cover:
 
 - Binary files in history, such as the screenshots. The scan reads text diffs only.
 - A secret that matches none of the shapes above. There is no entropy check.
 - Anything outside this repository, such as the Google Cloud project settings.
+- Commits made after the scan, which include Session 9 and Day 13. No scan of them has run.
 
 The scan was written for this repository and is not a replacement for a dedicated scanner. Run `gitleaks detect` or `trufflehog git` once before flipping the visibility.
 
@@ -41,10 +44,13 @@ If a real credential is ever found, the steps are: rotate it at the provider fir
 | Framework preset | Next.js | config-ready |
 | Root directory | `web` | config-ready |
 | Install command | `npm ci` | config-ready: `web/package-lock.json` is tracked. `npm ci` itself was not run in Session 8 |
-| Build command | `npm run build` | tested locally: passes, 12 route entries |
+| Build command | `npm run build` | tested locally: passes, 12 route entries, measured again in Day 13 Session 1 on a clean clone |
 | Output directory | the default, `.next` | config-ready |
 | Node.js version | 20.x (`web/package.json` sets `engines.node` to `>=20.9.0`) | tested locally on Node 20.20.2 |
-| Environment variable names | `NEXT_PUBLIC_GATEWAY_URL` only | config-ready: it is the only `NEXT_PUBLIC_` name in the built output |
+| `NEXT_PUBLIC_ARCHIVE_MODE` | `true` for the archived-evidence deploy (see "Deploy steps") | tested locally: the archived build and its Playwright project pass. Unset means live mode |
+| `NEXT_PUBLIC_GATEWAY_URL` | unset for the archived-evidence deploy. A gateway URL only for a live deploy, with the changes in "How the gateway URL is used" | config-ready |
+
+These are the only two `NEXT_PUBLIC_` names the frontend reads. Both are build-time values, so changing either needs a new build.
 
 Do not set `RED_TEAM_RUN_PASSWORD` on Vercel. It belongs to the gateway host, and the browser sends what a visitor types in the `X-Run-Password` header to the gateway. No `vercel.json` is needed.
 
@@ -75,7 +81,7 @@ Do not set `RED_TEAM_RUN_PASSWORD` on Vercel. It belongs to the gateway host, an
 
 **Behavior actually tested (Session 8, local stack)**
 
-- `npm run build` passes: 12 route entries, 6 static (`/`, `/_not-found`, `/architecture`, `/investigations`, `/judges`, `/red-team`) and 5 rendered on demand (`/agent`, `/agent/[id]`, `/generation`, `/operations`, `/overview`).
+- `npm run build` passes: 12 route entries, 6 static (`/`, `/_not-found`, `/architecture`, `/investigations`, `/judges`, `/red-team`) and 5 rendered on demand (`/agent`, `/agent/[id]`, `/generation`, `/operations`, `/overview`). Correction from Day 13 Session 1: that line names 11 entries, not 12. A build on a clean clone lists 12, with 6 static and 6 on demand, because `/api/archive/[...path]` is also on demand. The count is the same with and without `NEXT_PUBLIC_ARCHIVE_MODE`.
 - Playwright, 274 tests against the dev server: 271 passed, 3 skipped (the existing disagreement-trace skips), none failed. An earlier run of 273 tests against the production build (`next start`) gave 270 passed and 3 skipped.
 - The homepage on the production build loads `operations-day12-s8.png` through the image optimizer, at the natural size of the new file.
 - `/` and `/operations` at 375, 768, 1024 and 1440 pixels: no horizontal overflow and no console error.
@@ -171,6 +177,56 @@ A local production build proves the route list, the tracing of each function and
 - The deployed pages show the archive line and make no request to another origin.
 
 If a page says a record could not be read after deploy, the files were not traced into that function. Check the setting in step 2 first.
+
+## Continuous integration (Day 13 Session 1)
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`. It has three independent jobs. Each uses `contents: read` and no secret. None calls a model, starts a stream service or runs the RAG endpoint. Every action is pinned to a commit SHA, and all three come from the `actions` organization.
+
+| Job | Commands | Needs |
+|---|---|---|
+| Python | `ruff check .`, `ruff format --check .`, `mypy finsentry/`, `python -m pytest -q -rfs -m "not slow and not integration" --ignore=tests/ingestion` | A pgvector Postgres service container. `tests/conftest.py` migrates the database before any test, so every pytest run needs one. |
+| Frontend | `npm ci`, `npx next typegen`, `npx tsc --noEmit`, `npm run lint`, `npm test` | Node 20.x. `next typegen` is required because `RouteContext` and `LayoutProps` are generated by Next, and `tsc` fails on a clean checkout without it. |
+| Archive mode | `npm ci`, `npx playwright install --with-deps chromium`, `npm run build:archive`, `npm run start:archive`, `npm run test:e2e:archive` | The committed `docs/demo-archive`. The build points the gateway at a closed port, and the specs fail on any request that leaves `localhost:3100`. |
+
+First results: run 40005362562 failed in the Frontend and Archive mode jobs on a type error in the new archived-window test, which vitest does not catch and `tsc` does. Run 40006370190 on `1efaad6` passed all three jobs: Python 1517 passed, 3 skipped, 12 deselected (about 6 minutes); Frontend 231 vitest tests (about 1 minute); Archive mode 43 Playwright tests (about 2 minutes).
+
+### Reproduce each check locally
+
+- **Python.** To see what CI sees, use an empty database. With the dev stack running, more tests execute than in CI.
+  ```
+  docker run -d --rm --name ci-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=finsentry_test -p 55432:5432 pgvector/pgvector:0.8.6-pg16
+  export TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/finsentry_test DATABASE_URL=$TEST_DATABASE_URL HF_HUB_OFFLINE=1
+  ruff check . && ruff format --check . && mypy finsentry/
+  python -m pytest -q -rfs -m "not slow and not integration" --ignore=tests/ingestion
+  ```
+- **Frontend.** `cd web && npm ci && npx next typegen && npx tsc --noEmit && npm run lint && npm test`.
+- **Archive mode.** Stop `next dev` first, because a production build and a dev server should not run together here. Then `cd web && npm run build:archive`, `npm run start:archive` in a second terminal, and `npm run test:e2e:archive`.
+
+### Not in CI, and how to run it
+
+| Left out | Count | Reason | Manual command |
+|---|---|---|---|
+| `tests/ingestion` | 9 | Two modules download Hugging Face datasets and truncate tables. `test_sec_edgar.py` loads an embedding model when it is imported and needs `EDGAR_IDENTITY` and live SEC access. | `python -m pytest tests/ingestion`, with network and a local Postgres |
+| `slow` | 2 | Download and load Prompt Guard. | `python -m pytest -m slow` |
+| `integration` | 10 | The archive recovery rehearsal needs Redpanda, RisingWave and Postgres. Four trace-list tests run SQL on a live RisingWave. Two chunk-SQL tests need the ingested SEC corpus. Three frontier-consumer tests need Redpanda and local models. | `python -m pytest -m integration`, with the stack up |
+| `live_topics` | 4 | They publish to the live topics, where the running consumers make a real Gemini call. | `--run-live-topic-tests`, only on request |
+| Playwright `live` project | about 274 | Needs the gateway, RisingWave and `next dev` on `:3000`. | `cd web && npx playwright test --project=live` |
+| Gemini, RAG, calibration, Red Team and Agent runs | none | They spend credits or load models. | Operator only |
+
+The Amazon-trace test is `test_the_configured_disagreement_is_live_or_a_valid_historical_capture`. It was run under CI conditions first and failed with "RisingWave not reachable" after a 30 second connect timeout, so it now carries the `integration` marker with RisingWave as its named dependency. Its offline counterpart, `test_the_amazon_record_is_marked_historical_and_names_what_was_not_recovered`, reads the committed seed and does run in CI.
+
+Three tests skip by themselves in CI because RisingWave is not reachable: one in `tests/dashboard/test_test_traffic_exclusion.py` and two in `tests/risingwave/test_latency_percentile_sql.py`. They run when the stack is up.
+
+### Known gaps
+
+- **Format baseline.** `ruff format --check .` reports 78 files at the commit that added CI. They are listed in `[tool.ruff.format] exclude` in `pyproject.toml`, so the check gates new and unlisted files and leaves the legacy rails, judges and frontier code alone. A one-time `ruff format .` would retire the list. That is an operator decision.
+- **No prettier gate.** The project has no prettier dependency or config, so CI does not run it. Earlier session notes that call prettier clean do not describe a check that CI repeats.
+- **Floating dependencies.** `requirements.txt` uses `>=` floors, and `uv.lock` covers only `mcp`. A new upstream release can turn a run red without a code change. The workflow pins `ruff` and `mypy`, and installs the CPU build of torch from the PyTorch index.
+- **Runner minutes.** Standard runners are free for a public repository. While it is private, runs count against the plan's included minutes. The jobs have timeouts, and a newer push cancels a superseded run on the same ref.
+
+### What CI does not prove
+
+CI proves that a clean checkout installs, type-checks, passes the deterministic tests and builds archived-evidence mode on GitHub's Ubuntu runner with Node 20.x. It does not run on Vercel's build image. It does not prove file tracing, function size, the route handler on Vercel's runtime, CORS, HTTPS to a gateway, or any request on a Vercel host. The deploy and its smoke test stay operator steps with their own checks above. A green run is not a statement that the site is ready to publish.
 
 ## Recommended public-demo path
 
