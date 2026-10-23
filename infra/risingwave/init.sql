@@ -12,6 +12,12 @@
 --   judge-verdicts        -> JudgeVerdictEvent     (schema_version 1.0) -> source: judge_verdicts
 --   rag-frontier-verdicts -> FrontierVerdictEvent   (schema_version 1.0) -> source: rag_frontier_verdicts
 --
+-- This file never drops anything. The Redpanda topics expire old events, so the stored rows of
+-- every view below can be the only copy of that history, and CREATE IF NOT EXISTS cannot restore
+-- them. Rebuilding a view after a definition change is a separate, destructive step:
+-- infra/risingwave/teardown.sql, run only with
+-- `python scripts/init_risingwave.py --destroy-history-and-rebuild`.
+--
 -- RisingWave uses PostgreSQL wire protocol - syntax below is RisingWave SQL.
 
 -- ---------------------------------------------------------------------------
@@ -101,30 +107,15 @@ FORMAT PLAIN ENCODE JSON;
 
 
 -- ---------------------------------------------------------------------------
--- Materialized views — teardown (reverse dependency order, re-run safe)
--- ---------------------------------------------------------------------------
-
-DROP MATERIALIZED VIEW IF EXISTS mv_request_latency_exact_1m;
-DROP MATERIALIZED VIEW IF EXISTS mv_frontier_disagreement_1m;
-DROP MATERIALIZED VIEW IF EXISTS mv_frontier_verdict_rate_1m;
-DROP MATERIALIZED VIEW IF EXISTS mv_ticker_quality_1h;
-DROP MATERIALIZED VIEW IF EXISTS mv_judge_cost_1m;
-DROP MATERIALIZED VIEW IF EXISTS mv_judge_usage_1m;
-DROP MATERIALIZED VIEW IF EXISTS mv_relevance_1m;
-DROP MATERIALIZED VIEW IF EXISTS mv_faithfulness_1m;
-DROP MATERIALIZED VIEW IF EXISTS mv_request_throughput_1m;
-
-
--- ---------------------------------------------------------------------------
--- Materialized views — recreate with date_trunc time buckets
+-- Materialized views (create if missing; an existing view and its stored rows are never touched)
 -- ---------------------------------------------------------------------------
 
 -- 1. Request throughput: query count and status breakdown per 1-minute bucket.
 -- p95_latency_ms here is a sketch (APPROX_PERCENTILE, about 1% relative error) that returns a
 -- lower-rank value on a small bucket: three requests of 3000, 12200 and 29850 ms report a p95 of
 -- 12213 ms under a mean of 15017 ms. Readers take p95 from mv_request_latency_exact_1m instead.
--- This view is not dropped and rebuilt on a live database, because the topic has expired older
--- events and the stored buckets are the only copy of that history.
+-- Never drop and rebuild this view on a live database: the topic has expired older events, so
+-- the stored buckets are the only copy of that history.
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_request_throughput_1m AS
 SELECT
     date_trunc('minute', timestamp_utc)                        AS window_start,

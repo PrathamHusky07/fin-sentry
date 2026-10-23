@@ -1,6 +1,7 @@
-"""Tests for scripts/init_risingwave.py: _split_statements and _ensure_topics."""
+"""Tests for scripts/init_risingwave.py: _split_statements, _ensure_topics and the no-drop guard."""
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -15,8 +16,12 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 from init_risingwave import (  # noqa: E402, I001
     _JUDGE_VERDICTS_TOPIC,
     _RAG_RESPONSES_TOPIC,
+    _SQL_PATH,
+    _TEARDOWN_PATH,
     _ensure_topics,
     _split_statements,
+    main,
+    plan_statements,
 )
 
 
@@ -135,3 +140,114 @@ def test_script_topic_constants_match_events_module() -> None:
 
     assert _RAG_RESPONSES_TOPIC == RAG_RESPONSES_TOPIC
     assert _JUDGE_VERDICTS_TOPIC == JUDGE_VERDICTS_TOPIC
+
+
+# ---------------------------------------------------------------------------
+# History guard: a routine init must never drop a view or its stored rows
+# ---------------------------------------------------------------------------
+#
+# The topics expire old events, so the stored rows of each materialized view can be the only
+# copy of that history. These tests read the real init.sql and teardown.sql and run main()
+# against a recording connection, so nothing here touches a RisingWave database.
+
+_DESTRUCTIVE = re.compile(r"^\s*(DROP|TRUNCATE|DELETE|ALTER)\b", re.IGNORECASE)
+_VIEW_NAME = re.compile(r"MATERIALIZED VIEW\s+(?:IF (?:NOT )?EXISTS\s+)?(\w+)", re.IGNORECASE)
+
+
+def test_default_plan_contains_no_destructive_statement() -> None:
+    destructive = [s for s in plan_statements() if _DESTRUCTIVE.match(s)]
+    assert destructive == []
+
+
+def test_init_sql_alone_contains_no_destructive_statement() -> None:
+    statements = _split_statements(_SQL_PATH.read_text())
+    assert statements, "init.sql produced no statements"
+    assert [s for s in statements if _DESTRUCTIVE.match(s)] == []
+
+
+def test_init_sql_creates_every_object_only_if_missing() -> None:
+    creates = [
+        s for s in _split_statements(_SQL_PATH.read_text()) if s.upper().startswith("CREATE")
+    ]
+    assert len(creates) == 12  # three sources and nine views
+    assert all("IF NOT EXISTS" in s.split("(")[0].split(" AS")[0].upper() for s in creates)
+
+
+def test_default_plan_keeps_the_history_view_and_the_exact_latency_view() -> None:
+    plan = "\n".join(plan_statements())
+    assert "mv_request_throughput_1m" in plan
+    assert "mv_request_latency_exact_1m" in plan
+    assert "DROP" not in plan.upper()
+
+
+def test_destroy_plan_drops_exactly_the_views_init_creates_and_drops_first() -> None:
+    plan = plan_statements(destroy_history=True)
+    drops = [s for s in plan if _DESTRUCTIVE.match(s)]
+    created = {
+        m.group(1)
+        for s in plan_statements()
+        if s.upper().startswith("CREATE MATERIALIZED VIEW")
+        for m in [_VIEW_NAME.search(s)]
+        if m
+    }
+    dropped = {m.group(1) for s in drops for m in [_VIEW_NAME.search(s)] if m}
+    assert dropped == created
+    assert len(created) == 9
+    assert plan[: len(drops)] == drops
+
+
+def test_teardown_file_is_only_reachable_through_the_explicit_flag() -> None:
+    assert _TEARDOWN_PATH.read_text() not in _SQL_PATH.read_text()
+    assert plan_statements() == _split_statements(_SQL_PATH.read_text())
+
+
+class _RecordingCursor:
+    def __init__(self, log: list[str]) -> None:
+        self._log = log
+
+    def __enter__(self) -> _RecordingCursor:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def execute(self, statement: str) -> None:
+        self._log.append(statement)
+
+
+class _RecordingConnection:
+    def __init__(self, log: list[str]) -> None:
+        self._log = log
+
+    def cursor(self) -> _RecordingCursor:
+        return _RecordingCursor(self._log)
+
+    def close(self) -> None:
+        return None
+
+
+def _run_main(argv: list[str]) -> list[str]:
+    log: list[str] = []
+    with (
+        patch("init_risingwave._ensure_topics"),
+        patch("psycopg.connect", return_value=_RecordingConnection(log)),
+    ):
+        assert main(argv) == 0
+    return log
+
+
+def test_default_run_sends_no_drop_to_the_database() -> None:
+    executed = _run_main([])
+    assert len(executed) == 12
+    assert [s for s in executed if _DESTRUCTIVE.match(s)] == []
+
+
+def test_destroy_flag_is_the_only_way_a_run_sends_drops() -> None:
+    executed = _run_main(["--destroy-history-and-rebuild"])
+    assert len([s for s in executed if _DESTRUCTIVE.match(s)]) == 9
+    assert len(executed) == 21
+
+
+def test_dry_run_prints_no_drop_by_default(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--dry-run"]) == 0
+    assert "DROP" not in capsys.readouterr().out.upper()

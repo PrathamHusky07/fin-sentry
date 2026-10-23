@@ -4,9 +4,13 @@
 Reads infra/risingwave/init.sql and executes each statement against
 the RisingWave instance at RISINGWAVE_HOST:RISINGWAVE_PORT.
 
+The default run only creates what is missing and never drops anything, so it is safe to repeat
+against a live database whose views hold history the topics have already expired.
+
 Usage:
     python scripts/init_risingwave.py
     python scripts/init_risingwave.py --dry-run
+    python scripts/init_risingwave.py --destroy-history-and-rebuild
 
 Environment variables:
     RISINGWAVE_HOST   (default: localhost)
@@ -32,6 +36,7 @@ _JUDGE_VERDICTS_TOPIC = "judge-verdicts"
 _RAG_FRONTIER_VERDICTS_TOPIC = "rag-frontier-verdicts"
 
 _SQL_PATH = pathlib.Path(__file__).parent.parent / "infra" / "risingwave" / "init.sql"
+_TEARDOWN_PATH = pathlib.Path(__file__).parent.parent / "infra" / "risingwave" / "teardown.sql"
 
 
 def _split_statements(sql: str) -> list[str]:
@@ -42,6 +47,15 @@ def _split_statements(sql: str) -> list[str]:
     stripped_line = re.sub(r"--[^\n]*", "", stripped_block)
     parts = stripped_line.split(";")
     return [p.strip() for p in parts if p.strip()]
+
+
+def plan_statements(destroy_history: bool = False) -> list[str]:
+    """The statements one run executes. Drops come only from teardown.sql and only when
+    destroy_history is set, so the default plan cannot remove a view or its stored rows."""
+    plan = _split_statements(_SQL_PATH.read_text())
+    if destroy_history:
+        plan = _split_statements(_TEARDOWN_PATH.read_text()) + plan
+    return plan
 
 
 def _ensure_topics(topic_names: list[str]) -> None:
@@ -75,13 +89,18 @@ def _ensure_topics(topic_names: list[str]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Initialize RisingWave sources and views")
     parser.add_argument("--dry-run", action="store_true", help="Print statements without executing")
+    parser.add_argument(
+        "--destroy-history-and-rebuild",
+        action="store_true",
+        help="DESTRUCTIVE: drop every materialized view first. Stored buckets whose events "
+        "the topics have expired are lost for good.",
+    )
     args = parser.parse_args(argv)
 
     if not args.dry_run:
         _ensure_topics([_RAG_RESPONSES_TOPIC, _JUDGE_VERDICTS_TOPIC, _RAG_FRONTIER_VERDICTS_TOPIC])
 
-    sql = _SQL_PATH.read_text()
-    statements = _split_statements(sql)
+    statements = plan_statements(args.destroy_history_and_rebuild)
 
     host = os.getenv("RISINGWAVE_HOST", "localhost")
     port = int(os.getenv("RISINGWAVE_PORT", "4566"))
