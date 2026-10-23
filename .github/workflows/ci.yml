@@ -135,5 +135,6 @@ jobs:
           done
           npm run test:e2e:archive
       - name: Server log
+        # Diagnostic only. The file does not exist when the build failed before the server started.
         if: failure()
-        run: cat "$RUNNER_TEMP/archive-server.log"
+        run: '[ ! -f "$RUNNER_TEMP/archive-server.log" ] || cat "$RUNNER_TEMP/archive-server.log"'
