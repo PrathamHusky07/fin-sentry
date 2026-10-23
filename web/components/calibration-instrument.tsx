@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { formatUtc, relativeTime } from "@/lib/format";
+import { calibrationSentence } from "@/lib/calibration-copy";
 import { CALIBRATION_POSITION_TONE } from "@/lib/labels";
-import { useNow } from "@/lib/use-now";
 import type {
   CalibrationHealthResponse,
   CalibrationPosition,
@@ -138,7 +137,6 @@ export function CalibrationInstrument({
   const [focused, setFocused] = useState<MarkerId | null>(null);
   const [pinned, setPinned] = useState<MarkerId | null>(null);
   const active = hovered ?? focused ?? pinned;
-  const now = useNow();
 
   if (!health) {
     return (
@@ -366,22 +364,9 @@ export function CalibrationInstrument({
           </div>
         </div>
 
-        <dl className="border-border mt-10 grid gap-x-10 gap-y-4 border-t pt-6 text-sm sm:grid-cols-[auto_1fr]">
-          <dt className="text-text-tertiary">Persisted</dt>
-          <dd className="text-text-secondary">
-            {health.state_as_of
-              ? `${formatUtc(health.state_as_of)}${now !== null ? `, ${relativeTime(health.state_as_of, now)}` : ""}`
-              : "No timestamp recorded"}
-          </dd>
-          <dt className="text-text-tertiary">Provenance</dt>
-          <dd className="text-text-secondary max-w-3xl">
-            One manual canary run read from a file on disk. It is not a
-            scheduled or continuously running monitor, and no earlier readings
-            are persisted, so there is no trend to draw. The service reports:
-            &ldquo;
-            {health.note}&rdquo;
-          </dd>
-        </dl>
+        <p className="border-border text-text-secondary mt-10 max-w-3xl border-t pt-6 text-base leading-relaxed">
+          {calibrationSentence(health)}
+        </p>
       </div>
     </section>
   );

@@ -19,6 +19,17 @@ export function formatUtc(iso: string): string {
   return `${month} ${d.getUTCDate()}, ${hh}:${mm} UTC`;
 }
 
+/** A fixed UTC calendar date, e.g. "October 4, 2026". UTC so the string is identical on server
+ * and client and does not shift with the viewer's time zone. */
+export function formatUtcDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 /** First eight characters of a trace id: enough to recognize, short enough
  * for a dense table. The full id is always available on copy and in detail. */
 export function shortId(id: string): string {
