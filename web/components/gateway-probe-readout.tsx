@@ -92,13 +92,13 @@ export function GatewayProbeReadout({
           data-gateway-health={health ? "measured" : "not-measured"}
           className="border-border flex flex-col gap-1 border-t px-6 py-4 sm:flex-row sm:items-baseline sm:gap-6"
         >
-          <p className="text-text-secondary shrink-0 text-sm">
+          <p className="text-text-secondary shrink-0 text-base sm:text-sm">
             Checked just now by this page
             <span className="tabular-metric text-text-primary ml-3 text-lg font-semibold">
               {health ? `${health.medianMs} ms` : "not measured"}
             </span>
           </p>
-          <p className="text-text-tertiary text-sm leading-snug">
+          <p className="text-text-tertiary text-base leading-snug sm:text-sm">
             {health
               ? `Median of ${health.samples} requests to the gateway health route, timed by the web server at ${formatUtc(health.measuredAt)} and not stored.`
               : "The gateway health route did not answer within its time budget, so no round trip was timed. Nothing is shown in its place."}

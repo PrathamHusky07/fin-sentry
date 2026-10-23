@@ -70,3 +70,30 @@ test("the page's own health check is bounded, separate, smaller and not stored",
   const momentary = await size("[data-gateway-health] span.tabular-metric");
   expect(momentary).toBeLessThan(recorded);
 });
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 375, height: 800 } });
+
+  test("every line of the gateway section is at least 16px and nothing overflows", async ({
+    page,
+  }) => {
+    await page.goto("/operations");
+    await page.locator("[data-gateway-probe]").scrollIntoViewIfNeeded();
+    const small = await page.locator("#gateway").evaluate((section) =>
+      [...section.querySelectorAll("p, li, h2, h3")]
+        .filter((el) => (el.textContent ?? "").trim() !== "")
+        .map((el) => ({
+          text: (el.textContent ?? "").trim().slice(0, 40),
+          size: parseFloat(getComputedStyle(el).fontSize),
+        }))
+        .filter((t) => t.size < 16),
+    );
+    expect(small).toEqual([]);
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
