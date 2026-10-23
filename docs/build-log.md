@@ -1,5 +1,60 @@
 # Build Log
 
+## 2026-10-23: Day 12 Session 8, four e2e specs resolved, gateway copy, versioned screenshot, deploy audit
+
+Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `0c7670a`, tree clean, so the Session 7 commits were already
+pushed. No RAG request, no model call, no calibration re-run and no fill ran. Cost $0.00. No frozen contract, MCP tool, rail, held-out case,
+planner behavior, archive design, password gate, recovery module, calibration computation, constellation or gateway-probe measurement changed.
+The gateway-probe measurement code was not touched, only the copy that displays it. Nothing was pushed, published or deployed.
+
+### The four specs
+- `gateway-health.spec.ts`: updated. The recorded probe and the page's own check still exist, so those two tests keep their coverage with the
+  new labels and copy. The page's own check is now also held to being the smaller figure. The third test, on the request-bucket readouts, was
+  split: its page half is dead and was dropped, its route half (p95 against the average) moved to `throughput-history.spec.ts`. A phone test
+  was added after the sweep found 14px text in the section.
+- `live-ops-stale.spec.ts`: updated, same four widths. The chart it covered is gone, but staleness still exists on the evaluation cards. Each
+  card's `data-stale` flag must agree with the word "Stale", and the "Newest recorded request" line must carry the real timestamp and trace link
+  of the newest trace the gateway returns. Overflow and console checks kept.
+- `sse-snapshot.spec.ts`: updated. The Connected and Reachable pills and the request-activity readouts are retired. The proof of the wire is now
+  the `/ops/stream` response itself (200, `text/event-stream`) plus the four cards only a snapshot can fill, each with its window label. The
+  frontier card accepts either "newest bucket ended" or "no bucket in range", because which holds depends on the last 15 minutes of traffic.
+- `throughput-history.spec.ts`: page half retired as dead (the "Stored request history" section is removed). The gateway route is still served
+  and its view still fills, so the route contract and the p95 check stay against the real stack, and one test asserts the page no longer draws
+  buckets. Nothing was folded into `live-ops-structure.spec.ts` beyond updating its gateway-copy assertions. No assertion was loosened to pass.
+- `components/live-operations.test.tsx` (vitest) followed the copy, with one new test for the momentary check.
+
+### Gateway copy
+The intro is one sentence: "How quickly the gateway answers on its health route, from a probe whose latest reading is kept with the time it
+was taken." The figure leads with its p95, max, request count and recording time. One quiet line gives the method: "Each request is a GET
+timed until the whole response is read, over one kept-open connection after two warm-up requests, from the same machine as the gateway." The
+last clause only appears for a loopback target. The page's own check stays a separate, smaller row: "Median of 3 requests to the gateway health
+route, timed by the web server at ... and not stored." No RAG wording, and the repeated "no retrieval and no model" and "no network distance"
+disclaimers are gone. The scope words "gateway" and "health route" stay. The momentary row was 14px on a phone and is now 16px.
+
+### Screenshot
+The homepage showed the old Live Operations capture although the file on disk was the new page. On a fresh production server the old filename
+already served the new file, so the cause was caching of an unchanged URL: the image optimizer sends `max-age=14400` and the dev server keeps
+its own image cache. The capture was retaken from the production build after the copy change and saved as
+`public/screenshots/operations-day12-s8.png` (1440 by 2407). The old `operations.png` was removed. The homepage frame, its height, alt text and
+caption follow. Verified in the rendered homepage on the production build: the browser requested `operations-day12-s8.png`, its natural size
+was 1100 by 1838 (the ratio of 2407 by 1440, where the old file gives 1869), and a screenshot of the frame shows the new gateway section.
+The capture predates the 16px fix, which does not change the 1440 layout.
+
+### Other
+The test-traffic filter is documented as a deliberately narrow prefix and length match in `finsentry/dashboard/app.py`. It was not tightened to a
+UUID check, since that would change the SQL and its live-store tests for a case the data does not contain. The default stays include-all for
+the frozen MCP path. `docs/deploy-readiness.md` is rewritten to the post-session state by tier, with the secret scan re-run (413 commits, no
+token shape in 194,496 added lines, four quoted-assignment matches all explained, built output clean) and its limits stated.
+
+### Gates
+tsc, eslint, prettier, vitest (179), ruff, ruff format and mypy (147 files) pass. `npm run build` passes (12 route entries). pytest: 1536
+passed, 4 skipped (live-topic), 0 failed, so the known Amazon-trace failure did not occur. The Amazon tests (15) were rerun with skip reasons
+shown and all ran. Playwright: 274 tests, 271 passed, 3 skipped (the existing disagreement-trace skips), 0 failed, all four resolved specs
+included. An earlier run on the production build passed 270 of 273 with the same 3 skips. Responsive sweep of `/` and `/operations` at 375,
+768, 1024 and 1440: no overflow and no console error. Two controls under 44px exist by design and predate this session: the off-screen skip
+link, and the "Open it" link at 768 and above. Product evidence after the session: Kafka offsets (245/578, 210/643, 73/259), every RisingWave
+view and table count, and every Postgres table count (including `gateway_probe_runs` at 1) are identical to the start.
+
 ## 2026-10-23: Day 12 Session 7, history guard, evaluation-first Live Operations, informational strip, test-traffic exclusion
 
 Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `0abf648`, tree clean. No RAG request, no model call, no calibration
