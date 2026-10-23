@@ -85,11 +85,11 @@ Recommendation: **a scoped demo mode backed by the real archived records**, reac
    1. Serve the read-only subset of `/ops/*` from Next route handlers that read the bundled archive files, with `outputFileTracingIncludes` so the files ship with the function.
    2. Switch the `/ops/*` rewrite off in that mode, so nothing leaves Vercel.
    3. Mark every page with one fixed line saying the data is archived evidence and not a live system.
-   4. Disable the Red Team run and Agent start controls in that mode. With no gateway behind it, nothing can run or spend.
-   5. On Live Operations, show the stream as not connected and keep the stored buckets and the recorded probe, each with its own date.
+   4. Red Team run and Agent start controls: already unavailable when the gateway does not answer (Day 12 Session 7). Nothing is left to do here except check it on the deployed host.
+   5. On Live Operations, serve the archived evaluation telemetry and keep the recorded probe, each with its own date. The status strip is now four informational items, so it needs no change. The stored request buckets and their charts were removed from the page in Session 7, so there is nothing to carry over for them.
 
 Step 2 is a session of work and was not started here.
 
-## Data caveat to settle before going public
+## Data caveat: settled in Day 12 Session 7
 
-The throughput history, the Overview request counts and the trace list include pytest regression probes. 117 of the 325 archived `rag-responses` events have a query beginning "duplicate-verdict regression probe", the model field empty and a synthetic `total_latency_ms` of 100. 42 of the 333 traces the UI reads today are the same probes (all AAPL, all successful). An earlier test run published them to the live topic. They are stored evidence and were left untouched. A visitor reading Overview sees them counted as real requests, and the 100 ms buckets on Live Operations are theirs. Options for you: exclude that query prefix in the read layer, or label the rows as test traffic.
+The pytest regression probes are test traffic. 117 of the 325 archived `rag-responses` events and 42 of the 333 traces the UI read had a query of the exact shape "duplicate-verdict regression probe" followed by one trace id. The UI trace list now leaves that shape out, so Overview, Investigations and Live Operations count 291 traces. The stored rows and the archive are unchanged, a probe trace still opens by its id, and the query function the MCP tools share still returns every row. The throughput history and its 100 ms buckets are no longer shown anywhere.

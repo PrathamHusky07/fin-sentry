@@ -1,5 +1,76 @@
 # Build Log
 
+## 2026-10-23: Day 12 Session 7, history guard, evaluation-first Live Operations, informational strip, test-traffic exclusion
+
+Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `0abf648`, tree clean. No RAG request, no model call, no calibration
+re-run and no fill ran. Cost $0.00. No frozen contract, MCP tool, rail, held-out case, planner behavior, archive design, password gate,
+recovery module, calibration computation, constellation or gateway-probe measurement changed.
+
+### init.sql no longer drops history
+The teardown block ran nine unconditional `DROP MATERIALIZED VIEW IF EXISTS` statements on every run, while the comment on
+`mv_request_throughput_1m` said it must not be dropped. The bug was wider than that one view. Measured on the live store, every view
+holds more than its topic still has: throughput 578 requests against 333 events left in the topic, faithfulness 458 against 351 rows,
+frontier verdicts 259 against 186, judge cost $4.65 against $3.60. A routine run of `scripts/init_risingwave.py` would have erased
+history from all nine. `init.sql` now contains only `CREATE ... IF NOT EXISTS` and no drop. The drops moved to
+`infra/risingwave/teardown.sql`, which runs only with `--destroy-history-and-rebuild`. The recovery module reads `init.sql` into a scratch
+database where the drops were no-ops, so it is unaffected (still nine views).
+
+Guard tests (`tests/scripts/test_init_risingwave.py`, 18 pass): the default plan has no DROP, TRUNCATE, DELETE or ALTER; every create is
+`IF NOT EXISTS`; the destroy plan drops exactly the nine views `init.sql` creates and drops them first; `main()` run against a recording
+connection sends 12 statements and no drop by default, and 21 with nine drops only behind the flag. A mutation check (a DROP appended to
+`init.sql`) failed seven of them. Nothing ran against the live store: the check was a dry run plus the recording connection. RisingWave
+counts before and after the dry run were identical (158 throughput buckets, 578 requests, 85 exact buckets, 333 `rag_events`).
+`scripts/init_risingwave.py` already failed `ruff check` (F541) and `ruff format` before this change. Left as found.
+
+### Test traffic out of the UI trace list
+The predicate is the query `duplicate-verdict regression probe ` followed by exactly 36 characters (one trace id), applied in
+`finsentry/dashboard/app.py::_fetch_trace_list` behind `include_test_traffic`. The default stays `True` because the MCP `trace_evidence`
+tool calls the same function and is frozen. Only the `/traces` route, the UI's read path, passes `False`, so Overview, Investigations and
+Live Operations (the newest-request line) agree. All 42 rows it dropped matched the strict shape and none of the 291 kept rows did
+(`tests/dashboard/test_test_traffic_exclusion.py`, read-only against the real store). Trace list: 333 before, 291 after. The 117 figure
+is the archive count (`stream_archive` plus expired events), not what the store lists. No row or archive entry was modified, and a probe
+trace still opens by id. The `:8081` dashboard process was restarted with its original command to pick this up.
+
+### Live Operations
+Removed: Last recorded activity, Stored request history, the three RAG readouts (throughput, average and p95 RAG latency) that linked into
+those charts, and the code only they used (`activity-chart`, `persisted-throughput`, `throughput-history`, `fetchThroughputHistory`, the
+history accumulation in the SSE hook, their tests). The SSE snapshot stays because the judge cards read it. Kept: four judge cards,
+Calibration, the probe, the exact-p95 view and the throughput view (both untouched in RisingWave).
+Order is now evaluation telemetry, calibration, then the gateway reading as a supporting section. No aggregate of
+`evaluation_latency_ms` exists (it is a per-row field and an MCP listing column, with no view or endpoint), so none was added.
+Probe timer boundaries, read from `gateway_probe.py`: `perf_counter()` before `client.get()` and after `response.read()`, over one reused
+`httpx.Client` connection, two warm-up requests excluded, target the gateway `/health` on the same host. The label is "Health-route round
+trip, recorded probe", and the caption says so. It does not print the target address, because the responsive spec bans hosts and ports in
+page text. With no stream and no snapshot the cards give way to an explicit unavailable state instead of empty cards.
+
+### Informational strip
+The four pills (Stream, Last snapshot, RisingWave, Metrics bucket) became four statements: Quality signals, Judge calibration, Disagreement
+analysis, Evidence-backed investigations. No status dot, timestamp or connected, live or monitoring wording. The strip is no longer sticky,
+since nothing in it needs to stay in view and four stacked rows would take a quarter of a phone screen. Disagreement analysis says to
+inspect where the tiers differ and Evidence-backed investigations says running a new one needs the backend.
+
+### Calibration copy
+One sentence built from the stored reading (`lib/calibration-copy.ts`, unit tested): "Last calibration: October 4, 2026. Cohen's kappa was
+0.516 across 30 labeled examples, above the drift threshold of 0.43 but below the recovery threshold of 0.54." The date is the UTC date of
+`state_as_of`. The degraded state stays in the left column. The computation was not touched.
+
+### Honest states for deploy
+Built: the Agent start form is replaced by an unavailable notice when the stored-case listing cannot be read. The Red Team already hides its
+run controls behind an unreachable alert and disables runs without persistence. Live Operations states when the stream has not answered.
+Deferred to the deploy session: serving archived records from route handlers (a page that needs the gateway still shows unavailable).
+
+### Screenshot
+`public/screenshots/operations.png` recaptured from the production build at 1440 wide, 2447 tall (the new page's full height), with the
+alt text and caption rewritten as a captured state.
+
+### Gates
+tsc, eslint, prettier, vitest (178) and `npm run build` pass. pytest: 1536 passed, 4 skipped (live-topic), 0 failed. Playwright against the
+real stack: 149 passed, 3 skipped (the existing Amazon-disagreement skips) across 15 specs including the new `live-ops-structure.spec.ts`.
+Four specs were not read or run: `gateway-health`, `live-ops-stale`, `sse-snapshot` and `throughput-history`. A permission rule denied
+reading them. They assert the old Live Operations structure, so they need updating or deleting before the suite is green.
+Product evidence after the session: RisingWave counts, every Postgres table count and the Kafka offsets (245/578, 210/643, 73/259) match the
+start of the session.
+
 ## 2026-10-22 (late night): Day 12 Session 6, hero, exact latency, probe series, three record states, deploy handoff
 
 Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` both `230c557`, tree clean. No RAG request, no model call and no
