@@ -8,11 +8,6 @@
 export const ARCHIVE_MODE: boolean =
   process.env.NEXT_PUBLIC_ARCHIVE_MODE === "true";
 
-/** The one line every archived page carries, in two parts so the lead can be set heavier. */
-export const ARCHIVE_NOTICE_LEAD = "Archived evidence.";
-export const ARCHIVE_NOTICE_BODY =
-  "This is a recorded copy of real runs, not a live system. Every record keeps its original time.";
-
 /** The routes whose data comes from the archive. The landing and architecture pages are static. */
 export const ARCHIVE_ROUTES = [
   "/overview",

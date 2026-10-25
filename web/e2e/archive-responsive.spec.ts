@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 /**
  * Every page that reads the archive, at the four widths the project reviews. Structural checks:
  * no horizontal overflow, no standalone control under 44 px, no console error or warning, no
- * request that leaves the site, and the archive line set at 16 px or more on a phone. Run against
+ * request that leaves the site, and no page-level archive line. Run against
  * the archived production build on :3100 (see playwright.config.ts).
  */
 const ROUTES = [
@@ -37,7 +37,7 @@ for (const width of WIDTHS) {
         });
 
         await page.goto(route);
-        await expect(page.locator("[data-archive-notice]")).toHaveCount(1);
+        await expect(page.locator("[data-archive-notice]")).toHaveCount(0);
         await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
         await page.waitForTimeout(800);
 
@@ -47,16 +47,6 @@ for (const width of WIDTHS) {
             document.documentElement.clientWidth,
         );
         expect(overflow, "horizontal overflow in px").toBeLessThanOrEqual(0);
-
-        const noticeSize = await page
-          .locator("[data-archive-notice] p")
-          .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-        if (width < 640) {
-          expect(
-            noticeSize,
-            "archive line size on a phone",
-          ).toBeGreaterThanOrEqual(16);
-        }
 
         // Standalone controls are at least 44 px in both dimensions. Links inside running
         // prose are exempt, as in WCAG 2.5.8, and so is the skip link while it is hidden.

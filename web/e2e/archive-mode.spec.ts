@@ -9,7 +9,8 @@ import { expect, test, type Page } from "@playwright/test";
  * A test passes only when the page shows the real record, never because a route answered 200.
  */
 
-const BANNER =
+// The page-level line removed in Day 13 Session 2. It stays here so the specs can assert it is gone.
+const REMOVED_BANNER =
   "Archived evidence. This is a recorded copy of real runs, not a live system. Every record keeps its original time.";
 const READ_ONLY =
   "This site shows archived evidence and is not connected to a live system, so nothing can be started here.";
@@ -63,7 +64,9 @@ test.describe("archived-evidence mode", () => {
     expectQuiet(t);
   });
 
-  test("every archived page carries the one fixed line", async ({ page }) => {
+  test("no archived page carries the removed page-level archive line", async ({
+    page,
+  }) => {
     const t = watch(page);
     for (const route of [
       "/overview",
@@ -75,9 +78,10 @@ test.describe("archived-evidence mode", () => {
       "/generation",
     ]) {
       await page.goto(route);
-      const notice = page.locator("[data-archive-notice]");
-      await expect(notice, route).toHaveCount(1);
-      await expect(notice, route).toContainText(BANNER);
+      await expect(page.locator("[data-archive-notice]"), route).toHaveCount(0);
+      await expect(page.locator("body"), route).not.toContainText(
+        REMOVED_BANNER,
+      );
     }
     expectQuiet(t);
   });

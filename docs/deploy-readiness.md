@@ -119,7 +119,7 @@ The site can now serve a read-only copy of the committed archive, so a deployed 
 What the mode does:
 
 - The `/ops` rewrite to the gateway is switched off. Server components read the archive in process (`lib/ops-fetch-server.ts`) and the browser asks this site's own `/api/archive/*` route handler (`lib/ops-fetch.ts`). Nothing is sent to a gateway, and the route handler exports `GET` only.
-- One fixed line sits under the top bar on every archived page: "Archived evidence. This is a recorded copy of real runs, not a live system. Every record keeps its original time." The landing and Architecture pages are static and do not carry it.
+- Archived pages carry no page-level disclaimer. Day 13 Session 2 removed the line "Archived evidence. This is a recorded copy of real runs, not a live system. Every record keeps its original time." from every page. The honesty now rests on each record keeping its original timestamp, the stale flags, and the notice that replaces every control that starts work.
 - Every control that starts work is off: the Red Team run workflow, the Agent start form and "Investigate this". None of them makes a request.
 - Live Operations has no stream. It reads one archived snapshot, rebuilt from the archived records with the view definitions in `infra/risingwave/init.sql`, with the original one-minute windows and every section marked stale.
 
@@ -174,7 +174,7 @@ A local production build proves the route list, the tracing of each function and
 - `/api/archive/redteam/scenarios` returns 10 scenarios, and `/api/archive/investigations` returns 7.
 - `/overview` shows 291 executions and `/agent/43751b14-b080-4f5b-8391-33b914f12f22` shows its hypotheses.
 - `POST /api/archive/redteam/runs` answers 405.
-- The deployed pages show the archive line and make no request to another origin.
+- The deployed pages show no page-level archive line and make no request to another origin.
 
 If a page says a record could not be read after deploy, the files were not traced into that function. Check the setting in step 2 first.
 
