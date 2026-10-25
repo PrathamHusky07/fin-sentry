@@ -36,6 +36,13 @@ TABLE_ORDER = {
     "investigations": "created_at, investigation_id",
     "investigation_events": "investigation_id, seq",
 }
+# The recorded gateway round-trip probe. It is telemetry, not product evidence, and it is not in
+# TABLE_ORDER on purpose: a restore would write id 1 without advancing the table's sequence, so the
+# next probe run on a restored database would collide. The file is written the same way as the
+# tables and is pinned in the manifest as a committed reference, which only the archived-evidence
+# site reads.
+PROBE_TABLE = "gateway_probe_runs"
+PROBE_FILE = f"postgres/{PROBE_TABLE}.jsonl"
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DIR = ROOT / "docs" / "demo-archive"
 
@@ -49,6 +56,8 @@ OMITTED = [
     "Original Kafka offsets as a restore target. A replay assigns new offsets. Each record keeps "
     "its original offset and timestamp as data.",
     "Model weights and anything a model produced that no stored event or row carries.",
+    "The gateway_probe_runs table as a restore target. Its rows are pinned as a committed "
+    "reference for the archived-evidence site and are not restored.",
 ]
 
 
@@ -110,6 +119,14 @@ def read_tables(database_url: str) -> dict[str, list[str]]:
     return out
 
 
+def read_probe_runs(database_url: str) -> list[str]:
+    """Every row of gateway_probe_runs as the text Postgres makes for to_jsonb(row). Read only."""
+    with psycopg.connect(database_url) as conn:
+        conn.execute("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        rows = conn.execute(f"SELECT to_jsonb(t)::text FROM {PROBE_TABLE} t ORDER BY id")  # noqa: S608
+        return [str(r[0]) for r in rows.fetchall()]
+
+
 def _merge(directory: Path, rel: str, name: str, kind: str, fresh: list[str]) -> list[str]:
     """The fresh lines plus any archived line the source no longer has. An export never drops
     a record: a topic that has since expired it, or a row that was deleted, stays archived. A
@@ -161,6 +178,11 @@ async def export(directory: Path, bootstrap: str, database_url: str) -> dict[str
         datasets[table] = file_entry(
             directory, rel, "table", ids, {"database": "finsentry", "table": table}
         )
+    _write(
+        directory,
+        PROBE_FILE,
+        _merge(directory, PROBE_FILE, PROBE_TABLE, "table", read_probe_runs(database_url)),
+    )
     manifest: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "created_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -169,13 +191,18 @@ async def export(directory: Path, bootstrap: str, database_url: str) -> dict[str
             _reference(ROOT / "finsentry" / "redteam" / "scenarios.yml"),
             _reference(ROOT / "docs" / "demo-seed" / "amzn-disagreement-v1.json"),
             _reference(ROOT / "docs" / "demo-seed" / "demo-questions-v1.json"),
+            _reference(directory / PROBE_FILE),
         ],
         "omitted": OMITTED,
     }
     existing = directory / MANIFEST
     if existing.is_file():
         previous = json.loads(existing.read_text(encoding="utf-8"))
-        if previous.get("datasets") == datasets and previous.get("omitted") == OMITTED:
+        if (
+            previous.get("datasets") == datasets
+            and previous.get("omitted") == OMITTED
+            and previous.get("committed_references") == manifest["committed_references"]
+        ):
             return previous  # type: ignore[no-any-return]
     existing.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return manifest

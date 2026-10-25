@@ -26,6 +26,8 @@ TABLE_ID_COLUMNS: dict[str, tuple[str, ...]] = {
     "red_team_executions": ("execution_id",),
     "investigations": ("investigation_id",),
     "investigation_events": ("investigation_id", "seq"),
+    # Exported for the archived-evidence site only. It is not in TABLE_ORDER, so a restore skips it.
+    "gateway_probe_runs": ("id",),
 }
 
 

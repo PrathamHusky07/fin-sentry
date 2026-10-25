@@ -8,6 +8,9 @@ A versioned copy of the records the demo depends on, taken from where they are a
 | Flash and frontier judge inputs and outputs | Redpanda topics `rag-responses`, `judge-verdicts`, `rag-frontier-verdicts` (RisingWave only reads them) | `stream/*.jsonl` |
 | Red Team runs and executions | Postgres tables, already durable | `postgres/red_team_*.jsonl` |
 | Agent investigations and events | Postgres tables, already durable | `postgres/investigation*.jsonl` |
+| Gateway round-trip probe | Postgres table `gateway_probe_runs`, one recorded run | `postgres/gateway_probe_runs.jsonl` |
+
+The probe file is telemetry for the archived-evidence site. The manifest pins it as a committed reference with its sha256 and it is not a dataset, so `materialize` and `recover` skip it. A restore would write id 1 without advancing the table's sequence, and the next probe run would collide with it.
 
 Only the three topics were stream-only, so only they also have a Postgres table (`stream_archive`, migration 008).
 The Red Team and Agent tables are not copied into a second table. The archive is their off-machine copy.

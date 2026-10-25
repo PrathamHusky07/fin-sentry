@@ -11,9 +11,13 @@
     {
       "path": "docs/demo-seed/demo-questions-v1.json",
       "sha256": "d0b4718dd72244b758221b89b591335bcf5b41e32bed3599b0e212613b6ea3e4"
+    },
+    {
+      "path": "docs/demo-archive/postgres/gateway_probe_runs.jsonl",
+      "sha256": "0cba585c0598e2133320754ea396e17503e99ecd957d7c1be6eac267841b6e87"
     }
   ],
-  "created_at_utc": "2026-10-22T20:01:42+00:00",
+  "created_at_utc": "2026-10-25T16:38:27+00:00",
   "datasets": {
     "investigation_events": {
       "bytes": 44919,
@@ -111,7 +115,8 @@
     "RisingWave tables and materialized views. They are derived from the three topics and are rebuilt from them.",
     "The corpus, golden_set and hallucination_bench tables. They are reproducible from public sources by the ingestion scripts and are not demo evidence.",
     "Original Kafka offsets as a restore target. A replay assigns new offsets. Each record keeps its original offset and timestamp as data.",
-    "Model weights and anything a model produced that no stored event or row carries."
+    "Model weights and anything a model produced that no stored event or row carries.",
+    "The gateway_probe_runs table as a restore target. Its rows are pinned as a committed reference for the archived-evidence site and are not restored."
   ],
   "schema_version": 1
 }
