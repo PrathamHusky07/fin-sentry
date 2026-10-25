@@ -138,19 +138,29 @@ test.describe("archived-evidence mode", () => {
     expectQuiet(t);
   });
 
-  test("Live Operations says the gateway probe is not part of the archive", async ({
+  test("Live Operations shows the recorded gateway probe with its original date and leaves its own check unmeasured", async ({
     page,
   }) => {
     const t = watch(page);
     await page.goto("/operations");
-    const probe = page.locator('[data-gateway-probe="unavailable"]');
-    await expect(probe).toContainText("not part of the archived evidence");
+    const probe = page.locator('[data-gateway-probe="recorded"]');
+    await expect(probe).toContainText("Health-route round trip, recorded probe");
+    // The unit sits in its own span, so the text has no space between the figure and "ms".
+    await expect(probe).toContainText(/0\.26\s*ms median/);
+    await expect(probe).toContainText("p95 0.35 ms");
+    await expect(probe).toContainText("max 0.38 ms");
+    await expect(probe).toContainText("30 requests");
+    await expect(probe).toContainText("Recorded Oct 22, 22:28 UTC");
+    await expect(page.locator('[data-gateway-probe="unavailable"]')).toHaveCount(
+      0,
+    );
+    await expect(page.locator("main")).not.toContainText(
+      "not part of the archived evidence",
+    );
+    // There is no gateway to time, so the page's own check is genuinely not measured.
     await expect(
       page.locator('[data-gateway-health="not-measured"]'),
     ).toContainText("This site has no gateway to time");
-    await expect(page.locator('[data-gateway-probe="recorded"]')).toHaveCount(
-      0,
-    );
     expectQuiet(t);
   });
 
@@ -346,8 +356,26 @@ test.describe("archived-evidence mode", () => {
         await request.post("/api/archive/investigations", { data: {} })
       ).status(),
     ).toBe(405);
+    const probe = await request.get("/api/archive/gateway-probe/latest");
+    expect(probe.status()).toBe(200);
+    expect(await probe.json()).toEqual({
+      latest: {
+        measured_at: "2026-10-22T22:28:42.250590Z",
+        target: "http://localhost:8000/health",
+        samples: 30,
+        median_ms: 0.26016650372184813,
+        p95_ms: 0.35385015944484616,
+        max_ms: 0.38283399771898985,
+      },
+      runs_recorded: 1,
+    });
     expect(
-      (await request.get("/api/archive/gateway-probe/latest")).status(),
+      (await request.post("/api/archive/gateway-probe/latest", { data: {} }))
+        .status(),
+    ).toBe(405);
+    // The throughput history has no archived source and answers 404, not an empty body.
+    expect(
+      (await request.get("/api/archive/metrics/throughput/history")).status(),
     ).toBe(404);
     expect((await request.get("/api/archive/traces?limit=abc")).status()).toBe(
       422,

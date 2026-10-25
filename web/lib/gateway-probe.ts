@@ -21,9 +21,12 @@ export interface GatewayProbeSummary {
  * when nothing has run since, and the page dates it. Null when the gateway or its store did
  * not answer, which the page shows as unavailable and never as a missing run.
  */
-export async function fetchGatewayProbe(): Promise<GatewayProbeSummary | null> {
+export async function fetchGatewayProbe(
+  /** A Server Component passes serverOpsFetch, which reads the archive in process. */
+  fetchRoute: typeof opsFetch = opsFetch,
+): Promise<GatewayProbeSummary | null> {
   try {
-    const res = await opsFetch("/ops/gateway-probe/latest", {
+    const res = await fetchRoute("/ops/gateway-probe/latest", {
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });

@@ -12,7 +12,7 @@ const gatewayUrl =
 const archiveMode = process.env.NEXT_PUBLIC_ARCHIVE_MODE === "true";
 
 // The archive files, by who reads them. Every module that can reach lib/archive/files.ts is
-// traced with all nine paths, so each page that reads the archive on the server excludes the
+// traced with all ten paths, so each page that reads the archive on the server excludes the
 // groups it does not use, and only the route handler carries all of them.
 const ARCHIVE_FILES = {
   streams: [
@@ -23,6 +23,8 @@ const ARCHIVE_FILES = {
   calibration: ["../docs/measurements/reliability/canary-live-smoke-d6p2.json"],
   investigations: ["../docs/demo-archive/postgres/investigations.jsonl"],
   timelines: ["../docs/demo-archive/postgres/investigation_events.jsonl"],
+  // The recorded gateway probe row. Only Live Operations reads it.
+  probe: ["../docs/demo-archive/postgres/gateway_probe_runs.jsonl"],
   redTeam: [
     "../docs/demo-archive/postgres/red_team_runs.jsonl",
     "../docs/demo-archive/postgres/red_team_executions.jsonl",
@@ -59,7 +61,7 @@ const nextConfig: NextConfig = {
     outputFileTracingIncludes: { [ARCHIVE_ROUTE]: allArchiveFiles },
     outputFileTracingExcludes: {
       "/overview": archiveExcept("streams", "calibration"),
-      "/operations": archiveExcept("streams", "calibration"),
+      "/operations": archiveExcept("streams", "calibration", "probe"),
       "/generation": archiveExcept("streams"),
       "/agent": archiveExcept("investigations"),
     },

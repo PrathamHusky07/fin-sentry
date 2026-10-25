@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CapabilityStrip } from "@/components/capability-strip";
 import { EvalTelemetry } from "@/components/eval-telemetry";
 import { GatewayProbeReadout } from "@/components/gateway-probe-readout";
 import { StartIncident } from "@/components/incidents/start-incident";
+import { serveArchive } from "@/lib/archive/serve";
 import type { GatewayProbeSummary } from "@/lib/gateway-probe";
 
 const text = (markup: string) =>
@@ -155,6 +156,64 @@ describe("gateway health route readout", () => {
       ),
     );
     expect(words).toContain("did not answer");
+    expect(words).not.toContain("ms median");
+  });
+});
+
+describe("the recorded probe in archived-evidence mode", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("shows the stored figures with their recording date, read through the archive route", async () => {
+    const probe = (await (
+      await serveArchive("/ops/gateway-probe/latest")
+    ).json()) as GatewayProbeSummary;
+    const words = text(
+      renderToStaticMarkup(
+        <GatewayProbeReadout probe={probe} health={null} now={null} />,
+      ),
+    );
+    expect(words).toContain("0.26 ms median");
+    expect(words).toContain("p95 0.35 ms");
+    expect(words).toContain("max 0.38 ms");
+    expect(words).toContain("30 requests");
+    expect(words).toContain("Recorded Oct 22, 22:28 UTC");
+    expect(words).not.toContain("not part of the archived evidence");
+  });
+
+  it("keeps the page's own check unmeasured, because there is no gateway to time", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ARCHIVE_MODE", "true");
+    vi.resetModules();
+    const { GatewayProbeReadout: Archived } = await import(
+      "@/components/gateway-probe-readout"
+    );
+    const words = text(
+      renderToStaticMarkup(
+        <Archived
+          probe={{ latest: null, runs_recorded: 0 }}
+          health={null}
+          now={null}
+        />,
+      ),
+    );
+    expect(words).toContain("The archive holds no recorded gateway probe");
+    expect(words).toContain("This site has no gateway to time");
+    expect(words).toContain("not measured");
+    expect(words).not.toContain("not part of the archived evidence");
+  });
+
+  it("says the archived record could not be read when the route did not answer", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ARCHIVE_MODE", "true");
+    vi.resetModules();
+    const { GatewayProbeReadout: Archived } = await import(
+      "@/components/gateway-probe-readout"
+    );
+    const words = text(
+      renderToStaticMarkup(<Archived probe={null} health={null} now={null} />),
+    );
+    expect(words).toContain("The archived probe record could not be read");
     expect(words).not.toContain("ms median");
   });
 });

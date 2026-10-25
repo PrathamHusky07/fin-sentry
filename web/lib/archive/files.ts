@@ -216,6 +216,23 @@ export const investigationEvents = memo(async () =>
   ),
 );
 
+/** The recorded gateway round-trip probe runs. The manifest pins this file as a committed
+ * reference, and a restore skips it. */
+export const gatewayProbeRuns = memo(async () =>
+  rows(
+    await readText(
+      path.join(
+        process.cwd(),
+        "..",
+        "docs",
+        "demo-archive",
+        "postgres",
+        "gateway_probe_runs.jsonl",
+      ),
+    ),
+  ),
+);
+
 /** The Red Team scenario registry, the committed reference the archive manifest pins. */
 export const scenariosYaml = memo(() =>
   readText(

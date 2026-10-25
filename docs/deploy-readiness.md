@@ -133,25 +133,26 @@ Where each route comes from:
 | `GET /ops/calibration/health` | `docs/measurements/reliability/canary-live-smoke-d6p2.json` and a copy of the drift policy | Same response |
 | `GET /ops/metrics/snapshot` (archive only) | the three stream files, re-aggregated | Rebuilt, not copied. Checked against an independent computation |
 | `GET /ops/redteam/run-gate` | none | Answers `runs_enabled: false`, a fact about the mode |
-| `GET /ops/gateway-probe/latest` | none | **Not in the archive.** The page says the probe is not part of the archived evidence |
+| `GET /ops/gateway-probe/latest` | `postgres/gateway_probe_runs.jsonl`, the one recorded run | Same response as the live gateway, byte for byte. Added in Day 13 Session 2 |
 
 The contract checks compared the live gateway with the archive route on the same data, response by response, with zero differences. The Red Team and Agent responses were also compared with the real pydantic models.
 
 Gaps to know about:
 
-- The recorded gateway probe lives in the `gateway_probe_runs` table, which the archive does not export, so Live Operations shows no probe figure in this mode. Adding it means extending the archive export, which is an operator decision.
+- The gateway probe is archived as one recorded run, 0.26 ms median over 30 requests, taken on 2026-10-22 against `localhost:8000` (Day 13 Session 2 added it). Live Operations shows that stored reading with its original date. The page's own momentary check stays unmeasured, because this site has no gateway to time. The manifest pins the file as a committed reference and a restore skips it, so a restored database is not given a probe row that would collide with the next run.
 - No flash and frontier disagreement trace exists in the archive, because the Amazon trace expired from the topics. Overview and Investigations show none, which is the stored truth. The landing page keeps its committed capture.
 - The snapshot's frontier group sums the fifteen minutes before the newest archived frontier bucket, because the live rule counts back from the current time and the archive has no current time.
 - A few error strings still say "the gateway". They appear only when an archive file cannot be read.
 
 ### Bundling
 
-Six functions read the archive or ask for it: `/overview`, `/operations`, `/generation`, `/agent`, `/agent/[id]` and `/api/archive/[...path]`. `next.config.ts` traces the repository root in this mode and lists each file by path. Because every module that can reach the file readers is traced with all nine paths, each page excludes the groups it does not read. The built `.nft.json` files show the result:
+Six functions read the archive or ask for it: `/overview`, `/operations`, `/generation`, `/agent`, `/agent/[id]` and `/api/archive/[...path]`. `next.config.ts` traces the repository root in this mode and lists each file by path. Because every module that can reach the file readers is traced with all ten paths, each page excludes the groups it does not read. The built `.nft.json` files show the result:
 
 | Function | Archive files it carries |
 |---|---|
-| `/api/archive/[...path]` | all nine (3.4 MB: 3.3 MB of stream records, 0.14 MB of tables, the canary artifact and `scenarios.yml`) |
-| `/overview`, `/operations` | the three stream files and the canary artifact |
+| `/api/archive/[...path]` | all ten (3.4 MB: 3.3 MB of stream records, 0.14 MB of tables, the probe row, the canary artifact and `scenarios.yml`) |
+| `/operations` | the three stream files, the canary artifact and the probe row |
+| `/overview` | the three stream files and the canary artifact |
 | `/generation` | the three stream files |
 | `/agent` | `investigations.jsonl` |
 | `/agent/[id]` | none, it asks the route handler |

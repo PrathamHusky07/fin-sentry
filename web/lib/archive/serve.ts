@@ -12,6 +12,7 @@ import {
   runList,
   scenarioList,
 } from "@/lib/archive/redteam";
+import { gatewayProbeLatest } from "@/lib/archive/probe";
 import { metricsSnapshot } from "@/lib/archive/snapshot";
 import { JUDGE_STATES, traceDetail, traceList } from "@/lib/archive/traces";
 import type { JudgeState } from "@/lib/trace-api";
@@ -93,6 +94,9 @@ async function route(
   }
   if (head === "metrics" && second === "snapshot" && segments.length === 2) {
     return json(await metricsSnapshot());
+  }
+  if (head === "gateway-probe" && second === "latest" && segments.length === 2) {
+    return json(await gatewayProbeLatest());
   }
 
   if (head === "investigations" && segments.length === 1) {

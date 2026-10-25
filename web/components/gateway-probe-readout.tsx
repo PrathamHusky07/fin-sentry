@@ -84,7 +84,9 @@ export function GatewayProbeReadout({
           ) : (
             <p className="text-text-secondary mt-2 max-w-3xl text-base leading-snug">
               {ARCHIVE_MODE
-                ? "The gateway probe is a timing of a live gateway and is not part of the archived evidence, so no round trip is shown. Nothing is shown in its place."
+                ? state === "none"
+                  ? "The archive holds no recorded gateway probe, so no round trip is shown. Nothing is shown in its place."
+                  : "The archived probe record could not be read, so no recorded round trip is shown. Nothing is shown in its place."
                 : state === "none"
                   ? "No gateway probe has been recorded. Run python -m finsentry.observability.gateway_probe to store one."
                   : "The probe store did not answer, so no recorded round trip is shown. Nothing is shown in its place."}

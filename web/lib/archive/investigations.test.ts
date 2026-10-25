@@ -152,9 +152,10 @@ describe("serveArchive", () => {
   it("answers 404 for a missing record and for a route with no archived source", async () => {
     expect((await serveArchive("/ops/investigations/nope")).status).toBe(404);
     expect((await serveArchive("/ops/redteam/runs/nope")).status).toBe(404);
-    const probe = await serveArchive("/ops/gateway-probe/latest");
-    expect(probe.status).toBe(404);
-    expect(await probe.json()).toEqual({
+    // The throughput history has no archived source, unlike the gateway probe.
+    const history = await serveArchive("/ops/metrics/throughput/history");
+    expect(history.status).toBe(404);
+    expect(await history.json()).toEqual({
       error: "this route has no archived record",
     });
     expect((await serveArchive("/v1/rag/query")).status).toBe(404);
