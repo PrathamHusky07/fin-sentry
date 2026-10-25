@@ -1,5 +1,25 @@
 # Build Log
 
+## 2026-10-25: Day 13 Session 2, archived banner removed, recorded gateway probe shown
+
+Model: Sonnet 5.5, no escalation. Start: the checkout was still on `chore/ci-pipeline`, and `origin/main` had moved to `5a315a3` because the operator merged PR #1. Local `main` was fast-forwarded to it (tree clean) and the work was done there. No probe run, RAG request, model call, calibration re-run, Red Team or Agent run. Cost $0.00. Nothing frozen changed, including the Cohen's kappa reading and its copy. Vercel was not touched.
+
+### Fix 1: the archived-evidence line is gone
+The line "Archived evidence. This is a recorded copy of real runs, not a live system. Every record keeps its original time." was rendered once, by the root layout in archive mode. The render, `ArchiveNotice` and the two `ARCHIVE_NOTICE_*` constants are removed. `ARCHIVE_MODE`, `ARCHIVE_ROUTES` and `ARCHIVE_READ_ONLY` stay (`ARCHIVE_ROUTES` now has no reader, and was left as asked). Per-record timestamps, stale flags and the notice on disabled run controls are untouched. The two archive specs now assert the opposite: no `[data-archive-notice]` and no banner text on all seven archived routes, and the banner font-size check was dropped because nothing is left to measure. The no-escape, no-console-message, 44 px and real-record checks stay.
+
+### Fix 2: the recorded probe
+`gateway_probe_runs` holds exactly one row, read in a read-only transaction: median 0.26016650372184813 ms, p95 0.35385015944484616, max 0.38283399771898985, 30 requests, target `http://localhost:8000/health`, recorded 2026-10-22T22:28:42.25059+00:00. It is exported to `docs/demo-archive/postgres/gateway_probe_runs.jsonl` by `finsentry.archive export` (new `read_probe_runs`, same `to_jsonb` text and never-drop merge as the tables). The archive row is byte-identical to the live row (matching md5) and the source table is unchanged. The full export re-read all seven existing datasets with identical counts and git showed only the manifest and the new file changed.
+
+Decision worth recording: the file is pinned in `committed_references`, not registered as a manifest dataset and not added to `TABLE_ORDER`. Two reasons from the real code. The frozen recovery rehearsal asserts that what `materialize` inserts equals the record count of every manifest dataset, and `test_archive_format` pins the dataset set to seven. And a restore would write id 1 into a `BIGSERIAL` table without advancing its sequence, so the next probe run on a restored database would collide. The cost is that the manifest holds a sha256 for this file and not a count and ids digest. A new Python test asserts the one row, its values and the pin. `created_at_utc` in the manifest moved to the export date, which nothing reads.
+
+The route: `/ops/gateway-probe/latest` is served by `lib/archive/probe.ts` through `serve.ts`. Its response is byte-identical to the live gateway's on the same data (same values, key order and `Z` timestamp spelling), checked by fetching both. The file is a new `probe` group in `next.config.ts` kept only by `/operations` and the route handler. The built `.nft.json` files confirm `/operations` and `/api/archive/[...path]` carry it and `/overview`, `/generation`, `/agent` do not. `/operations` now reads the probe in both modes (`fetchGatewayProbe(serverOpsFetch)`); the page's own momentary check stays "not measured" in archive mode. The readout needed only its archive placeholder text changed, because "not part of the archived evidence" would now be false. It already showed the figures with "Recorded Oct 22, 22:28 UTC, 3d ago" and kept the heading "Health-route round trip, recorded probe".
+
+### Gates
+tsc, eslint and vitest (238) pass. ruff, ruff format and mypy (147 files) pass. pytest deterministic subset with the dev stack up: 1524 passed, 12 deselected, 0 failed. Archive production build plus the archive Playwright project: 43 passed, with the banner absent, the real probe figures and date shown, and no request leaving the site. Live Playwright against the stack: 271 passed, 3 skipped (the existing disagreement-trace skips), 0 failed. `finsentry.archive verify` and `reconcile` pass, and live and archive counts and digests match for the four tables. One mistake along the way: my first spec assertion expected "0.26 ms median" but the unit sits in its own span, so the DOM text is "0.26ms median". The page was right and the assertion was fixed to match it, with the figure still asserted exactly.
+
+### Next
+Verify the live site after the Vercel rebuild, then the README.
+
 ## 2026-10-23: Day 13 Session 1, CI pipeline, snapshot timestamp test, deploy doc reconciled
 
 Model: Sonnet 5.5, no escalation. Start: `main`, HEAD and `origin/main` all `c26e35d`, tree clean, no `.github` directory. Work is on branch `chore/ci-pipeline`, PR #1. Not merged, not made public, not deployed, no history rewritten. No RAG request, model call, calibration re-run, Red Team or Agent run, in the session or in CI. Cost $0.00. Nothing frozen changed, no archive or evidence file changed, no test was weakened, and CI uses no secret.
