@@ -222,7 +222,7 @@ Three tests skip by themselves in CI because RisingWave is not reachable: one in
 
 - **Format baseline.** `ruff format --check .` reports 78 files at the commit that added CI. They are listed in `[tool.ruff.format] exclude` in `pyproject.toml`, so the check gates new and unlisted files and leaves the legacy rails, judges and frontier code alone. A one-time `ruff format .` would retire the list. That is an operator decision.
 - **No prettier gate.** The project has no prettier dependency or config, so CI does not run it. Earlier session notes that call prettier clean do not describe a check that CI repeats.
-- **Floating dependencies.** `requirements.txt` uses `>=` floors, and `uv.lock` covers only `mcp`. A new upstream release can turn a run red without a code change. The workflow pins `ruff` and `mypy`, and installs the CPU build of torch from the PyTorch index.
+- **Floating dependencies.** `requirements.txt` uses `>=` floors, and `uv.lock` covers only `mcp`. A new upstream release can turn a run red without a code change, and one did on 2026-10-25: a fresh install picked up `preshed` 3.0.14, which breaks spaCy 3.8.16's tokenizer on Python 3.13 and made the PII rail fail closed in 16 tests. `requirements.txt` now caps it at `preshed<3.0.14`. Any fresh install, including a rebuild of the gateway image, was affected, not only CI. The workflow pins `ruff` and `mypy`, and installs the CPU build of torch from the PyTorch index.
 - **Runner minutes.** Standard runners are free for a public repository. While it is private, runs count against the plan's included minutes. The jobs have timeouts, and a newer push cancels a superseded run on the same ref.
 
 ### What CI does not prove
