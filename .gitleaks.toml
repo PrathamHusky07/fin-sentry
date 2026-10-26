@@ -1,0 +1,12 @@
+title = "Fin-Sentry gitleaks config"
+
+# Extend the default rules, then allowlist known false positives.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Archived evidence (trace IDs, content hashes, sha256 digests) and chart dataKey props — high-entropy strings, not secrets."
+paths = [
+  '''docs/demo-archive/.*\.jsonl''',
+  '''web/components/recent-activity-chart\.tsx''',
+]
