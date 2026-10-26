@@ -53,7 +53,7 @@ const DETAILS: Record<string, NodeDetail> = {
   },
   dashboard: {
     title: "Dashboard service",
-    text: "The only RisingWave client. The gateway never connects to RisingWave: a poller asks this service for a snapshot every three seconds.",
+    text: "The gateway's only route to RisingWave. The gateway never connects to RisingWave itself: a poller asks this service for a snapshot every three seconds.",
   },
   endpoints: {
     title: "Gateway endpoints",
@@ -309,7 +309,7 @@ export function EventLanes() {
               h={90}
               id="risingwave"
               title="RisingWave"
-              lines={["reads all three topics", "eight materialized views"]}
+              lines={["reads all three topics", "nine materialized views"]}
               tone="evidence"
             />
             <Box

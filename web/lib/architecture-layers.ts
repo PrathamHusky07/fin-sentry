@@ -195,9 +195,9 @@ export const LAYERS: Layer[] = [
         steps: [
           {
             label: "RisingWave",
-            sub: "reads all three topics and keeps eight materialized views",
+            sub: "reads all three topics and keeps nine materialized views",
           },
-          { label: "Dashboard service", sub: "the only RisingWave client" },
+          { label: "Dashboard service", sub: "the gateway's only route to RisingWave" },
           {
             label: "Gateway endpoints",
             sub: "traces and the stream, polled every 3 seconds",

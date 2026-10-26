@@ -2,8 +2,7 @@
 Typed contracts for the Reliability Incident Investigator.
 
 Pure data and validation only. Nothing here calls a model or a tool. The investigator's
-reasoning loop does not exist yet (Day 11.1). These models are what that loop reads and
-writes, and what the known-answer harness grades.
+reasoning loop (loop.py) reads and writes these models, and the known-answer harness grades them.
 
 Two distinctions are enforced by the shape of the data, not by prose:
 

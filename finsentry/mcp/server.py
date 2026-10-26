@@ -1,5 +1,5 @@
 """
-MCP server wiring: instantiate MCPServer, register the five backed Day 7
+MCP server wiring: instantiate MCPServer, register the nine read-only
 tools, open/close the shared RisingWave pool via lifespan, run on stdio.
 
 Tool logic lives in finsentry/mcp/tools/*.py; this module is registration
