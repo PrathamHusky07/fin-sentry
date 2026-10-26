@@ -120,8 +120,8 @@ implementation, not the `ragas` PyPI package. The algorithm is:
    Capped at 10 claims to bound cost on adversarial long answers.
 2. Per-claim NLI: for each claim, prompt Gemini to verify against the retrieved context.
 3. Score: `supported_claims / total_claims`. Score = 1.0 when no claims (RAGAS convention).
-4. Threshold: block if `score < threshold` (provisional 0.7; Day 6 calibrates against
-   FinanceBench with Cohen's kappa).
+4. Threshold: block if `score < threshold` (provisional 0.7; calibration uses
+   the FinQA hallucination set with Cohen's kappa).
 
 Context sent to Gemini is assembled from `filtered_chunks` (the retrieval-rail output),
 not from the raw retrieval candidates. This ensures Faithfulness runs only on the context

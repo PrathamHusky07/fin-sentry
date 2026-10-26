@@ -12,9 +12,9 @@ This is a portfolio project for a candidate interviewing for Senior AI Engineer,
 
 ## Stack (fixed, do not substitute)
 
-- Backend gateway: FastAPI, NeMo Guardrails, Llama Prompt Guard 2 86M, Presidio, Llama Guard 3 8B quantized, Guardrails AI, tenacity for retries, Docker.
+- Backend gateway: FastAPI, NeMo Guardrails, Llama Prompt Guard 2 86M, Presidio, Llama Guard 3 1B, plain Pydantic for the output schema rail (Guardrails AI was rejected over its dependencies, see ADR 005), tenacity for retries, Docker.
 - Streaming: Redpanda, RisingWave, Postgres. Docker Compose for local orchestration.
-- Judges: Gemini 2.5 Flash for the flash tier through the Google Cloud free-tier credit. HHEM-2.1-open, Patronus Lynx 8B, and Prometheus 2 7B for the frontier tier, all local via Hugging Face.
+- Judges: Gemini 3.6 Flash (`gemini-3.6-flash`) for the flash tier and for one Gemini rubric judge in the frontier tier, through the Google Cloud free-tier credit. An HHEM-2.1-open adapter is built and disabled by default. Patronus Lynx 8B and Prometheus 2 7B were measured and have no adapter.
 - Datasets: FinanceBench, FinQA-hallucination-detection, live SEC EDGAR filings via edgartools for the ten-company demo corpus.
 - Observability and MCP: OpenTelemetry Python SDK, official MCP Python SDK, LangSmith free tier for judge tracing.
 - Frontend: React 19.2, Next.js 16 with the App Router, TypeScript in strict mode, Tailwind CSS, Recharts, Server-Sent Events.

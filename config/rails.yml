@@ -13,6 +13,6 @@ rails:
       on_failure: closed
     faithfulness:
       # Fail-open: Gemini API errors (rate limit, timeout, upstream error) must not
-      # fail the request. Threshold is provisional; Day 6 calibrates against FinanceBench.
+      # fail the request. Threshold is provisional; the calibration benchmark is the FinQA hallucination set.
       on_failure: open
       threshold: 0.7

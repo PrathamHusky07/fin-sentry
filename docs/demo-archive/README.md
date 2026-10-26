@@ -41,7 +41,7 @@ question or calls Gemini.
 4. `python -m finsentry.archive materialize` restores the Red Team and Agent rows and fills `stream_archive`.
    It is idempotent and never overwrites a row that already exists.
 5. `python scripts/init_risingwave.py` creates the three topics (one partition each), the RisingWave sources
-   and the eight views. `python scripts/demo_seed.py retention` then sets `retention.ms=-1` on the topics.
+   and the nine views. `python scripts/demo_seed.py retention` then sets `retention.ms=-1` on the topics.
 6. `python -m finsentry.archive republish --topic <name> --into <name> --allow-live`, once per topic. The
    flag is required because these are the live topic names. The command refuses to run while any
    `finsentry.consumer` process exists. That refusal keeps a replay from running 325 Gemini evaluations,
@@ -68,7 +68,7 @@ It checks that:
 - the two foreign keys exist and nothing is orphaned;
 - every flash and frontier verdict has its request in the archive;
 - a second restore adds nothing and a restore never overwrites an edited row;
-- `init.sql` rebuilds the eight views, each source holds every archived record and the request view counts
+- `init.sql` rebuilds the nine views, each source holds every archived record and the request view counts
   every archived request;
 - the dashboard's trace routes return an archived delivered answer with its citations and an archived
   block with its rail, read from the rebuilt views;
